@@ -1,0 +1,265 @@
+# ============================================================
+# RISA-Bot Centralized Parameters
+# All tunable parameters in one place for easy competition-day tuning.
+# Load via launch file: parameters=[params_file]
+# ============================================================
+
+# --- Auto Driver (brain) ---
+# PID TUNING GUIDE:
+#   Start conservative: kp=0.8, ki=0.0, kd=0.2
+#   If robot weaves/oscillates: INCREASE kd, DECREASE kp
+#   If robot is slow to correct: INCREASE kp
+#   If robot drifts to one side on a straight: INCREASE ki slightly
+#   speed_error_scale: higher = more aggressive speed reduction in turns
+#   min_turn_speed: 0.4 = robot never goes below 40% forward_speed in turns
+auto_driver:
+  ros__parameters:
+    forward_speed: 0.15          # m/s maximum speed on a straight (conservative start)
+    stale_timeout: 3.0
+    dist_lap_complete: 1.0
+    enable_subsumption_obstacle: false
+    max_odom_speed: 1.0
+    min_state_dwell_sec: 0.25
+    publish_loop_stats: true
+    steering_gain: 1.0           # legacy, kept for compatibility
+    # PID gains (conservative — increase kp once tracking is reliable)
+    pid_kp: 0.8
+    pid_ki: 0.01
+    pid_kd: 0.20
+    pid_integral_max: 0.3
+    # Adaptive speed
+    speed_error_scale: 1.5
+    min_turn_speed: 0.4
+    lane_steer_slew: 3.0         # max angular.z change per second (Cytron acceleration limit)
+    # Challenge 1→2 sequencing (time-based gating)
+    t_post_obstacle_sec: 1.5     # re-center delay after obstacle clears (before roundabout)
+    t_roundabout_sec: 8.0        # time inside roundabout before exiting
+
+# --- Command Safety Controller ---
+cmd_safety_controller:
+  ros__parameters:
+    publish_hz: 50.0
+    cmd_timeout: 0.35
+    max_linear_speed: 0.30
+    max_angular_speed: 1.2
+    max_linear_accel: 0.8
+    max_angular_accel: 4.0
+    deadband_linear: 0.01
+    deadband_angular: 0.01
+    publish_loop_stats: true
+
+# --- Line Follower Camera (MDPI-enhanced scanline detection) ---
+# TUNING GUIDE:
+#   n_scanlines      : more scanlines = more robust but slightly slower
+#   min_valid_scanlines: lower = less strict lane lock (may cause false locks)
+#   min_line_width_px: raise if noise triggers false lane detections
+#   crop_ratio_base  : increase if robot cuts corners on slight curves
+#   search_radius_px : how far (pixels) a blob can be from expected position
+#   white_threshold  : gray value cutoff for white border detection (higher = stricter)
+#   use_otsu         : true = auto-threshold (unreliable on 3-tone tracks)
+#   morph_open_size  : erosion→dilation kernel to remove noise (0=disable, 3=default)
+#   morph_close_size : dilation→erosion kernel to fill gaps (0=disable, 5=default)
+#   clahe_enabled    : disable if camera already has good auto-exposure
+#   clahe_clip_limit : higher = more contrast boost (good for dim tracks)
+# IPM (Bird's Eye View):
+#   ipm_enabled      : DISABLED by default — requires calibration for camera mount
+#   ipm_top_width_ratio : controls the narrow end of the trapezoid (further road)
+#                         lower = more aggressive warp (0.2-0.5 typical)
+#   ipm_bottom_width_ratio : controls the wide end (close road, usually 1.0)
+# KALMAN FILTER:
+#   kalman_enabled         : use Kalman instead of EMA for smoothing
+#   kalman_process_noise   : Q — lower = smoother but slower to react
+#   kalman_measurement_noise: R — lower = trusts measurements more
+# LEGACY EMA (used when kalman_enabled=false):
+#   smoothing_alpha  : EMA factor — lower = smoother but slower response
+#   dead_zone        : tolerance threshold — skip Kalman update below this value
+#   hold_error_frames: frames (~30fps) the last heading is held when lines are lost
+#   error_decay_rate : 0.92 → held error halves every ~9 frames
+line_follower_camera:
+  ros__parameters:
+    n_scanlines: 8
+    min_valid_scanlines: 2
+    min_line_width_px: 5
+    crop_ratio_base: 0.4
+    search_radius_px: 80         # blob-to-expected match radius (was 60px hard-coded)
+    # Thresholding — white border detection
+    white_threshold: 200          # fixed threshold for white borders (raise if floor triggers)
+    use_otsu: false               # Otsu fails on 3-tone tracks (black lane + gray floor + white border)
+    # Morphological cleanup
+    morph_open_size: 3            # remove noise blobs (0=disable)
+    morph_close_size: 5           # fill small gaps in lane lines (0=disable)
+    clahe_enabled: true
+    clahe_clip_limit: 2.0
+    # IPM — Bird's Eye View (DISABLED: camera is horizontal at 8.5cm, IPM distorts)
+    ipm_enabled: false
+    ipm_top_width_ratio: 0.35    # 0° tilt at 8.5cm height → moderate warp
+    ipm_bottom_width_ratio: 1.0
+    # Kalman filter (MDPI-inspired)
+    kalman_enabled: true
+    kalman_process_noise: 0.01
+    kalman_measurement_noise: 0.1
+    # Legacy EMA (fallback when kalman_enabled=false)
+    smoothing_alpha: 0.3
+    dead_zone: 0.05
+    hold_error_frames: 15
+    error_decay_rate: 0.92
+    show_debug: true              # ENABLED for development — see /camera/debug/line_follower
+    resize_width: 320
+    print_debug: false
+    debug_print_rate: 0.5
+
+# --- Traffic Light Detector ---
+# TUNING GUIDE:
+#   sat_min / val_min    : raise if false positives on dark-coloured objects
+#   required_confidence  : raise to reduce false triggers (3 = safe default)
+#   min_pixel_count      : raise if detecting small coloured blobs that aren't lights
+traffic_light_detector:
+  ros__parameters:
+    red_h_low1: 0
+    red_h_high1: 10
+    red_h_low2: 160
+    red_h_high2: 180
+    yellow_h_low: 20
+    yellow_h_high: 35
+    green_h_low: 40
+    green_h_high: 85
+    sat_min: 80
+    val_min: 80
+    min_circle_radius: 8
+    max_circle_radius: 80
+    min_pixel_count: 50
+    required_confidence: 3
+    show_debug: false
+    resize_width: 320
+    print_debug: false
+    debug_print_rate: 0.5
+    heartbeat_sec: 0.5
+
+# --- Boom Gate Detector ---
+boom_gate_detector:
+  ros__parameters:
+    min_detect_dist: 0.15
+    max_detect_dist: 0.80
+    angle_window: 0.35
+    min_gate_points: 5
+    distance_variance_max: 0.05
+    lidar_angle_offset: 1.5708
+    hysteresis: 3
+    heartbeat_sec: 0.5
+
+# --- Tunnel Wall Follower ---
+tunnel_wall_follower:
+  ros__parameters:
+    target_center_dist: 0.0
+    forward_speed: 0.15
+    kp: 1.2
+    kd: 0.3
+    max_angular: 0.8
+    left_angle_min: 0.52
+    left_angle_max: 1.57
+    right_angle_min: -1.57
+    right_angle_max: -0.52
+    lidar_angle_offset: 1.5708
+    min_wall_points: 3
+    max_wall_dist: 0.60
+    heartbeat_sec: 0.2
+
+# --- Obstruction Avoidance ---
+obstruction_avoidance:
+  ros__parameters:
+    detect_dist: 0.50
+    clear_dist: 0.60
+    front_angle: 0.35
+    side_angle_min: 0.35
+    side_angle_max: 1.20
+    steer_speed: 0.10
+    steer_angular: 0.6
+    pass_speed: 0.15
+    pass_duration: 2.0
+    steer_back_duration: 1.5
+    steer_away_duration: 1.0
+    lidar_angle_offset: 1.5708
+
+# --- Parking Controller ---
+parking_controller:
+  ros__parameters:
+    parallel_forward_dist: 0.30
+    parallel_reverse_dist: 0.35
+    parallel_steer_angle: 0.6
+    park_wait_time: 3.0
+    perp_turn_angle: 1.57
+    perp_forward_dist: 0.25
+    drive_speed: 0.15
+    reverse_speed: -0.12
+    signboard_min_area: 500
+    signboard_resize_width: 320
+
+# --- Camera Obstacle Detection ---
+obstacle_avoidance_camera:
+  ros__parameters:
+    edge_threshold: 0.08        # raised from 0.02 — floor tiles trigger at ~2%, real obstacles at ~10%
+    canny_low: 50
+    canny_high: 150
+    blur_kernel: 5
+    hysteresis_on: 5
+    hysteresis_off: 8
+    show_debug: false
+    resize_width: 320
+    print_debug: false
+    debug_print_rate: 0.5
+    heartbeat_sec: 0.5
+
+# --- LiDAR Obstacle Detection ---
+obstacle_avoidance_node:
+  ros__parameters:
+    min_obstacle_distance: 0.48
+    heartbeat_sec: 0.5
+
+# --- Dashboard ---
+dashboard:
+  ros__parameters:
+    use_hw_odom: true
+    freshness_stale_sec: 2.0
+    sim_odom_scale: 1.55
+    hw_odom_scale: 1.0
+    hw_odom_yaw_scale: 1.0
+
+# --- Health Monitor ---
+health_monitor:
+  ros__parameters:
+    publish_period: 0.5
+    timeout_perception: 1.5
+    timeout_state: 2.0
+    timeout_control: 1.0
+    timeout_odom: 1.0
+    timeout_joy: 2.0
+
+# --- Servo Controller ---
+servo_controller:
+  ros__parameters:
+    servo_steer_id: 4
+    servo_center: 90
+    servo_range: 50
+    speed_levels: [15, 25, 40, 60, 100]
+    default_speed_index: 1
+    joy_timeout: 0.8
+    auto_cmd_timeout: 0.4
+    unlock_requires_neutral: true
+    unlock_neutral_threshold: 0.15
+    hw_heartbeat_sec: 1.0
+    hw_fail_limit: 5
+    ticks_per_meter: 1050.0
+    drive_motor_index: 0        # which encoder channel to use (0=FL, 1=FR, 2=RL, 3=RR)
+    odom_distance_scale: 1.0
+    odom_yaw_scale: 1.0
+    encoder_jump_threshold: 800.0
+    max_linear_velocity: 1.0
+    max_angular_velocity: 6.0
+    odom_reverse_polarity: false
+    wheel_base: 0.14
+    steering_max_deg: 50.0
+    odom_vel_alpha: 0.3
+    odom_velocity_deadband: 0.02
+    publish_loop_stats: true
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
