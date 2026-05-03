@@ -368,10 +368,13 @@ class LineFollowerCamera(Node):
 
             if invert and len(raw_regions) > 0:
                 # INVERT MODE: the white region IS the lane.
-                # Pick the widest region (most likely the lane).
-                best = max(raw_regions, key=lambda r: r[2] - r[1])
-                left_x = best[1]   # left edge of lane
-                right_x = best[2]  # right edge of lane
+                # Pick the region whose center is closest to expected lane center.
+                expected_center = (expected_left + expected_right) // 2
+                best = min(raw_regions, key=lambda r: abs(r[0] - expected_center))
+                # Only accept if within search radius of expected center
+                if abs(best[0] - expected_center) < search_radius:
+                    left_x = best[1]   # left edge of lane
+                    right_x = best[2]  # right edge of lane
 
             elif len(raw_regions) > 0:
                 # BORDER MODE (original): find left/right white border lines
