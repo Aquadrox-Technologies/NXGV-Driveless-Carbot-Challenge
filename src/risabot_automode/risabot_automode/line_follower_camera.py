@@ -436,12 +436,18 @@ class LineFollowerCamera(Node):
                 continue
 
             # Save the bottom-most valid row as the expectation for the NEXT frame
-            # Use EMA smoothing to prevent frame-to-frame jumps
+            # Use aggressive EMA smoothing to prevent frame-to-frame jumps
             if valid_count == 1:
-                smooth = 0.4  # how fast expectations can shift (lower = more stable)
+                smooth = 0.15  # low = very stable (slower to react but no flickering)
                 if self._expected_left is not None:
-                    self._expected_left = int(smooth * expected_left + (1 - smooth) * self._expected_left)
-                    self._expected_right = int(smooth * expected_right + (1 - smooth) * self._expected_right)
+                    # Clamp jump: don't allow expected to shift more than 15px/frame
+                    max_shift = 15
+                    new_left = int(smooth * expected_left + (1 - smooth) * self._expected_left)
+                    new_right = int(smooth * expected_right + (1 - smooth) * self._expected_right)
+                    new_left = max(self._expected_left - max_shift, min(self._expected_left + max_shift, new_left))
+                    new_right = max(self._expected_right - max_shift, min(self._expected_right + max_shift, new_right))
+                    self._expected_left = new_left
+                    self._expected_right = new_right
                 else:
                     self._expected_left = expected_left
                     self._expected_right = expected_right
@@ -475,9 +481,11 @@ class LineFollowerCamera(Node):
 
             # ── 1. Resize — ALWAYS force to fixed size ────────────────────
             bgr = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+            orig_h, orig_w = bgr.shape[:2]
             resize_w = self._param_cache['resize_width']
             target_h = int(resize_w * 3 / 4)  # 4:3 aspect → 320x240
-            bgr = cv2.resize(bgr, (resize_w, target_h))
+            if orig_w != resize_w or orig_h != target_h:
+                bgr = cv2.resize(bgr, (resize_w, target_h))
             h, w = target_h, resize_w
 
             image_center = w / 2.0
