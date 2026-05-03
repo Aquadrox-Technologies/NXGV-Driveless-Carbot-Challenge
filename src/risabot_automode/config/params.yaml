@@ -80,14 +80,15 @@ line_follower_camera:
     n_scanlines: 8
     min_valid_scanlines: 2
     min_line_width_px: 5
-    crop_ratio_base: 0.4
-    search_radius_px: 80         # blob-to-expected match radius (was 60px hard-coded)
-    # Thresholding — white border detection
-    white_threshold: 200          # fixed threshold for white borders (raise if floor triggers)
-    use_otsu: false               # Otsu fails on 3-tone tracks (black lane + gray floor + white border)
+    crop_ratio_base: 0.55           # raised from 0.4 — robot sees further ahead
+    search_radius_px: 80             # blob-to-expected match radius
+    # Thresholding — lane detection
+    white_threshold: 100              # inverted mode: pixels BELOW this = lane (tune 80-120)
+    use_otsu: false
+    invert_binary: true               # true = detect dark lane, false = detect white borders
     # Morphological cleanup
-    morph_open_size: 3            # remove noise blobs (0=disable)
-    morph_close_size: 5           # fill small gaps in lane lines (0=disable)
+    morph_open_size: 3                # remove noise blobs (0=disable)
+    morph_close_size: 5               # fill small gaps in lane lines (0=disable)
     clahe_enabled: true
     clahe_clip_limit: 2.0
     # IPM — Bird's Eye View (DISABLED: camera is horizontal at 8.5cm, IPM distorts)

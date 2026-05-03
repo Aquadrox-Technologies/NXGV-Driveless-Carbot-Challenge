@@ -119,11 +119,12 @@ class LineFollowerCamera(Node):
         self.declare_parameter('n_scanlines', 8)
         self.declare_parameter('min_valid_scanlines', 2)
         self.declare_parameter('min_line_width_px', 5)
-        self.declare_parameter('crop_ratio_base', 0.4)
+        self.declare_parameter('crop_ratio_base', 0.55)
         self.declare_parameter('search_radius_px', 80)  # blob-to-expected match radius
-        # Thresholding — white border detection
-        self.declare_parameter('white_threshold', 200)  # fixed gray threshold for white borders
-        self.declare_parameter('use_otsu', False)        # True = Otsu auto-threshold (unreliable on 3-tone tracks)
+        # Thresholding
+        self.declare_parameter('white_threshold', 100)   # gray threshold (inverted: pixels BELOW this = lane)
+        self.declare_parameter('use_otsu', False)         # True = Otsu auto-threshold
+        self.declare_parameter('invert_binary', True)     # True = detect dark lane, False = detect white borders
         # Morphological cleanup
         self.declare_parameter('morph_open_size', 3)     # erosion→dilation kernel to remove noise (0=disable)
         self.declare_parameter('morph_close_size', 5)    # dilation→erosion kernel to fill gaps (0=disable)
@@ -211,6 +212,7 @@ class LineFollowerCamera(Node):
             'search_radius_px':        int(self.get_parameter('search_radius_px').value),
             'white_threshold':         int(self.get_parameter('white_threshold').value),
             'use_otsu':                bool(self.get_parameter('use_otsu').value),
+            'invert_binary':           bool(self.get_parameter('invert_binary').value),
             'morph_open_size':         int(self.get_parameter('morph_open_size').value),
             'morph_close_size':        int(self.get_parameter('morph_close_size').value),
             'clahe_enabled':           bool(self.get_parameter('clahe_enabled').value),
@@ -304,9 +306,11 @@ class LineFollowerCamera(Node):
     # Scanline detection — Cytron-style pixel scanning
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _find_all_white_regions(self, row: np.ndarray, min_w: int, max_w: int) -> List[int]:
-        """Find the centers of all white regions within a width range to ignore giant background blobs."""
-        centers = []
+    def _find_all_white_regions(self, row: np.ndarray, min_w: int, max_w: int) -> List[Tuple[int, int, int]]:
+        """Find all white regions within a width range.
+        Returns list of (center, start, end) tuples.
+        """
+        regions = []
         in_white = False
         white_start = 0
         for x in range(len(row)):
@@ -318,13 +322,13 @@ class LineFollowerCamera(Node):
                 if in_white:
                     width = x - white_start
                     if min_w <= width <= max_w:
-                        centers.append((white_start + x) // 2)
+                        regions.append(((white_start + x) // 2, white_start, x))
                     in_white = False
         if in_white:
             width = len(row) - white_start
             if min_w <= width <= max_w:
-                centers.append((white_start + len(row)) // 2)
-        return centers
+                regions.append(((white_start + len(row)) // 2, white_start, len(row)))
+        return regions
 
     def _detect_scanlines(
         self, binary: np.ndarray, crop_h: int, w: int
@@ -332,7 +336,9 @@ class LineFollowerCamera(Node):
         """Run robust multi-scanline blob matching."""
         n_scanlines = self._param_cache['n_scanlines']
         min_width = self._param_cache['min_line_width_px']
-        max_width = w // 3  # dynamic: ignore blobs wider than 1/3 of image (walls, huge glare)
+        invert = self._param_cache.get('invert_binary', False)
+        # In invert mode the lane is wider than border lines
+        max_width = w * 2 // 3 if invert else w // 3
         search_radius = self._param_cache['search_radius_px']
 
         left_points = []
@@ -355,14 +361,22 @@ class LineFollowerCamera(Node):
             y_in_crop = max(0, min(crop_h - 1, y_in_crop))
 
             row = binary[y_in_crop, :]
-            regions = self._find_all_white_regions(row, min_width, max_width)
+            raw_regions = self._find_all_white_regions(row, min_width, max_width)
 
             left_x = None
             right_x = None
 
-            if len(regions) > 0:
+            if invert and len(raw_regions) > 0:
+                # INVERT MODE: the white region IS the lane.
+                # Pick the widest region (most likely the lane).
+                best = max(raw_regions, key=lambda r: r[2] - r[1])
+                left_x = best[1]   # left edge of lane
+                right_x = best[2]  # right edge of lane
+
+            elif len(raw_regions) > 0:
+                # BORDER MODE (original): find left/right white border lines
+                regions = [r[0] for r in raw_regions]  # extract centers only
                 if i == 0 and (self._expected_left is None or self._expected_right is None):
-                    # No prior knowledge, find the best pair based on track width
                     if len(regions) >= 2:
                         target_w = self.last_lane_widths.get(0, w // 2)
                         best_pair = None
@@ -379,16 +393,12 @@ class LineFollowerCamera(Node):
                         if regions[0] < w // 2: left_x = regions[0]
                         else: right_x = regions[0]
                 else:
-                    # Match blobs to expected tracks (parameterized search radius)
                     best_left = min(regions, key=lambda x: abs(x - expected_left))
                     if abs(best_left - expected_left) < search_radius:
                         left_x = best_left
-                    
                     best_right = min(regions, key=lambda x: abs(x - expected_right))
                     if abs(best_right - expected_right) < search_radius:
                         right_x = best_right
-                    
-                    # Prevent both lines snapping to the exact same region
                     if left_x == right_x and left_x is not None:
                         if abs(left_x - expected_left) < abs(right_x - expected_right):
                             right_x = None
@@ -483,18 +493,21 @@ class LineFollowerCamera(Node):
             blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
             if self._param_cache['use_otsu']:
-                # Otsu auto-threshold (unreliable on 3-tone tracks)
                 _, binary = cv2.threshold(
                     blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
                 )
             else:
-                # Fixed threshold tuned for white border detection
-                # On a black-lane + greyish-white-floor track, white borders
-                # are the brightest objects. A high threshold isolates them.
                 thresh_val = self._param_cache['white_threshold']
-                _, binary = cv2.threshold(
-                    blurred, thresh_val, 255, cv2.THRESH_BINARY
-                )
+                if self._param_cache.get('invert_binary', False):
+                    # INVERT: pixels BELOW threshold (dark lane) → white
+                    _, binary = cv2.threshold(
+                        blurred, thresh_val, 255, cv2.THRESH_BINARY_INV
+                    )
+                else:
+                    # NORMAL: pixels ABOVE threshold (white borders) → white
+                    _, binary = cv2.threshold(
+                        blurred, thresh_val, 255, cv2.THRESH_BINARY
+                    )
 
             # Morphological cleanup: remove noise then fill small gaps
             open_sz = self._param_cache['morph_open_size']
