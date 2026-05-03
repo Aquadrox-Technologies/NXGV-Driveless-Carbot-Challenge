@@ -468,11 +468,10 @@ class DashboardNode(Node):
                 
         try:
             cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            # Resize
-            h, w = cv_image.shape[:2]
-            scale = min(640 / w, 480 / h)
-            if scale < 1.0:
-                cv_image = cv2.resize(cv_image, (int(w * scale), int(h * scale)))
+            # Force to fixed 320x240 — prevents visual jumping when source sends varying sizes
+            ih, iw = cv_image.shape[:2]
+            if iw != 320 or ih != 240:
+                cv_image = cv2.resize(cv_image, (320, 240))
             _, jpeg = cv2.imencode('.jpg', cv_image, [cv2.IMWRITE_JPEG_QUALITY, 60])
             
             with self.jpeg_condition:
