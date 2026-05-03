@@ -276,6 +276,7 @@ class ServoControllerV9(Node):
                     self.servo_steer_id = int(p.value)
                 elif p.name == 'servo_center':
                     self.servo_center = int(p.value)
+                    self.target_servo_val = self.servo_center  # immediately apply new neutral
                 elif p.name == 'servo_range':
                     self.servo_range = int(p.value)
                 elif p.name == 'speed_levels':
