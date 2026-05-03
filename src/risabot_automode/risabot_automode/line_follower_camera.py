@@ -473,14 +473,12 @@ class LineFollowerCamera(Node):
             if dt <= 0.0 or dt > 0.5:
                 dt = 0.033  # assume ~30 fps
 
-            # ── 1. Resize ───────────────────────────────────────────────────
+            # ── 1. Resize — ALWAYS force to fixed size ────────────────────
             bgr = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-            h, w = bgr.shape[:2]
             resize_w = self._param_cache['resize_width']
-            if resize_w > 0 and w > resize_w:
-                scale = resize_w / float(w)
-                bgr = cv2.resize(bgr, (resize_w, int(h * scale)))
-                h, w = bgr.shape[:2]
+            target_h = int(resize_w * 3 / 4)  # 4:3 aspect → 320x240
+            bgr = cv2.resize(bgr, (resize_w, target_h))
+            h, w = target_h, resize_w
 
             image_center = w / 2.0
 
