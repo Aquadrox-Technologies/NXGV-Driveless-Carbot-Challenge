@@ -473,7 +473,7 @@ class ServoControllerV9(Node):
         
         # Steering
         angle_offset = msg.angular.z * float(self.servo_range)
-        steer_angle = int(self.servo_center - angle_offset)
+        steer_angle = int(self.servo_center + angle_offset)
         
         # Clamp
         pwm_val = max(-255, min(255, pwm_val))
