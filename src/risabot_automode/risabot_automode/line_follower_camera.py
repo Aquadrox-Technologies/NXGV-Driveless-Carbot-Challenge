@@ -479,14 +479,10 @@ class LineFollowerCamera(Node):
             if dt <= 0.0 or dt > 0.5:
                 dt = 0.033  # assume ~30 fps
 
-            # ── 1. Resize — ALWAYS force to fixed size ────────────────────
+            # ── 1. Resize — ALWAYS force to exactly 320x240 ──────────────
             bgr = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-            orig_h, orig_w = bgr.shape[:2]
-            resize_w = self._param_cache['resize_width']
-            target_h = int(resize_w * 3 / 4)  # 4:3 aspect → 320x240
-            if orig_w != resize_w or orig_h != target_h:
-                bgr = cv2.resize(bgr, (resize_w, target_h))
-            h, w = target_h, resize_w
+            bgr = cv2.resize(bgr, (320, 240))
+            h, w = 240, 320
 
             image_center = w / 2.0
 
@@ -677,7 +673,7 @@ class LineFollowerCamera(Node):
                 # Compose into full-frame debug image for dashboard
                 debug_full = bgr.copy()
                 debug_full[h - crop_h:, :] = debug
-                # Draw crop boundary
+                # Draw crop boundary (fixed position)
                 cv2.line(debug_full, (0, h - crop_h), (w, h - crop_h), (255, 0, 255), 1)
 
                 self.debug_pub.publish(self.bridge.cv2_to_imgmsg(debug_full, encoding='bgr8'))
