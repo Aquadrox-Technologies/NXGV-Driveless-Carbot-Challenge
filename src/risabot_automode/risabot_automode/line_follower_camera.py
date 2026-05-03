@@ -120,7 +120,7 @@ class LineFollowerCamera(Node):
         self.declare_parameter('min_valid_scanlines', 2)
         self.declare_parameter('min_line_width_px', 5)
         self.declare_parameter('crop_ratio_base', 0.55)
-        self.declare_parameter('search_radius_px', 80)  # blob-to-expected match radius
+        self.declare_parameter('search_radius_px', 50)   # blob-to-expected match radius
         # Thresholding
         self.declare_parameter('white_threshold', 100)   # gray threshold (inverted: pixels BELOW this = lane)
         self.declare_parameter('use_otsu', False)         # True = Otsu auto-threshold
@@ -436,9 +436,15 @@ class LineFollowerCamera(Node):
                 continue
 
             # Save the bottom-most valid row as the expectation for the NEXT frame
+            # Use EMA smoothing to prevent frame-to-frame jumps
             if valid_count == 1:
-                self._expected_left = expected_left
-                self._expected_right = expected_right
+                smooth = 0.4  # how fast expectations can shift (lower = more stable)
+                if self._expected_left is not None:
+                    self._expected_left = int(smooth * expected_left + (1 - smooth) * self._expected_left)
+                    self._expected_right = int(smooth * expected_right + (1 - smooth) * self._expected_right)
+                else:
+                    self._expected_left = expected_left
+                    self._expected_right = expected_right
 
             left_points.append((int(left_x), y_in_crop))
             right_points.append((int(right_x), y_in_crop))
