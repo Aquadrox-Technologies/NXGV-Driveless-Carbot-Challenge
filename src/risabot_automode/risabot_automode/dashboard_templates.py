@@ -1503,7 +1503,8 @@ const PARAM_TIPS = {
   hw_odom_yaw_scale:'Scale for hardware odometry yaw',
   // Servo controller
   servo_center:'Servo neutral angle (90=default). Adjust if robot drifts left/right when steering is centered',
-  servo_range:'Max steering swing from center (50=default). Servo moves from center-range to center+range',
+  servo_range_left:'Left steering range from center (50=default). Increase for sharper left turns',
+  servo_range_right:'Right steering range from center (50=default). Increase for sharper right turns',
   servo_steer_id:'Servo channel for steering (4=default)',
   auto_cmd_timeout:'Auto cmd stream timeout before forcing manual stop',
   unlock_requires_neutral:'Require neutral sticks after unlock before driving',
@@ -1579,7 +1580,7 @@ const PARAM_GROUPS = [
     'min_obstacle_distance','heartbeat_sec'
   ]},
   { node: 'servo_controller', label: 'Servo/Odom', params: [
-    'servo_center','servo_range','servo_steer_id',
+    'servo_center','servo_range_left','servo_range_right','servo_steer_id',
     'joy_timeout','auto_cmd_timeout','unlock_requires_neutral','unlock_neutral_threshold',
     'ticks_per_meter','drive_motor_index','odom_distance_scale','odom_yaw_scale',
     'encoder_jump_threshold','max_linear_velocity','max_angular_velocity',

@@ -51,7 +51,8 @@ from .topics import (
 # --- Defaults ---
 DEFAULT_SERVO_STEER_ID = 4
 DEFAULT_SERVO_CENTER = 90
-DEFAULT_SERVO_RANGE = 50   # 90 +/- 50 = [40, 140]
+DEFAULT_SERVO_RANGE_LEFT = 50   # center - 50 = 40 (physical left)
+DEFAULT_SERVO_RANGE_RIGHT = 50  # center + 50 = 140 (physical right)
 
 CHALLENGE_STATES = [
     'LANE_FOLLOW', 'OBSTRUCTION', 'ROUNDABOUT',
@@ -113,7 +114,8 @@ class ServoControllerV9(Node):
         # --- Parameters ---
         self.declare_parameter('servo_steer_id', DEFAULT_SERVO_STEER_ID)
         self.declare_parameter('servo_center', DEFAULT_SERVO_CENTER)
-        self.declare_parameter('servo_range', DEFAULT_SERVO_RANGE)
+        self.declare_parameter('servo_range_left', DEFAULT_SERVO_RANGE_LEFT)
+        self.declare_parameter('servo_range_right', DEFAULT_SERVO_RANGE_RIGHT)
         self.declare_parameter('speed_levels', [15, 25, 40, 60, 100])
         self.declare_parameter('default_speed_index', 1)
         self.declare_parameter('joy_timeout', 0.8)
@@ -143,7 +145,8 @@ class ServoControllerV9(Node):
 
         self.servo_steer_id = int(self._param_cache['servo_steer_id'])
         self.servo_center = int(self._param_cache['servo_center'])
-        self.servo_range = int(self._param_cache['servo_range'])
+        self.servo_range_left = int(self._param_cache['servo_range_left'])
+        self.servo_range_right = int(self._param_cache['servo_range_right'])
 
         # Connect to Hardware
         self.bot = None
@@ -237,7 +240,8 @@ class ServoControllerV9(Node):
         self._param_cache = {
             'servo_steer_id': int(self.get_parameter('servo_steer_id').value),
             'servo_center': int(self.get_parameter('servo_center').value),
-            'servo_range': int(self.get_parameter('servo_range').value),
+            'servo_range_left': int(self.get_parameter('servo_range_left').value),
+            'servo_range_right': int(self.get_parameter('servo_range_right').value),
             'speed_levels': list(self.get_parameter('speed_levels').value),
             'default_speed_index': int(self.get_parameter('default_speed_index').value),
             'joy_timeout': float(self.get_parameter('joy_timeout').value),
@@ -277,8 +281,10 @@ class ServoControllerV9(Node):
                 elif p.name == 'servo_center':
                     self.servo_center = int(p.value)
                     self.target_servo_val = self.servo_center  # immediately apply new neutral
-                elif p.name == 'servo_range':
-                    self.servo_range = int(p.value)
+                elif p.name == 'servo_range_left':
+                    self.servo_range_left = int(p.value)
+                elif p.name == 'servo_range_right':
+                    self.servo_range_right = int(p.value)
                 elif p.name == 'speed_levels':
                     self.speed_levels = list(p.value)
                     if not self.speed_levels:
@@ -435,18 +441,16 @@ class ServoControllerV9(Node):
             # Drive (PWM)
             motor_pwm = int(throttle_raw * self.current_speed_limit * 2.55)
             
-            # Steer (Servo 4)
-            # Center (90) - (Input * Range)
-            # Left (+1) -> 90 - 50 = 40 (Right?)
-            # Wait, Main logic: target_angle -= joy_val * SWING_LEFT
-            # joy > 0 (Left Stick?) -> Angle Decrease
-            # If Angle Decrease = Right Turn? Or Left Turn?
-            # Standard: Left Stick -> Left Turn.
-            # If main branch says: joy > 0 -> Angle Decrease...
-            # And user says "push left and right sometimes steers correctly".
-            # I will trust the main branch math: 90 - (joy * 50)
-            steer_angle = int(self.servo_center - (steer_raw * self.servo_range))
-            steer_angle = max(self.servo_center - self.servo_range, min(self.servo_center + self.servo_range, steer_angle))
+            # Steer (Servo 4) — asymmetric left/right ranges
+            # steer_raw > 0 (joystick left) → servo angle decreases → uses range_left
+            # steer_raw < 0 (joystick right) → servo angle increases → uses range_right
+            if steer_raw >= 0:
+                steer_angle = int(self.servo_center - (steer_raw * self.servo_range_left))
+            else:
+                steer_angle = int(self.servo_center - (steer_raw * self.servo_range_right))
+            min_angle = self.servo_center - self.servo_range_left
+            max_angle = self.servo_center + self.servo_range_right
+            steer_angle = max(min_angle, min(max_angle, steer_angle))
 
             self.apply_hardware(motor_pwm, steer_angle)
 
@@ -471,13 +475,20 @@ class ServoControllerV9(Node):
         # Auto Mode Driving
         pwm_val = int(msg.linear.x * 255.0)
         
-        # Steering
-        angle_offset = msg.angular.z * float(self.servo_range)
+        # Steering — asymmetric left/right ranges
+        # angular_z > 0 → servo increases → physical right → uses range_right
+        # angular_z < 0 → servo decreases → physical left → uses range_left
+        if msg.angular.z >= 0:
+            angle_offset = msg.angular.z * float(self.servo_range_right)
+        else:
+            angle_offset = msg.angular.z * float(self.servo_range_left)
         steer_angle = int(self.servo_center + angle_offset)
         
-        # Clamp
+        # Clamp to asymmetric limits
         pwm_val = max(-255, min(255, pwm_val))
-        steer_angle = max(self.servo_center - self.servo_range, min(self.servo_center + self.servo_range, steer_angle))
+        min_angle = self.servo_center - self.servo_range_left
+        max_angle = self.servo_center + self.servo_range_right
+        steer_angle = max(min_angle, min(max_angle, steer_angle))
         
         self.apply_hardware(pwm_val, steer_angle)
         
