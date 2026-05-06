@@ -1857,7 +1857,145 @@ TEACH_HTML = """<!DOCTYPE html>
       <button class="cam-btn" onclick="setCam('obstacle')" id="btn-obstacle">Obstacle Edge</button>
     </div>
   </div>
-  
+
+  <!-- LiDAR 2D Top-Down View -->
+  <div class="cam-panel" style="margin-top:12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:0 4px 8px;">
+      <h2 style="margin:0; font-size:1.1em; color:var(--text); font-weight:700;">LiDAR Top View</h2>
+      <div id="lidarStatus" style="font-size:0.85em; font-weight:600; color:var(--muted);">● Waiting</div>
+    </div>
+    <canvas id="lidarCanvas" width="320" height="320" style="width:100%; border-radius:12px; background:#0a0a0f; border:1px solid rgba(255,255,255,0.08);"></canvas>
+  </div>
+
+  <script>
+  // ── LiDAR 2D Visualization ──
+  (function(){
+    const canvas = document.getElementById('lidarCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const CX = W/2, CY = H/2;
+    const SCALE = 200; // pixels per meter (0.8m range fills canvas)
+    let lastState = '';
+
+    function drawLidar(points, state, tunnelDetected){
+      ctx.clearRect(0,0,W,H);
+
+      // Background grid circles (0.2m, 0.4m, 0.6m)
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 1;
+      [0.2, 0.4, 0.6].forEach(r => {
+        ctx.beginPath();
+        ctx.arc(CX, CY, r*SCALE, 0, Math.PI*2);
+        ctx.stroke();
+      });
+
+      // Distance labels
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.font = '10px Inter, sans-serif';
+      ctx.textAlign = 'left';
+      [0.2, 0.4, 0.6].forEach(r => {
+        ctx.fillText(r.toFixed(1)+'m', CX+r*SCALE+2, CY-2);
+      });
+
+      // Tunnel detection windows (left: +30° to +90°, right: -30° to -90°)
+      // In canvas: 0° = right, angles go CW. Robot forward = up = -90° canvas.
+      // Robot frame: 0° = forward (up on screen), positive = left
+      ctx.globalAlpha = 0.08;
+      // Left window (blue)
+      ctx.fillStyle = '#4fc3f7';
+      ctx.beginPath();
+      ctx.moveTo(CX, CY);
+      // Robot 30° left = canvas -90°-30° = -120° = 240°
+      // Robot 90° left = canvas -90°-90° = -180° = 180°
+      ctx.arc(CX, CY, 0.6*SCALE, (-90-90)*Math.PI/180, (-90-30)*Math.PI/180);
+      ctx.closePath();
+      ctx.fill();
+      // Right window (red)
+      ctx.fillStyle = '#ef5350';
+      ctx.beginPath();
+      ctx.moveTo(CX, CY);
+      ctx.arc(CX, CY, 0.6*SCALE, (-90+30)*Math.PI/180, (-90+90)*Math.PI/180);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+
+      // Forward direction indicator
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.setLineDash([4,4]);
+      ctx.beginPath();
+      ctx.moveTo(CX, CY);
+      ctx.lineTo(CX, CY - 0.7*SCALE);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Draw LiDAR points
+      if(points && points.length > 0){
+        points.forEach(p => {
+          // Robot frame: x=forward, y=left
+          // Canvas: up=forward, left=left
+          let px = CX - p.y * SCALE;  // y-left maps to screen-left
+          let py = CY - p.x * SCALE;  // x-forward maps to screen-up
+
+          // Color by distance
+          let dist = Math.sqrt(p.x*p.x + p.y*p.y);
+          if(dist < 0.3) ctx.fillStyle = '#ff5252';       // red = close
+          else if(dist < 0.5) ctx.fillStyle = '#ffd740';  // yellow = medium
+          else ctx.fillStyle = '#69f0ae';                  // green = far
+
+          ctx.beginPath();
+          ctx.arc(px, py, 2.5, 0, Math.PI*2);
+          ctx.fill();
+        });
+      }
+
+      // Robot icon (center)
+      ctx.fillStyle = '#1e88e5';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      // Robot body
+      ctx.beginPath();
+      ctx.moveTo(CX, CY - 10);     // nose (forward)
+      ctx.lineTo(CX - 7, CY + 6);  // left rear
+      ctx.lineTo(CX + 7, CY + 6);  // right rear
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Labels
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '9px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('FRONT', CX, 14);
+      ctx.fillText('L', 12, CY+4);
+      ctx.fillText('R', W-12, CY+4);
+
+      // Tunnel status indicator
+      let statusEl = document.getElementById('lidarStatus');
+      if(tunnelDetected){
+        statusEl.innerHTML = '<span style="color:#69f0ae;">● TUNNEL DETECTED</span>';
+      } else if(points && points.length > 0){
+        statusEl.innerHTML = '<span style="color:#4fc3f7;">● ' + points.length + ' pts</span>';
+      } else {
+        statusEl.innerHTML = '<span style="color:var(--muted);">● No data</span>';
+      }
+    }
+
+    // Poll LiDAR data
+    function fetchLidar(){
+      Promise.all([
+        fetch('/lidar_data').then(r=>r.json()).catch(()=>[]),
+        fetch('/data').then(r=>r.json()).catch(()=>({}))
+      ]).then(([pts, data]) => {
+        let tunnel = data.tunnel_detected || false;
+        let state = data.state || '';
+        drawLidar(pts, state, tunnel);
+      });
+    }
+    setInterval(fetchLidar, 200);
+    fetchLidar();
+  })();
+  </script>
+
   <div class="data-panel">
     <div class="data-card">
       <h2>Distance Travelled</h2>

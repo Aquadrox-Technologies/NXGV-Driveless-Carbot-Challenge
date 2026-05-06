@@ -25,7 +25,7 @@ from rcl_interfaces.msg import Parameter as RosParameter, ParameterType, Paramet
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.node import Node
 from rclpy.qos import QoSPresetProfiles
-from sensor_msgs.msg import Image, Joy
+from sensor_msgs.msg import Image, Joy, LaserScan
 from std_msgs.msg import Bool, Float32, String
 
 from .topics import (
@@ -114,6 +114,11 @@ class DashboardNode(Node):
         self.frame_id = 0
         self.active_camera_view = 'raw'
         self.initial_joy_axes = None
+
+        # LiDAR scan storage for 2D visualization
+        self.lidar_points = []  # [{x, y}]
+        self.lidar_lock = threading.Lock()
+        self.lidar_angle_offset = 1.5708  # default, same as tunnel node
         
         # Client tracking for performance
         self.num_camera_clients = 0
@@ -212,6 +217,9 @@ class DashboardNode(Node):
         self.create_subscription(Image, CAMERA_DEBUG_LINE_TOPIC, lambda msg: self._image_cb(msg, 'line_follower'), qos)
         self.create_subscription(Image, CAMERA_DEBUG_TL_TOPIC, lambda msg: self._image_cb(msg, 'traffic_light'), qos)
         self.create_subscription(Image, CAMERA_DEBUG_OBS_TOPIC, lambda msg: self._image_cb(msg, 'obstacle'), qos)
+
+        # LiDAR scan for 2D visualization
+        self.create_subscription(LaserScan, '/scan', self._scan_cb, qos)
 
         # Simulate odometry since hardware might not publish
         self.create_timer(0.05, self._simulate_odom_loop)
@@ -457,6 +465,26 @@ class DashboardNode(Node):
         name = msg.data.upper()
         self._set('ctrl_state_name', name, 'set_challenge')
 
+    def _scan_cb(self, msg: LaserScan) -> None:
+        """Convert LiDAR scan to Cartesian points for 2D visualization.
+        Downsamples to every 4th point to keep bandwidth low."""
+        import math
+        pts = []
+        offset = self.lidar_angle_offset
+        step = 4  # downsample: take every 4th point
+        for i in range(0, len(msg.ranges), step):
+            r = msg.ranges[i]
+            if not (msg.range_min <= r <= msg.range_max):
+                continue
+            if math.isnan(r) or math.isinf(r) or r > 2.0:
+                continue
+            angle = msg.angle_min + i * msg.angle_increment + offset
+            x = round(r * math.cos(angle), 3)
+            y = round(r * math.sin(angle), 3)
+            pts.append({'x': x, 'y': y})
+        with self.lidar_lock:
+            self.lidar_points = pts
+
     def _image_cb(self, msg: Image, view_name: str) -> None:
         """Convert ROS Image to JPEG conditionally, tracking active view and clients."""
         if self.bridge is None or view_name != self.active_camera_view:
@@ -618,7 +646,7 @@ _node_ref = None
 class DashboardHandler(http.server.BaseHTTPRequestHandler):
     """HTTP handler for dashboard HTML, JSON, and MJPEG streams."""
     def do_GET(self):
-        """Serve dashboard HTML, JSON data, and MJPEG camera stream."""
+        """Serve dashboard HTML, JSON data, MJPEG camera stream, and LiDAR data."""
         if self.path == '/data':
             data = _node_ref.get_json() if _node_ref else '{}'
             self.send_response(200)
@@ -626,6 +654,16 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(data.encode())
+        elif self.path == '/lidar_data':
+            pts = []
+            if _node_ref:
+                with _node_ref.lidar_lock:
+                    pts = list(_node_ref.lidar_points)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(pts).encode())
         elif self.path.startswith('/camera_feed'):
             self.send_response(200)
             self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
