@@ -279,9 +279,10 @@ class TunnelWallFollower(Node):
                 left_dist, left_angle = left_fit
                 right_dist, right_angle = right_fit
 
-                # Distance error: positive = closer to right → steer left
+                # Distance error: positive = closer to right wall → steer left
+                # negative = closer to left wall → steer right
                 target = float(self._param_cache['target_center_dist'])
-                dist_error = (right_dist - left_dist) + target
+                dist_error = (left_dist - right_dist) + target
 
                 # Heading error: wall angle in robot frame
                 # If robot rotated CW by θ, wall_angle ≈ -θ
@@ -329,7 +330,7 @@ class TunnelWallFollower(Node):
                 # RANSAC failed on one side — fall back to mean distances
                 left_avg = float(np.mean(left_arr[:, 1])) if has_left else 0.0
                 right_avg = float(np.mean(right_arr[:, 1])) if has_right else 0.0
-                dist_error = (-right_avg - left_avg)
+                dist_error = (left_avg + right_avg)
 
                 now = self.get_clock().now()
                 dt = (now - self.last_time).nanoseconds / 1e9
