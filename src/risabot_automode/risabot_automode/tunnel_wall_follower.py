@@ -290,7 +290,7 @@ class TunnelWallFollower(Node):
                 angular_z = max(-max_ang, min(max_ang, angular_z))
 
                 cmd.linear.x = float(self._param_cache['forward_speed'])
-                cmd.angular.z = angular_z
+                cmd.angular.z = -angular_z  # negate: servo uses inverted convention
 
                 self.last_lateral_error = lateral_error
                 self.last_heading_error = heading_error
