@@ -41,12 +41,12 @@ class TunnelWallFollower(Node):
         # --- Parameters ---
         self.declare_parameter('target_center_dist', 0.0)
         self.declare_parameter('forward_speed', 0.12)
-        self.declare_parameter('kp', 1.5)          # increased for sharper response
-        self.declare_parameter('kd', 0.1)          # reduced - derivative amplifies noise
-        self.declare_parameter('kp_heading', 0.6)
-        self.declare_parameter('kd_heading', 0.05) # reduced
-        self.declare_parameter('max_angular', 1.0) # allow sharper turns
-        self.declare_parameter('output_alpha', 0.4) # EMA smoothing (0=no change, 1=raw)
+        self.declare_parameter('kp', 5.0)          # dramatically increased to match lane follower aggressiveness
+        self.declare_parameter('kd', 0.5)          # increased to dampen the higher P gain
+        self.declare_parameter('kp_heading', 1.0)  # stronger heading correction
+        self.declare_parameter('kd_heading', 0.1)
+        self.declare_parameter('max_angular', 2.0) # increased from 1.0 to 2.0 (same as lane follower)
+        self.declare_parameter('output_alpha', 0.4)
         self.declare_parameter('left_angle_min', 0.26)        # ~15°
         self.declare_parameter('left_angle_max', 2.09)        # ~120°
         self.declare_parameter('right_angle_min', -2.09)      # ~-120°

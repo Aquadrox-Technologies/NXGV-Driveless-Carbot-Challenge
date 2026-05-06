@@ -160,11 +160,11 @@ tunnel_wall_follower:
   ros__parameters:
     target_center_dist: 0.0
     forward_speed: 0.12           # slightly faster for better inertia
-    kp: 1.5                       # sharper centering response
-    kd: 0.1                       # low derivative - reduces noise amplification
-    kp_heading: 0.6               # moderate heading correction
-    kd_heading: 0.05              # very low - heading derivative too noisy
-    max_angular: 1.0              # allow sharper turns
+    kp: 5.0                       # sharply increased to match lane follower steering magnitude
+    kd: 0.5                       # derivative to dampen the high P gain
+    kp_heading: 1.0               # stronger heading correction
+    kd_heading: 0.1               
+    max_angular: 2.0              # allow sharp turns (same limit as lane follower)
     output_alpha: 0.4             # EMA smoothing (0=frozen, 1=raw/noisy)
     left_angle_min: 0.26              # 15° (was 30° — catch walls near the front)
     left_angle_max: 2.09              # 120° (was 90° — catch walls slightly behind)
