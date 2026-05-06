@@ -159,20 +159,20 @@ boom_gate_detector:
 tunnel_wall_follower:
   ros__parameters:
     target_center_dist: 0.0
-    forward_speed: 0.15
-    kp: 1.2
-    kd: 0.3
-    kp_heading: 0.8
-    kd_heading: 0.2
-    max_angular: 0.8
+    forward_speed: 0.10            # start slow for safety (increase after testing)
+    kp: 0.8                        # centering gain (lower = less aggressive)
+    kd: 0.4                        # centering damping (higher = less oscillation)
+    kp_heading: 0.5                # heading alignment gain
+    kd_heading: 0.3                # heading damping
+    max_angular: 0.6               # limit max steering to prevent wild turns
     left_angle_min: 0.52
     left_angle_max: 1.57
     right_angle_min: -1.57
     right_angle_max: -0.52
     lidar_angle_offset: 3.1416
-    min_wall_points: 3
-    max_wall_dist: 0.60
-    ransac_threshold: 0.02
+    min_wall_points: 5             # require 5 pts per side (more robust)
+    max_wall_dist: 0.80            # detect walls up to 80cm away
+    ransac_threshold: 0.03         # 3cm inlier tolerance (forgiving for rough walls)
     ransac_iterations: 50
     tunnel_hysteresis_frames: 3
     heartbeat_sec: 0.2
