@@ -40,12 +40,13 @@ class TunnelWallFollower(Node):
 
         # --- Parameters ---
         self.declare_parameter('target_center_dist', 0.0)
-        self.declare_parameter('forward_speed', 0.10)
-        self.declare_parameter('kp', 0.8)
-        self.declare_parameter('kd', 0.4)
-        self.declare_parameter('kp_heading', 0.5)
-        self.declare_parameter('kd_heading', 0.3)
-        self.declare_parameter('max_angular', 0.6)
+        self.declare_parameter('forward_speed', 0.12)
+        self.declare_parameter('kp', 1.5)          # increased for sharper response
+        self.declare_parameter('kd', 0.1)          # reduced - derivative amplifies noise
+        self.declare_parameter('kp_heading', 0.6)
+        self.declare_parameter('kd_heading', 0.05) # reduced
+        self.declare_parameter('max_angular', 1.0) # allow sharper turns
+        self.declare_parameter('output_alpha', 0.4) # EMA smoothing (0=no change, 1=raw)
         self.declare_parameter('left_angle_min', 0.26)        # ~15°
         self.declare_parameter('left_angle_max', 2.09)        # ~120°
         self.declare_parameter('right_angle_min', -2.09)      # ~-120°
@@ -77,10 +78,11 @@ class TunnelWallFollower(Node):
         # State
         self.last_lateral_error = 0.0
         self.last_heading_error = 0.0
+        self.smoothed_angular_z = 0.0   # exponential moving average output
         self.last_time = self.get_clock().now()
         self.last_cmd = Twist()
         self.last_in_tunnel = False
-        self.last_centerline = []  # [(x, y), ...] for dashboard visualization
+        self.last_centerline = []
 
         # Hysteresis counters
         self._tunnel_on_count = 0
@@ -104,6 +106,7 @@ class TunnelWallFollower(Node):
             'kp_heading': float(self.get_parameter('kp_heading').value),
             'kd_heading': float(self.get_parameter('kd_heading').value),
             'max_angular': float(self.get_parameter('max_angular').value),
+            'output_alpha': float(self.get_parameter('output_alpha').value),
             'left_angle_min': float(self.get_parameter('left_angle_min').value),
             'left_angle_max': float(self.get_parameter('left_angle_max').value),
             'right_angle_min': float(self.get_parameter('right_angle_min').value),
@@ -289,8 +292,13 @@ class TunnelWallFollower(Node):
                              + kp_h * heading_error + kd_h * d_heading)
                 angular_z = max(-max_ang, min(max_ang, angular_z))
 
+                # --- EMA smoothing to prevent sudden direction reversals ---
+                alpha = float(self._param_cache['output_alpha'])
+                self.smoothed_angular_z = (alpha * angular_z
+                                           + (1.0 - alpha) * self.smoothed_angular_z)
+
                 cmd.linear.x = float(self._param_cache['forward_speed'])
-                cmd.angular.z = -angular_z  # negate: servo uses inverted convention
+                cmd.angular.z = -self.smoothed_angular_z  # negate: servo uses inverted convention
 
                 self.last_lateral_error = lateral_error
                 self.last_heading_error = heading_error
