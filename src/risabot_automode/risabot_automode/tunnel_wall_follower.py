@@ -28,7 +28,7 @@ from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import QoSPresetProfiles
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 
 from .topics import TUNNEL_CMD_TOPIC, TUNNEL_DETECTED_TOPIC
 
@@ -329,9 +329,8 @@ class TunnelWallFollower(Node):
                     f'ang_z:{angular_z:.2f}')
 
                 # Publish debug for dashboard overlay
-                from std_msgs.msg import String as StrMsg
                 dbg = f'{left_dist:.3f},{right_dist:.3f},{dist_error:.3f},{angular_z:.3f}'
-                self.debug_pub.publish(StrMsg(data=dbg))
+                self.debug_pub.publish(String(data=dbg))
 
             else:
                 # RANSAC failed on one side — fall back to mean distances
