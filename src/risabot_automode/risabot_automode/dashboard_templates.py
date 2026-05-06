@@ -1778,6 +1778,23 @@ update();
   function fetchLidar(){
     fetch('/lidar_data').then(function(r){return r.json();}).then(function(d){
       drawLidar(d.points || [], d.tunnel || false);
+      // Show steer debug overlay
+      var el = document.getElementById('lidarDebug');
+      if(!el){
+        el = document.createElement('div');
+        el.id = 'lidarDebug';
+        el.style.cssText = 'font:bold 11px JetBrains Mono,monospace; color:#fff; padding:6px 8px; position:absolute; bottom:8px; left:8px; right:8px; background:rgba(0,0,0,0.7); border-radius:8px; display:none;';
+        canvas.parentElement.style.position = 'relative';
+        canvas.parentElement.appendChild(el);
+      }
+      if(d.tunnel && d.angular_z !== undefined){
+        var dir = d.angular_z > 0.01 ? '← LEFT' : (d.angular_z < -0.01 ? 'RIGHT →' : '↑ STRAIGHT');
+        var color = Math.abs(d.angular_z) > 0.3 ? '#ff5252' : '#69f0ae';
+        el.innerHTML = 'L:' + (d.left_dist||0).toFixed(2) + 'm  R:' + (d.right_dist||0).toFixed(2) + 'm  err:' + (d.dist_error||0).toFixed(3) + '  <span style="color:'+color+'">ω:' + (d.angular_z||0).toFixed(2) + ' ' + dir + '</span>';
+        el.style.display = 'block';
+      } else {
+        el.style.display = 'none';
+      }
     }).catch(function(){});
   }
   setInterval(fetchLidar, 250);

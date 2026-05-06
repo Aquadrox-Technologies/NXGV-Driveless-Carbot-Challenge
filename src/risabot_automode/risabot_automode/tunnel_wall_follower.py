@@ -67,6 +67,9 @@ class TunnelWallFollower(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, TUNNEL_CMD_TOPIC, 10)
         self.in_tunnel_pub = self.create_publisher(Bool, TUNNEL_DETECTED_TOPIC, 10)
 
+        # Debug info for dashboard LiDAR overlay
+        self.debug_pub = self.create_publisher(String, '/tunnel_debug', 10)
+
         # Subscriber
         self.scan_sub = self.create_subscription(
             LaserScan, '/scan',
@@ -320,11 +323,15 @@ class TunnelWallFollower(Node):
                 self.last_heading_error = heading_error
                 self.last_time = now
 
-                self.get_logger().debug(
-                    f'L:{left_dist:.2f}m/{math.degrees(left_angle):.1f}° '
-                    f'R:{right_dist:.2f}m/{math.degrees(right_angle):.1f}° '
-                    f'dist_err:{dist_error:.3f} head_err:{heading_error:.3f} '
-                    f'ang:{angular_z:.2f}')
+                self.get_logger().info(
+                    f'L:{left_dist:.2f}m R:{right_dist:.2f}m '
+                    f'err:{dist_error:.3f} head:{heading_error:.3f} '
+                    f'ang_z:{angular_z:.2f}')
+
+                # Publish debug for dashboard overlay
+                from std_msgs.msg import String as StrMsg
+                dbg = f'{left_dist:.3f},{right_dist:.3f},{dist_error:.3f},{angular_z:.3f}'
+                self.debug_pub.publish(StrMsg(data=dbg))
 
             else:
                 # RANSAC failed on one side — fall back to mean distances
@@ -352,8 +359,8 @@ class TunnelWallFollower(Node):
                 self.last_heading_error = 0.0
                 self.last_time = now
 
-                self.get_logger().debug(
-                    f'RANSAC fallback — dist_err:{dist_error:.3f} ang:{angular_z:.2f}')
+                self.get_logger().info(
+                    f'FALLBACK — dist_err:{dist_error:.3f} ang_z:{angular_z:.2f}')
         else:
             # Not in tunnel — publish zero, reset errors
             self.last_dist_error = 0.0

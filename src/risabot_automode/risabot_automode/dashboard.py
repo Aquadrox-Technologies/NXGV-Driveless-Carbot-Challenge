@@ -119,6 +119,10 @@ class DashboardNode(Node):
         self.lidar_points = []  # [{x, y}]
         self.lidar_lock = threading.Lock()
         self.lidar_angle_offset = 3.1416  # default, same as tunnel node
+
+        # Tunnel debug info for LiDAR overlay
+        self.tunnel_debug = ''  # "left,right,error,angular_z"
+        self.tunnel_debug_lock = threading.Lock()
         
         # Client tracking for performance
         self.num_camera_clients = 0
@@ -220,6 +224,9 @@ class DashboardNode(Node):
 
         # LiDAR scan for 2D visualization
         self.create_subscription(LaserScan, '/scan', self._scan_cb, qos)
+
+        # Tunnel debug for LiDAR overlay
+        self.create_subscription(String, '/tunnel_debug', self._tunnel_debug_cb, 10)
 
         # Simulate odometry since hardware might not publish
         self.create_timer(0.05, self._simulate_odom_loop)
@@ -485,6 +492,11 @@ class DashboardNode(Node):
         with self.lidar_lock:
             self.lidar_points = pts
 
+    def _tunnel_debug_cb(self, msg: String) -> None:
+        """Store tunnel debug info for dashboard overlay."""
+        with self.tunnel_debug_lock:
+            self.tunnel_debug = msg.data
+
     def _image_cb(self, msg: Image, view_name: str) -> None:
         """Convert ROS Image to JPEG conditionally, tracking active view and clients."""
         if self.bridge is None or view_name != self.active_camera_view:
@@ -663,6 +675,17 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 with _node_ref.data_lock:
                     tunnel = bool(_node_ref.data.get('tunnel_detected', False))
             payload = {'points': pts, 'tunnel': tunnel}
+            # Add tunnel debug info if available
+            if _node_ref:
+                with _node_ref.tunnel_debug_lock:
+                    dbg = _node_ref.tunnel_debug
+                if dbg:
+                    parts = dbg.split(',')
+                    if len(parts) == 4:
+                        payload['left_dist'] = float(parts[0])
+                        payload['right_dist'] = float(parts[1])
+                        payload['dist_error'] = float(parts[2])
+                        payload['angular_z'] = float(parts[3])
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
