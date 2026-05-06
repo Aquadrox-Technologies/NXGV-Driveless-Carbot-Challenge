@@ -681,7 +681,6 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                     dbg = _node_ref.tunnel_debug
                 if dbg:
                     try:
-                        import json
                         d = json.loads(dbg)
                         payload['left_dist'] = d.get('l', 0)
                         payload['right_dist'] = d.get('r', 0)
