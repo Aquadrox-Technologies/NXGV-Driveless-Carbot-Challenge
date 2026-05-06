@@ -118,7 +118,7 @@ class DashboardNode(Node):
         # LiDAR scan storage for 2D visualization
         self.lidar_points = []  # [{x, y}]
         self.lidar_lock = threading.Lock()
-        self.lidar_angle_offset = 1.5708  # default, same as tunnel node
+        self.lidar_angle_offset = 3.1416  # default, same as tunnel node
         
         # Client tracking for performance
         self.num_camera_clients = 0

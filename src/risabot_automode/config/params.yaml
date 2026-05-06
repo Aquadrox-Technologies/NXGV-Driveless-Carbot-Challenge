@@ -144,7 +144,7 @@ boom_gate_detector:
     angle_window: 0.35
     min_gate_points: 5
     distance_variance_max: 0.05
-    lidar_angle_offset: 1.5708
+    lidar_angle_offset: 3.1416
     hysteresis: 3
     heartbeat_sec: 0.5
 
@@ -155,7 +155,7 @@ boom_gate_detector:
 #   ransac_threshold    : inlier distance for RANSAC line fit (meters, lower = stricter)
 #   ransac_iterations   : more iterations = better fit but slower (50 is fine for <100 pts)
 #   tunnel_hysteresis_frames : consecutive frames before toggling tunnel state (prevents flicker)
-#   lidar_angle_offset  : hardware mounting correction (radians). 1.5708 = LiDAR mounted 90° sideways
+#   lidar_angle_offset  : hardware mounting correction (radians). 3.1416 = LiDAR 0° points backward
 tunnel_wall_follower:
   ros__parameters:
     target_center_dist: 0.0
@@ -169,7 +169,7 @@ tunnel_wall_follower:
     left_angle_max: 1.57
     right_angle_min: -1.57
     right_angle_max: -0.52
-    lidar_angle_offset: 1.5708
+    lidar_angle_offset: 3.1416
     min_wall_points: 3
     max_wall_dist: 0.60
     ransac_threshold: 0.02
@@ -191,7 +191,7 @@ obstruction_avoidance:
     pass_duration: 2.0
     steer_back_duration: 1.5
     steer_away_duration: 1.0
-    lidar_angle_offset: 1.5708
+    lidar_angle_offset: 3.1416
 
 # --- Parking Controller ---
 parking_controller:
