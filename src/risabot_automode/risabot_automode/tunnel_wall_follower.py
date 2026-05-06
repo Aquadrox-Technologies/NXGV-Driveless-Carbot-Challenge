@@ -282,10 +282,10 @@ class TunnelWallFollower(Node):
                 left_dist, left_angle = left_fit
                 right_dist, right_angle = right_fit
 
-                # Distance error: with 180° LiDAR offset, L/R labels are swapped
-                # so (right_dist - left_dist) gives correct steering direction
+                # Distance error: closer to LEFT → negative → steer RIGHT
+                #                  closer to RIGHT → positive → steer LEFT
                 target = float(self._param_cache['target_center_dist'])
-                dist_error = (right_dist - left_dist) + target
+                dist_error = (left_dist - right_dist) + target
 
                 # Heading error: wall angle in robot frame
                 # If robot rotated CW by θ, wall_angle ≈ -θ
@@ -336,7 +336,7 @@ class TunnelWallFollower(Node):
                 # RANSAC failed on one side — fall back to mean distances
                 left_avg = float(np.mean(left_arr[:, 1])) if has_left else 0.0
                 right_avg = float(np.mean(right_arr[:, 1])) if has_right else 0.0
-                dist_error = (-left_avg - right_avg)
+                dist_error = (left_avg + right_avg)
 
                 now = self.get_clock().now()
                 dt = (now - self.last_time).nanoseconds / 1e9
