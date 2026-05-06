@@ -1758,6 +1758,25 @@ update();
         ctx.beginPath(); ctx.arc(px, py, 2.5, 0, Math.PI*2); ctx.fill();
       });
     }
+    // Centerline path (cyan dots + line)
+    if(window._lastCenterline && window._lastCenterline.length > 1){
+      ctx.strokeStyle = '#00e5ff'; ctx.lineWidth = 2; ctx.setLineDash([3,3]);
+      ctx.beginPath();
+      window._lastCenterline.forEach(function(p, i){
+        var px = CX - p.y * SCALE;
+        var py = CY - p.x * SCALE;
+        if(i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke(); ctx.setLineDash([]);
+      // Draw center dots
+      ctx.fillStyle = '#00e5ff';
+      window._lastCenterline.forEach(function(p){
+        var px = CX - p.y * SCALE;
+        var py = CY - p.x * SCALE;
+        ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI*2); ctx.fill();
+      });
+    }
     // Robot icon
     ctx.fillStyle = '#1e88e5'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -1777,6 +1796,8 @@ update();
   }
   function fetchLidar(){
     fetch('/lidar_data').then(function(r){return r.json();}).then(function(d){
+      // Store centerline for drawing
+      window._lastCenterline = d.centerline || [];
       drawLidar(d.points || [], d.tunnel || false);
       // Show steer debug overlay
       var el = document.getElementById('lidarDebug');
@@ -1790,7 +1811,7 @@ update();
       if(d.tunnel && d.angular_z !== undefined){
         var dir = d.angular_z > 0.01 ? '← LEFT' : (d.angular_z < -0.01 ? 'RIGHT →' : '↑ STRAIGHT');
         var color = Math.abs(d.angular_z) > 0.3 ? '#ff5252' : '#69f0ae';
-        el.innerHTML = 'L:' + (d.left_dist||0).toFixed(2) + 'm  R:' + (d.right_dist||0).toFixed(2) + 'm  err:' + (d.dist_error||0).toFixed(3) + '  <span style="color:'+color+'">ω:' + (d.angular_z||0).toFixed(2) + ' ' + dir + '</span>';
+        el.innerHTML = 'L:' + (d.left_dist||0).toFixed(2) + 'm  R:' + (d.right_dist||0).toFixed(2) + 'm  lat:' + (d.dist_error||0).toFixed(3) + '  <span style="color:'+color+'">ω:' + (d.angular_z||0).toFixed(2) + ' ' + dir + '</span>';
         el.style.display = 'block';
       } else {
         el.style.display = 'none';

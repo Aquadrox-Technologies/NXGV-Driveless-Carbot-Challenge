@@ -675,17 +675,21 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 with _node_ref.data_lock:
                     tunnel = bool(_node_ref.data.get('tunnel_detected', False))
             payload = {'points': pts, 'tunnel': tunnel}
-            # Add tunnel debug info if available
+            # Add tunnel debug info if available (JSON format)
             if _node_ref:
                 with _node_ref.tunnel_debug_lock:
                     dbg = _node_ref.tunnel_debug
                 if dbg:
-                    parts = dbg.split(',')
-                    if len(parts) == 4:
-                        payload['left_dist'] = float(parts[0])
-                        payload['right_dist'] = float(parts[1])
-                        payload['dist_error'] = float(parts[2])
-                        payload['angular_z'] = float(parts[3])
+                    try:
+                        import json
+                        d = json.loads(dbg)
+                        payload['left_dist'] = d.get('l', 0)
+                        payload['right_dist'] = d.get('r', 0)
+                        payload['dist_error'] = d.get('lat', 0)
+                        payload['angular_z'] = d.get('w', 0)
+                        payload['centerline'] = d.get('cl', [])
+                    except Exception:
+                        pass
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')

@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
 """
-Tunnel Wall Follower Node — RANSAC Enhanced
+Tunnel Wall Follower Node — Centerline Path Following
 =============================================================================
 LiDAR-based wall following for the tunnel section where camera lane detection
 may not work due to poor lighting/visibility.
 
-Uses RANSAC line fitting to extract wall distance AND heading angle from 2D
-LiDAR scans, enabling a dual-error PD controller for both centering and
-alignment.
-
-References:
-  - "A Wall-Following Navigation Method for Autonomous Driving Based on
-    LiDAR in Tunnel Scenes" (IEEE)
-  - F1TENTH Lab 3: Wall Following (UPenn)
-  - RANSAC: Fischler & Bolles, "Random Sample Consensus" (1981)
+**Centerline approach** (similar to camera lane follower):
+1. Classify LiDAR points into left and right wall sets
+2. Bin wall points by forward distance (x-coordinate)
+3. For each bin, compute the midpoint between left and right wall
+4. These midpoints form a centerline path through the tunnel
+5. The robot steers toward the centerline using a PD controller:
+   - Lateral error = how far the centerline is from the robot's y=0 axis
+   - Heading error = angle of the centerline path relative to forward
 
 Publishes Twist on /tunnel_cmd_vel for auto_driver to use when in TUNNEL state.
 """
 
 import math
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import rclpy
@@ -34,27 +33,27 @@ from .topics import TUNNEL_CMD_TOPIC, TUNNEL_DETECTED_TOPIC
 
 
 class TunnelWallFollower(Node):
-    """LiDAR-based wall following with RANSAC line fitting."""
+    """LiDAR-based wall following using centerline path computation."""
 
     def __init__(self):
         super().__init__('tunnel_wall_follower')
 
-        # --- Parameters (existing + new RANSAC/hysteresis) ---
+        # --- Parameters ---
         self.declare_parameter('target_center_dist', 0.0)
-        self.declare_parameter('forward_speed', 0.15)
-        self.declare_parameter('kp', 1.2)
-        self.declare_parameter('kd', 0.3)
-        self.declare_parameter('kp_heading', 0.8)
-        self.declare_parameter('kd_heading', 0.2)
-        self.declare_parameter('max_angular', 0.8)
-        self.declare_parameter('left_angle_min', 0.52)        # ~30°
-        self.declare_parameter('left_angle_max', 1.57)        # ~90°
-        self.declare_parameter('right_angle_min', -1.57)      # ~-90°
-        self.declare_parameter('right_angle_max', -0.52)      # ~-30°
-        self.declare_parameter('lidar_angle_offset', 1.5708)  # 90° mount correction
-        self.declare_parameter('min_wall_points', 3)
-        self.declare_parameter('max_wall_dist', 0.60)
-        self.declare_parameter('ransac_threshold', 0.02)      # inlier distance (m)
+        self.declare_parameter('forward_speed', 0.10)
+        self.declare_parameter('kp', 0.8)
+        self.declare_parameter('kd', 0.4)
+        self.declare_parameter('kp_heading', 0.5)
+        self.declare_parameter('kd_heading', 0.3)
+        self.declare_parameter('max_angular', 0.6)
+        self.declare_parameter('left_angle_min', 0.26)        # ~15°
+        self.declare_parameter('left_angle_max', 2.09)        # ~120°
+        self.declare_parameter('right_angle_min', -2.09)      # ~-120°
+        self.declare_parameter('right_angle_max', -0.26)      # ~-15°
+        self.declare_parameter('lidar_angle_offset', 3.1416)  # 180° mount correction
+        self.declare_parameter('min_wall_points', 5)
+        self.declare_parameter('max_wall_dist', 0.80)
+        self.declare_parameter('ransac_threshold', 0.03)      # inlier distance (m)
         self.declare_parameter('ransac_iterations', 50)
         self.declare_parameter('tunnel_hysteresis_frames', 3)
         self.declare_parameter('heartbeat_sec', 0.2)
@@ -66,8 +65,6 @@ class TunnelWallFollower(Node):
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, TUNNEL_CMD_TOPIC, 10)
         self.in_tunnel_pub = self.create_publisher(Bool, TUNNEL_DETECTED_TOPIC, 10)
-
-        # Debug info for dashboard LiDAR overlay
         self.debug_pub = self.create_publisher(String, '/tunnel_debug', 10)
 
         # Subscriber
@@ -78,11 +75,12 @@ class TunnelWallFollower(Node):
         )
 
         # State
-        self.last_dist_error = 0.0
+        self.last_lateral_error = 0.0
         self.last_heading_error = 0.0
         self.last_time = self.get_clock().now()
         self.last_cmd = Twist()
         self.last_in_tunnel = False
+        self.last_centerline = []  # [(x, y), ...] for dashboard visualization
 
         # Hysteresis counters
         self._tunnel_on_count = 0
@@ -93,12 +91,11 @@ class TunnelWallFollower(Node):
             self._heartbeat_publish
         )
 
-        self.get_logger().info('Tunnel Wall Follower started (RANSAC enhanced)')
+        self.get_logger().info('Tunnel Wall Follower started (Centerline Path)')
 
     # ── Parameter management ─────────────────────────────────────────────
 
     def _update_param_cache(self) -> None:
-        """Cache frequently used parameters to avoid per-scan lookups."""
         self._param_cache = {
             'target_center_dist': float(self.get_parameter('target_center_dist').value),
             'forward_speed': float(self.get_parameter('forward_speed').value),
@@ -121,96 +118,64 @@ class TunnelWallFollower(Node):
         }
 
     def _on_params(self, params) -> SetParametersResult:
-        """Update cached parameters when set via CLI or services."""
         for p in params:
             if p.name in self._param_cache:
                 self._param_cache[p.name] = p.value
         return SetParametersResult(successful=True)
 
     def _heartbeat_publish(self) -> None:
-        """Republish last state on a fixed heartbeat."""
         self.in_tunnel_pub.publish(Bool(data=self.last_in_tunnel))
         self.cmd_vel_pub.publish(self.last_cmd)
 
-    # ── RANSAC line fitting ──────────────────────────────────────────────
+    # ── Centerline computation ───────────────────────────────────────────
 
     @staticmethod
-    def _ransac_line_fit(
-        points_xy: np.ndarray,
-        threshold: float,
-        max_iter: int
-    ) -> Optional[Tuple[float, float]]:
+    def _compute_centerline(
+        left_xy: List[Tuple[float, float]],
+        right_xy: List[Tuple[float, float]],
+        bin_width: float = 0.05
+    ) -> List[Tuple[float, float]]:
         """
-        RANSAC 2D line fit — pure NumPy, no external dependencies.
+        Compute centerline path by binning wall points by x-coordinate.
 
-        Fits a line (ax + by + c = 0, ||(a,b)||=1) to the given points.
-        Reference: Fischler & Bolles, "Random Sample Consensus" (1981).
+        For each x-bin where both left and right walls have points:
+          center_y = (avg_left_y + avg_right_y) / 2
 
-        Args:
-            points_xy: Nx2 array of (x, y) in the robot's local frame.
-            threshold: Max perpendicular distance (m) for an inlier.
-            max_iter:  Number of RANSAC iterations.
-
-        Returns:
-            (perp_distance, wall_angle) or None.
-            - perp_distance: distance from robot origin to the wall line.
-            - wall_angle:    angle of wall relative to robot's forward axis.
-                             0 = perfectly parallel to robot heading.
+        Returns list of (x, center_y) points sorted by x (nearest first).
         """
-        n = len(points_xy)
-        if n < 2:
-            return None
+        # Build bins: x_bin → {left_y_values, right_y_values}
+        bins: Dict[int, Dict[str, List[float]]] = {}
 
-        best_inliers = 0
-        best_params = None
+        for x, y in left_xy:
+            b = int(x / bin_width)
+            if b not in bins:
+                bins[b] = {'left': [], 'right': []}
+            bins[b]['left'].append(y)
 
-        for _ in range(max_iter):
-            i, j = np.random.choice(n, 2, replace=False)
-            p1, p2 = points_xy[i], points_xy[j]
+        for x, y in right_xy:
+            b = int(x / bin_width)
+            if b not in bins:
+                bins[b] = {'left': [], 'right': []}
+            bins[b]['right'].append(y)
 
-            dx = p2[0] - p1[0]
-            dy = p2[1] - p1[1]
-            length = math.sqrt(dx * dx + dy * dy)
-            if length < 1e-6:
-                continue
+        # Compute midpoints for bins that have BOTH left and right data
+        centerline = []
+        for b, data in bins.items():
+            if data['left'] and data['right']:
+                avg_left_y = sum(data['left']) / len(data['left'])
+                avg_right_y = sum(data['right']) / len(data['right'])
+                center_y = (avg_left_y + avg_right_y) / 2.0
+                center_x = (b + 0.5) * bin_width
+                centerline.append((center_x, center_y))
 
-            # Normalised normal vector of the line
-            a = -dy / length
-            b = dx / length
-            c = -(a * p1[0] + b * p1[1])
-
-            # Vectorised inlier count
-            dists = np.abs(a * points_xy[:, 0] + b * points_xy[:, 1] + c)
-            count = int(np.sum(dists < threshold))
-
-            if count > best_inliers:
-                best_inliers = count
-                best_params = (a, b, c)
-
-        if best_params is None or best_inliers < 2:
-            return None
-
-        a, b, c = best_params
-
-        # Perpendicular distance from origin to the wall
-        perp_dist = abs(c)
-
-        # Wall angle relative to forward (x) axis
-        # Line direction vector is (b, -a), perpendicular to normal (a, b)
-        wall_angle = math.atan2(-a, b)
-
-        # Normalise to [-π/2, π/2] — tilt only, not direction
-        if wall_angle > math.pi / 2:
-            wall_angle -= math.pi
-        elif wall_angle < -math.pi / 2:
-            wall_angle += math.pi
-
-        return perp_dist, wall_angle
+        # Sort by x (forward distance, nearest first)
+        centerline.sort(key=lambda p: p[0])
+        return centerline
 
     # ── Main scan processing ─────────────────────────────────────────────
 
     def scan_callback(self, msg: LaserScan) -> None:
-        """Process each LiDAR scan: classify walls, RANSAC fit, PD control."""
+        """Process each LiDAR scan: classify walls, compute centerline, PD control."""
         offset = self._param_cache['lidar_angle_offset']
         l_min = self._param_cache['left_angle_min']
         l_max = self._param_cache['left_angle_max']
@@ -230,7 +195,6 @@ class TunnelWallFollower(Node):
                 continue
 
             angle = msg.angle_min + i * msg.angle_increment + offset
-            # Wrap to [-π, π]
             angle = math.atan2(math.sin(angle), math.cos(angle))
 
             x = r * math.cos(angle)
@@ -265,105 +229,105 @@ class TunnelWallFollower(Node):
 
         self.in_tunnel_pub.publish(Bool(data=self.last_in_tunnel))
 
-        # ── 3. RANSAC line fitting + PD control ──────────────────────────
+        # ── 3. Centerline computation + PD control ───────────────────────
         cmd = Twist()
 
         if self.last_in_tunnel and walls_detected:
-            thresh = float(self._param_cache['ransac_threshold'])
-            iters = int(self._param_cache['ransac_iterations'])
+            # Compute the centerline path
+            centerline = self._compute_centerline(left_xy, right_xy)
+            self.last_centerline = centerline
 
-            left_arr = np.array(left_xy)
-            right_arr = np.array(right_xy)
+            if len(centerline) >= 2:
+                # --- Lateral error ---
+                # Use the centerline point nearest to the robot (smallest x)
+                # center_y > 0 means center is to the LEFT → steer LEFT (positive ω)
+                # center_y < 0 means center is to the RIGHT → steer RIGHT (negative ω)
+                lateral_error = centerline[0][1]  # y-offset of nearest centerline point
 
-            left_fit = self._ransac_line_fit(left_arr, thresh, iters)
-            right_fit = self._ransac_line_fit(right_arr, thresh, iters)
-
-            if left_fit is not None and right_fit is not None:
-                left_dist, left_angle = left_fit
-                right_dist, right_angle = right_fit
-
-                # Distance error: closer to LEFT → negative → steer RIGHT
-                #                  closer to RIGHT → positive → steer LEFT
+                # Add target offset if desired (default 0 = stay centered)
                 target = float(self._param_cache['target_center_dist'])
-                dist_error = (left_dist - right_dist) + target
+                lateral_error += target
 
-                # Heading error: wall angle in robot frame
-                # If robot rotated CW by θ, wall_angle ≈ -θ
-                # We want angular_z > 0 (steer left) to correct
-                # So heading_error = -wall_angle → correction = kp * heading_error
-                avg_wall_angle = (left_angle + right_angle) / 2.0
-                heading_error = -avg_wall_angle
+                # --- Heading error ---
+                # Fit a simple line through the centerline points to get heading
+                # Use the first few points (closest to robot) for heading
+                n_heading = min(len(centerline), 5)
+                xs = [p[0] for p in centerline[:n_heading]]
+                ys = [p[1] for p in centerline[:n_heading]]
 
-                # Time delta
+                # Simple linear regression: y = mx + b
+                x_mean = sum(xs) / len(xs)
+                y_mean = sum(ys) / len(ys)
+                num = sum((xi - x_mean) * (yi - y_mean) for xi, yi in zip(xs, ys))
+                den = sum((xi - x_mean) ** 2 for xi in xs)
+
+                if abs(den) > 1e-8:
+                    slope = num / den
+                    heading_error = math.atan(slope)  # angle of centerline
+                else:
+                    heading_error = 0.0
+
+                # --- Time delta ---
                 now = self.get_clock().now()
                 dt = (now - self.last_time).nanoseconds / 1e9
                 if dt <= 0 or dt > 0.5:
-                    dt = 0.1  # fallback
+                    dt = 0.1
 
-                # Derivatives
-                d_dist = (dist_error - self.last_dist_error) / dt
+                # --- Derivatives ---
+                d_lateral = (lateral_error - self.last_lateral_error) / dt
                 d_heading = (heading_error - self.last_heading_error) / dt
 
-                # PD gains
+                # --- PD gains ---
                 kp = float(self._param_cache['kp'])
                 kd = float(self._param_cache['kd'])
                 kp_h = float(self._param_cache['kp_heading'])
                 kd_h = float(self._param_cache['kd_heading'])
                 max_ang = float(self._param_cache['max_angular'])
 
-                # Combined steering output
-                angular_z = (kp * dist_error + kd * d_dist
+                # --- Combined steering ---
+                angular_z = (kp * lateral_error + kd * d_lateral
                              + kp_h * heading_error + kd_h * d_heading)
                 angular_z = max(-max_ang, min(max_ang, angular_z))
 
                 cmd.linear.x = float(self._param_cache['forward_speed'])
                 cmd.angular.z = angular_z
 
-                self.last_dist_error = dist_error
+                self.last_lateral_error = lateral_error
                 self.last_heading_error = heading_error
                 self.last_time = now
 
-                self.get_logger().info(
-                    f'L:{left_dist:.2f}m R:{right_dist:.2f}m '
-                    f'err:{dist_error:.3f} head:{heading_error:.3f} '
-                    f'ang_z:{angular_z:.2f}')
+                # --- Compute L/R distances for debug display ---
+                left_dists = [math.sqrt(x*x + y*y) for x, y in left_xy]
+                right_dists = [math.sqrt(x*x + y*y) for x, y in right_xy]
+                avg_l = sum(left_dists) / len(left_dists) if left_dists else 0
+                avg_r = sum(right_dists) / len(right_dists) if right_dists else 0
 
-                # Publish debug for dashboard overlay
-                dbg = f'{left_dist:.3f},{right_dist:.3f},{dist_error:.3f},{angular_z:.3f}'
-                self.debug_pub.publish(String(data=dbg))
+                direction = 'LEFT' if angular_z > 0.01 else ('RIGHT' if angular_z < -0.01 else 'STRAIGHT')
+                self.get_logger().info(
+                    f'CL: lat:{lateral_error:.3f} head:{math.degrees(heading_error):.1f}° '
+                    f'ω:{angular_z:.2f} ({direction}) '
+                    f'L~{avg_l:.2f}m R~{avg_r:.2f}m pts:{len(centerline)}')
+
+                # Publish debug: JSON with all info including centerline
+                import json
+                cl_pts = [{'x': round(p[0], 3), 'y': round(p[1], 3)} for p in centerline[:10]]
+                dbg_obj = {
+                    'l': round(avg_l, 3), 'r': round(avg_r, 3),
+                    'lat': round(lateral_error, 3), 'w': round(angular_z, 3),
+                    'cl': cl_pts
+                }
+                self.debug_pub.publish(String(data=json.dumps(dbg_obj)))
 
             else:
-                # RANSAC failed on one side — fall back to mean distances
-                left_avg = float(np.mean(left_arr[:, 1])) if has_left else 0.0
-                right_avg = float(np.mean(right_arr[:, 1])) if has_right else 0.0
-                dist_error = (left_avg + right_avg)
+                # Not enough centerline points — drive straight slowly
+                cmd.linear.x = float(self._param_cache['forward_speed']) * 0.5
+                self.get_logger().info('CL: too few midpoints, creeping forward')
 
-                now = self.get_clock().now()
-                dt = (now - self.last_time).nanoseconds / 1e9
-                if dt <= 0 or dt > 0.5:
-                    dt = 0.1
-                d_dist = (dist_error - self.last_dist_error) / dt
-
-                kp = float(self._param_cache['kp'])
-                kd = float(self._param_cache['kd'])
-                max_ang = float(self._param_cache['max_angular'])
-
-                angular_z = kp * dist_error + kd * d_dist
-                angular_z = max(-max_ang, min(max_ang, angular_z))
-
-                cmd.linear.x = float(self._param_cache['forward_speed'])
-                cmd.angular.z = angular_z
-
-                self.last_dist_error = dist_error
-                self.last_heading_error = 0.0
-                self.last_time = now
-
-                self.get_logger().info(
-                    f'FALLBACK — dist_err:{dist_error:.3f} ang_z:{angular_z:.2f}')
         else:
             # Not in tunnel — publish zero, reset errors
-            self.last_dist_error = 0.0
+            self.last_lateral_error = 0.0
             self.last_heading_error = 0.0
+            self.last_centerline = []
 
         self.cmd_vel_pub.publish(cmd)
         self.last_cmd = cmd
