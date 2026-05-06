@@ -110,6 +110,17 @@ def generate_launch_description():
             ),
         ]),
 
+        # G2. Tunnel wall follower
+        TimerAction(period=3.0, actions=[
+            Node(
+                package='risabot_automode',
+                executable='tunnel_wall_follower',
+                name='tunnel_wall_follower',
+                output='screen',
+                parameters=[params_file]
+            ),
+        ]),
+
         # ==================== CONTROL ====================
 
         # H. Auto Driver (brain — delayed 5s to let sensors initialize)
