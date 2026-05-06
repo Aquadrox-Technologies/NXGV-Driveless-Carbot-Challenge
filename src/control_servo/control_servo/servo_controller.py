@@ -612,8 +612,15 @@ class ServoControllerV9(Node):
                 distance = 0.0
 
             # Calculate steering angle from servo command (for Ackermann kinematics)
-            # Servo range [40, 140], center 90
-            steer_norm = (self.servo_center - self.target_servo_val) / float(self.servo_range)
+            # Use asymmetric left/right ranges based on which side of center
+            servo_delta = self.servo_center - self.target_servo_val
+            if servo_delta >= 0:
+                effective_range = float(self.servo_range_left)
+            else:
+                effective_range = float(self.servo_range_right)
+            if effective_range < 1.0:
+                effective_range = 1.0
+            steer_norm = servo_delta / effective_range
             steer_norm = max(-1.0, min(1.0, steer_norm))
             steering_angle_deg = steer_norm * float(self._param_cache['steering_max_deg'])
             steering_angle_rad = math.radians(steering_angle_deg)

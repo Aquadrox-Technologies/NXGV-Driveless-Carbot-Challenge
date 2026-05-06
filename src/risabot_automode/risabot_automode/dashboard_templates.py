@@ -1476,6 +1476,15 @@ const PARAM_TIPS = {
   max_angular_accel:'Angular acceleration slew limit',
   deadband_linear:'Zero small linear command noise',
   deadband_angular:'Zero small angular command noise',
+  // Tunnel wall follower (RANSAC enhanced)
+  target_center_dist:'Offset from center between walls (0=centered)',
+  kp_heading:'Proportional gain for heading alignment (wall angle correction)',
+  kd_heading:'Derivative gain for heading alignment (dampens heading oscillation)',
+  ransac_threshold:'RANSAC inlier distance threshold in meters (lower=stricter fit)',
+  ransac_iterations:'RANSAC max iterations (50 is fine for <100 LiDAR pts)',
+  tunnel_hysteresis_frames:'Consecutive frames required before toggling tunnel on/off (prevents flicker)',
+  min_wall_points:'Min LiDAR points on each side to consider a wall present',
+  max_wall_dist:'Ignore LiDAR points beyond this distance (m)',
   // Boom gate
   min_detect_dist:'Closest gate detection (m)', max_detect_dist:'Farthest gate detection (m)',
   angle_window:'Forward arc width (rad)', min_gate_points:'Min LiDAR points for gate',
@@ -1558,9 +1567,10 @@ const PARAM_GROUPS = [
     'min_gate_points','distance_variance_max','lidar_angle_offset','hysteresis','heartbeat_sec'
   ]},
   { node: 'tunnel_wall_follower', label: 'Tunnel', params: [
-    'target_center_dist','forward_speed','kp','kd','max_angular',
+    'target_center_dist','forward_speed','kp','kd','kp_heading','kd_heading','max_angular',
     'left_angle_min','left_angle_max','right_angle_min','right_angle_max',
-    'min_wall_points','max_wall_dist','heartbeat_sec'
+    'min_wall_points','max_wall_dist','lidar_angle_offset',
+    'ransac_threshold','ransac_iterations','tunnel_hysteresis_frames','heartbeat_sec'
   ]},
   { node: 'obstruction_avoidance', label: 'Obstruction', params: [
     'detect_dist','clear_dist','front_angle','side_angle_min','side_angle_max',

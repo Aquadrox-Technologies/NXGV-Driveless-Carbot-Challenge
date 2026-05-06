@@ -148,13 +148,22 @@ boom_gate_detector:
     hysteresis: 3
     heartbeat_sec: 0.5
 
-# --- Tunnel Wall Follower ---
+# --- Tunnel Wall Follower (RANSAC Enhanced) ---
+# TUNING GUIDE:
+#   kp / kd             : PD gains for distance centering (left-right balance)
+#   kp_heading / kd_heading : PD gains for heading alignment (wall angle)
+#   ransac_threshold    : inlier distance for RANSAC line fit (meters, lower = stricter)
+#   ransac_iterations   : more iterations = better fit but slower (50 is fine for <100 pts)
+#   tunnel_hysteresis_frames : consecutive frames before toggling tunnel state (prevents flicker)
+#   lidar_angle_offset  : hardware mounting correction (radians). 1.5708 = LiDAR mounted 90° sideways
 tunnel_wall_follower:
   ros__parameters:
     target_center_dist: 0.0
     forward_speed: 0.15
     kp: 1.2
     kd: 0.3
+    kp_heading: 0.8
+    kd_heading: 0.2
     max_angular: 0.8
     left_angle_min: 0.52
     left_angle_max: 1.57
@@ -163,6 +172,9 @@ tunnel_wall_follower:
     lidar_angle_offset: 1.5708
     min_wall_points: 3
     max_wall_dist: 0.60
+    ransac_threshold: 0.02
+    ransac_iterations: 50
+    tunnel_hysteresis_frames: 3
     heartbeat_sec: 0.2
 
 # --- Obstruction Avoidance ---
