@@ -656,14 +656,18 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(data.encode())
         elif self.path == '/lidar_data':
             pts = []
+            tunnel = False
             if _node_ref:
                 with _node_ref.lidar_lock:
                     pts = list(_node_ref.lidar_points)
+                with _node_ref.data_lock:
+                    tunnel = bool(_node_ref.data.get('tunnel_detected', False))
+            payload = {'points': pts, 'tunnel': tunnel}
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps(pts).encode())
+            self.wfile.write(json.dumps(payload).encode())
         elif self.path.startswith('/camera_feed'):
             self.send_response(200)
             self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
@@ -811,7 +815,16 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         """Suppress default HTTP logging."""
-        pass  # Suppress HTTP logs
+        pass
+
+    def handle_one_request(self):
+        """Override to suppress BrokenPipeError from disconnecting clients."""
+        try:
+            super().handle_one_request()
+        except BrokenPipeError:
+            pass
+        except ConnectionResetError:
+            pass
 
 
 def main(args=None) -> None:

@@ -1980,16 +1980,11 @@ TEACH_HTML = """<!DOCTYPE html>
       }
     }
 
-    // Poll LiDAR data
+    // Poll LiDAR data (single request, tunnel state included)
     function fetchLidar(){
-      Promise.all([
-        fetch('/lidar_data').then(r=>r.json()).catch(()=>[]),
-        fetch('/data').then(r=>r.json()).catch(()=>({}))
-      ]).then(([pts, data]) => {
-        let tunnel = data.tunnel_detected || false;
-        let state = data.state || '';
-        drawLidar(pts, state, tunnel);
-      });
+      fetch('/lidar_data').then(r=>r.json()).then(d => {
+        drawLidar(d.points || [], '', d.tunnel || false);
+      }).catch(()=>{});
     }
     setInterval(fetchLidar, 200);
     fetchLidar();
