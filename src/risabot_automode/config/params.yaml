@@ -165,10 +165,10 @@ tunnel_wall_follower:
     kp_heading: 0.5                # heading alignment gain
     kd_heading: 0.3                # heading damping
     max_angular: 0.6               # limit max steering to prevent wild turns
-    left_angle_min: 0.52
-    left_angle_max: 1.57
-    right_angle_min: -1.57
-    right_angle_max: -0.52
+    left_angle_min: 0.26              # 15° (was 30° — catch walls near the front)
+    left_angle_max: 2.09              # 120° (was 90° — catch walls slightly behind)
+    right_angle_min: -2.09            # -120°
+    right_angle_max: -0.26            # -15°
     lidar_angle_offset: 3.1416
     min_wall_points: 5             # require 5 pts per side (more robust)
     max_wall_dist: 0.80            # detect walls up to 80cm away
