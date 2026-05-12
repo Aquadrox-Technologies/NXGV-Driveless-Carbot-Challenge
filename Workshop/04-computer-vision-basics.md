@@ -160,13 +160,41 @@ ros2 topic echo /lane_error
 
 Place white tape or paper lines in front of the camera — the error value should change as you move them!
 
-## Exercise
+## 5. Testing the Color Detector
 
-1. Write the `color_detector` node and test it with colored objects
-2. Hold a red object in front of the camera — does it detect "red"?
-3. Try green — does it detect "green"?
-4. **Challenge:** Add yellow detection to the color ranges
-5. **Challenge:** Print which part of the image the color is in (left, center, right)
+Now that you understand how HSV works and you've written your `color_detector.py` node, let's put it to the test!
+
+### Step 1: Detect Red and Green
+1. Start the camera stream in Terminal 1:
+   ```bash
+   ros2 launch astra_camera astra_mini.launch.py
+   ```
+2. Run your new color detector in Terminal 2:
+   ```bash
+   ros2 run my_first_pkg color_detector
+   ```
+3. Open a third terminal to watch the output topic:
+   ```bash
+   ros2 topic echo /detected_color
+   ```
+4. Hold a bright red object (like an apple or red tape) in front of the camera. The terminal should print `data: red`!
+5. Swap it for a bright green object. The terminal should print `data: green`!
+
+### Step 2: Adding a Yellow Filter
+Right now, your script only knows what red and green look like. Let's make it detect yellow!
+1. Open your `color_detector.py` script.
+2. Find the `colors = { ... }` dictionary inside the `image_callback` function.
+3. Add the yellow HSV range to the dictionary (refer back to the HSV table above!):
+   ```python
+        colors = {
+            'red_low': ((0, 100, 100), (10, 255, 255)),
+            'red_high': ((170, 100, 100), (179, 255, 255)),
+            'green': ((40, 50, 50), (80, 255, 255)),
+            'yellow': ((20, 100, 100), (35, 255, 255)),  # <-- NEW LINE
+        }
+   ```
+4. Rebuild your workspace using `colcon build`.
+5. Run the node again and hold up a yellow object. It should now successfully detect `data: yellow`!
 
 ---
 

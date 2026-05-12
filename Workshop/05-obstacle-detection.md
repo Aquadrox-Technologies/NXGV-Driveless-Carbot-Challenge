@@ -171,13 +171,47 @@ The real `obstacle_avoidance` package checks a ±30° front arc and publishes `B
 
 See: `src/obstacle_avoidance/obstacle_avoidance/obstacle_avoidance.py`
 
-## Exercise
+## Testing Your Obstacle Detector
 
-1. Write and run the obstacle detector
-2. Walk in front of the LiDAR at different distances
-3. Change `min_distance` to 0.20 and 0.60 — what's the difference?
-4. **Challenge:** Print which side the obstacle is on (left, center, right)
-5. **Challenge:** Instead of just `True/False`, publish the distance to the closest obstacle
+Now let's test your code and experiment with ROS 2 parameters!
+
+### Step 1: Basic Testing
+1. Make sure the LiDAR is running: `ros2 run ydlidar_ros2_driver ydlidar_ros2_driver_node`
+2. Run your obstacle detector: `ros2 run my_first_pkg obstacle_detector`
+3. Walk towards the front of the robot. As soon as you cross the `0.40m` threshold, your terminal will start warning you!
+
+### Step 2: Live Parameter Tuning
+One of the best features of ROS 2 is that you can change parameters *while the code is running*.
+1. Leave your `obstacle_detector` running.
+2. Open a new terminal and change the `min_distance` parameter to 60cm (0.60m):
+   ```bash
+   ros2 param set /obstacle_detector min_distance 0.60
+   ```
+3. Walk towards the robot again. Notice how it detects you much earlier now!
+
+### Step 3: Upgrading the Code (Publishing Distance)
+Right now, the node only publishes `True` or `False`. Let's modify it to actually publish the exact distance to the closest obstacle so the robot's brain knows *how close* the object is!
+
+1. Open `obstacle_detector.py`.
+2. Change the publisher type from `Bool` to `Float32`:
+   ```python
+   from std_msgs.msg import Float32  # Update the import at the top!
+   
+   # Update the publisher line in __init__:
+   self.obstacle_pub = self.create_publisher(Float32, '/my_obstacle', 10)
+   ```
+3. Update the bottom of the `scan_callback` function to publish the distance:
+   ```python
+        # Publish result
+        result = Float32()
+        if obstacle_found:
+            result.data = closest
+        else:
+            result.data = -1.0  # -1 means the path is clear!
+            
+        self.obstacle_pub.publish(result)
+   ```
+4. Rebuild your workspace (`colcon build`), restart your node, and run `ros2 topic echo /my_obstacle`. You will now see the exact distance streaming to your screen!
 
 ---
 

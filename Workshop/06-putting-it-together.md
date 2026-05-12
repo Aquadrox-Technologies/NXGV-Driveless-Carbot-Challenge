@@ -207,14 +207,46 @@ Your `simple_brain` is a simplified version of `auto_driver.py`. The real one ad
 
 But the core pattern is the same: **subscribe to sensors → decide → publish /cmd_vel**.
 
-## Exercise
+## Testing Your Autonomous System
 
-1. Build and run the full system
-2. Test manual mode with the joystick
-3. Toggle to auto mode with Y button
-4. Place an obstacle — does the robot stop?
-5. **Challenge:** Add a state that makes the robot turn around instead of stopping
-6. **Challenge:** Look at `auto_driver.py` — can you identify the same subscribe-decide-publish pattern?
+It is time to see your code in action!
+
+### Step 1: Manual Mode Override
+1. Build and run the full system using the launch file you created.
+2. Pick up your gamepad. By default, your `simple_brain` starts in **Manual Mode**.
+3. Use the Left Joystick to drive the robot around. Because manual mode overrides the sensors, you have full control!
+
+### Step 2: Autonomous Lane Following
+1. Place the robot at the start of a lane.
+2. Press the **Y Button** on your gamepad. Your terminal will print `Mode: AUTO`.
+3. The robot will now drive forward on its own, calculating the `lane_error` from the camera and automatically steering to stay centered!
+
+### Step 3: Obstacle Avoidance
+1. While the robot is driving autonomously, step in front of it.
+2. As soon as you cross the `0.40m` threshold, the LiDAR will detect you and send `True` to the `simple_brain`.
+3. The robot will immediately stop and the terminal will print: `Obstacle! Stopping.`
+4. Step out of the way, and the robot will resume following the lane.
+
+### Step 4: Upgrading to Obstacle Evasion (Turning Around)
+Right now, the robot just stops when it sees an obstacle. Let's make it smarter by turning around instead!
+1. Open `simple_brain.py`.
+2. Find the section where the robot stops for an obstacle:
+   ```python
+        if self.obstacle:
+            # STOP — obstacle ahead
+            twist.linear.x = 0.0
+            twist.angular.z = 0.0
+            self.get_logger().warn('Obstacle! Stopping.', throttle_duration_sec=1.0)
+   ```
+3. Change it so that it reverses slightly and spins around!
+   ```python
+        if self.obstacle:
+            # EVADE — Reverse and spin right!
+            twist.linear.x = -0.15   # Reverse slowly
+            twist.angular.z = -1.0   # Spin hard right
+            self.get_logger().warn('Obstacle! Evading!', throttle_duration_sec=1.0)
+   ```
+4. Rebuild your workspace and run the system again. Now, when you step in front of the robot, it will actively try to turn away from you!
 
 ## What's Next?
 

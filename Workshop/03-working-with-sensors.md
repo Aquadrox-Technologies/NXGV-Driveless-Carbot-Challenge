@@ -134,13 +134,23 @@ Looking at an array of thousands of numbers in the terminal can be confusing! Lu
 
 You will now see the LiDAR canvas drawing red dots in real-time! The dashboard automatically subscribes to the `/scan` topic and converts the distance data into a 2D map of the room around the robot. Try walking around the robot and watch your legs appear on the dashboard!
 
-## Exercise
+## 7. Testing Your Sensors
 
-1. Start the camera and check that it's publishing at ~30 Hz
-2. Start the LiDAR and read one scan with `--once`
-3. Place your hand 30cm in front of the LiDAR — what value do you see in `ranges`?
-4. Move your hand to the side — which index in `ranges` changes?
-5. **Challenge:** How many range readings are in one scan? (hint: look at `len(ranges)`)
+Now that everything is running, let's verify the sensors are working accurately! 
+
+**Testing the LiDAR Range:**
+1. While watching your dashboard LiDAR canvas, place your hand about **30cm directly in front** of the robot.
+2. You will see a cluster of red dots appear very close to the center of the canvas!
+3. Now, move your hand slowly to the right side of the robot. You will see the red dots move along the circular canvas in real-time.
+
+**Understanding the Raw Data:**
+1. Go back to your SSH terminal and run a single scan:
+   ```bash
+   ros2 topic echo /scan --once
+   ```
+2. Scroll through the giant `ranges:` array.
+3. **How many readings are there?** The YDLiDAR Tmini Plus outputs roughly 360 to 400 readings per scan, meaning the length of the `ranges` array is around `400`. Each reading corresponds to a fraction of a degree around the robot!
+4. If you place your hand in front of the LiDAR and run the command again, you will notice the numbers near the **middle** of the array (e.g., `ranges[200]`) drop from `inf` down to `0.30` (which is 30 centimeters).
 
 ---
 
