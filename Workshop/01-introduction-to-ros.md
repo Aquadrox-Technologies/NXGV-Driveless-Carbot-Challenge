@@ -29,7 +29,24 @@ Think of it like a messaging system or a radio network:
 
 ---
 
-## 2. Installing ROS 2 Humble
+## 2. Connecting via SSH (Windows)
+
+Because the RISA-bot runs "headless" (without a monitor attached), you will do all your programming remotely from your own laptop using a tool called **SSH** (Secure Shell). This lets you type commands on your laptop that execute directly on the robot's computer.
+
+To connect from a Windows laptop:
+1. Open PowerShell or Command Prompt.
+2. Type the following command (replace `192.168.x.x` with the robot's actual IP address):
+   ```bash
+   ssh sunrise@192.168.x.x
+   ```
+3. If it asks "Are you sure you want to continue connecting?", type `yes` and press Enter.
+4. When prompted, type the password: `risabot` (the characters will be invisible as you type, this is normal!)
+
+You are now controlling the robot's terminal! Any command you run here runs on the robot.
+
+---
+
+## 3. Installing ROS 2 Humble
 
 If you are using the provided RISA-bot or a pre-configured Ubuntu 22.04 system, ROS 2 might already be installed. If you are starting completely from scratch on Ubuntu 22.04, run these commands in your terminal:
 
@@ -65,7 +82,7 @@ source /opt/ros/humble/setup.bash
 
 ---
 
-## 3. Creating Your Workspace and Package
+## 4. Creating Your Workspace and Package
 
 A **Workspace** is a folder where you build your custom ROS 2 code. A **Package** is a folder inside the workspace that contains your nodes.
 
@@ -100,7 +117,7 @@ student_ws/
 
 ---
 
-## 4. The Talker & Subscriber: Joystick Control
+## 5. The Talker & Subscriber: Joystick Control
 
 We are going to build a system where you can drive the robot using a gamepad. 
 
@@ -250,7 +267,7 @@ Edit `~/student_ws/src/my_robot_controller/package.xml` to declare your dependen
 
 ---
 
-## 5. Building and Driving
+## 6. Building and Driving
 
 Now we compile your workspace. Any time you change `setup.py` or create a new node, you must build!
 
