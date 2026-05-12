@@ -121,6 +121,19 @@ front_index = len(ranges) // 2  # Middle of array = straight ahead
 front_distance = ranges[front_index]
 ```
 
+### 6. Visualize LiDAR on the Dashboard
+
+Looking at an array of thousands of numbers in the terminal can be confusing! Luckily, you can use your dashboard to visually see the LiDAR scan.
+
+1. Ensure the `ydlidar_ros2_driver_node` is running in your first terminal.
+2. In a second terminal, start your dashboard:
+   ```bash
+   ros2 run risabot_automode dashboard
+   ```
+3. Open your laptop's web browser and go to `http://192.168.x.x:8080`.
+
+You will now see the LiDAR canvas drawing red dots in real-time! The dashboard automatically subscribes to the `/scan` topic and converts the distance data into a 2D map of the room around the robot. Try walking around the robot and watch your legs appear on the dashboard!
+
 ## Exercise
 
 1. Start the camera and check that it's publishing at ~30 Hz
