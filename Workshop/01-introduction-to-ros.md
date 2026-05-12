@@ -124,6 +124,22 @@ If you move the joysticks, you will see a stream of numbers appearing on your sc
 ### The Subscriber (Your Node)
 You will write a Node that **Subscribes** to the `/joy` topic. Whenever you move the joystick, your Node will receive the message, calculate the required speed and steering, and send the physical electrical signals to the RISA-bot's motors.
 
+### How They Work Together
+Here is a visual map of what we are building:
+
+```text
+[ Talker Node ]  ──publishes──▶  /joy (topic)  ──▶  [ Subscriber Node ]
+  (joy_node)                   Joystick Data         (joy_driver.py)
+```
+
+The talker will be a node publishing to a topic, and the subscriber node will hear it. 
+
+**Just imagine:** A talker is someone at YouTube publishing a video. The video channel itself is the **Topic**, and its contents (the actual video) is the **Message** that they want to show or tell their viewers. The viewers are the **Subscribers** who get the information from the video.
+
+Because of this architecture, one talker node can communicate with multiple subscriber nodes simultaneously! In other words, one sensor node (like a camera or joystick) can send its data to multiple processing nodes at the exact same time without them interfering with each other.
+
+---
+
 Create a new file at `~/student_ws/src/my_robot_controller/my_robot_controller/joy_driver.py` and paste the following code:
 
 ```python
