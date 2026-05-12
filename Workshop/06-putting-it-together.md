@@ -229,6 +229,6 @@ You've completed the workshop! Here's where to go from here:
 
 ---
 
-**Previous:** [Module 4 — Obstacle Detection](04-obstacle-detection.md)
+**Previous:** [Module 5 — Obstacle Detection](05-obstacle-detection.md)
 
-🎉 **Congratulations!** You've completed all 5 modules!
+🎉 **Congratulations!** You've completed all 6 modules!

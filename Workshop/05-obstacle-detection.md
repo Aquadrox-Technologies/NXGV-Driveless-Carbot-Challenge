@@ -181,5 +181,5 @@ See: `src/obstacle_avoidance/obstacle_avoidance/obstacle_avoidance.py`
 
 ---
 
-**Previous:** [Module 3 — Computer Vision Basics](03-computer-vision-basics.md)
-**Next:** [Module 5 — Putting It Together](05-putting-it-together.md)
+**Previous:** [Module 4 — Computer Vision Basics](04-computer-vision-basics.md)
+**Next:** [Module 6 — Putting It Together](06-putting-it-together.md)

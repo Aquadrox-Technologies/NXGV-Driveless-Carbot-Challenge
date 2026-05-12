@@ -1,4 +1,4 @@
-# Module 2: Working with Sensors
+# Module 3: Working with Sensors
 
 ## Learning Objectives
 
@@ -40,12 +40,23 @@ ros2 topic hz /camera/color/image_raw
 # Should be ~30 Hz
 ```
 
-### 4. View the image (if display available)
+### 4. View the Camera Stream
 
-```bash
-ros2 run rqt_image_view rqt_image_view
-# Select /camera/color/image_raw from dropdown
-```
+Because our robot is headless, we cannot use traditional graphical tools like `rqt_image_view`. Instead, we will use the dashboard we learned about in Module 2!
+
+1. Open a **new terminal** and SSH into the robot.
+2. Ensure your workspace is sourced:
+   ```bash
+   cd ~/risabotcar_ws
+   source install/setup.bash
+   ```
+3. Run the dashboard node:
+   ```bash
+   ros2 run risabot_automode dashboard
+   ```
+4. Open a web browser on your laptop and go to `http://192.168.x.x:8080`.
+
+Since you already started the camera in Step 1, the dashboard will now automatically display the live video feed!
 
 ### 5. Understanding the Image message
 
@@ -120,5 +131,5 @@ front_distance = ranges[front_index]
 
 ---
 
-**Previous:** [Module 1 — Introduction to ROS 2](01-introduction-to-ros.md)
-**Next:** [Module 3 — Computer Vision Basics](03-computer-vision-basics.md)
+**Previous:** [Module 2 — Introducing the Dashboard](02-introducing-the-dashboard.md)
+**Next:** [Module 4 — Computer Vision Basics](04-computer-vision-basics.md)

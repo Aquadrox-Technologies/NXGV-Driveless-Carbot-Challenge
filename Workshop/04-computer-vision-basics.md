@@ -170,5 +170,5 @@ Place white tape or paper lines in front of the camera — the error value shoul
 
 ---
 
-**Previous:** [Module 2 — Working with Sensors](02-working-with-sensors.md)
-**Next:** [Module 4 — Obstacle Detection](04-obstacle-detection.md)
+**Previous:** [Module 3 — Working with Sensors](03-working-with-sensors.md)
+**Next:** [Module 5 — Obstacle Detection](05-obstacle-detection.md)

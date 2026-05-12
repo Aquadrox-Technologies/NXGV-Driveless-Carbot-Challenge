@@ -13,11 +13,12 @@ Hands-on workshop modules for learning ROS 2 using the RISA-bot platform.
 
 | #   | Topic                                                  | Duration | Description                             |
 | --- | ------------------------------------------------------ | -------- | --------------------------------------- |
-| 1   | [Introduction to ROS 2](01-introduction-to-ros.md)     | 120 min  | Setup, Nodes, Topics, Launch & Joystick |
-| 2   | [Working with Sensors](02-working-with-sensors.md)     | 45 min   | Camera and LiDAR data                   |
-| 3   | [Computer Vision Basics](03-computer-vision-basics.md) | 60 min   | OpenCV, HSV filtering, line detection   |
-| 4   | [Obstacle Detection](04-obstacle-detection.md)         | 45 min   | LiDAR processing, obstacle avoidance    |
-| 5   | [Putting It Together](05-putting-it-together.md)       | 60 min   | Combining modules into a system         |
+| 1   | [Introduction to ROS 2](01-introduction-to-ros.md)     | 120 min  | Setup, Nodes, Topics, & Joystick        |
+| 2   | [Introducing the Dashboard](02-introducing-the-dashboard.md) | 20 min   | Setting up the headless robot monitor   |
+| 3   | [Working with Sensors](03-working-with-sensors.md)     | 45 min   | Camera and LiDAR data                   |
+| 4   | [Computer Vision Basics](04-computer-vision-basics.md) | 60 min   | OpenCV, HSV filtering, line detection   |
+| 5   | [Obstacle Detection](05-obstacle-detection.md)         | 45 min   | LiDAR processing, obstacle avoidance    |
+| 6   | [Putting It Together](06-putting-it-together.md)       | 60 min   | Combining modules into a system         |
 
 ## How to Use
 
