@@ -1,4 +1,4 @@
-# Module 8: Obstacle Detection
+# Module 4: Obstacle Detection
 
 ## Learning Objectives
 
@@ -181,5 +181,5 @@ See: `src/obstacle_avoidance/obstacle_avoidance/obstacle_avoidance.py`
 
 ---
 
-**Previous:** [Module 7 — Computer Vision Basics](07-computer-vision-basics.md)
-**Next:** [Module 9 — Putting It Together](09-putting-it-together.md)
+**Previous:** [Module 3 — Computer Vision Basics](03-computer-vision-basics.md)
+**Next:** [Module 5 — Putting It Together](05-putting-it-together.md)

@@ -1,4 +1,4 @@
-# Module 9: Putting It Together
+# Module 5: Putting It Together
 
 ## Learning Objectives
 
@@ -15,10 +15,10 @@ Over the previous modules, you've built individual pieces:
 
 | Module | What You Built         | Topic             |
 | ------ | ---------------------- | ----------------- |
-| 3      | Publisher + Subscriber | `/my_number`      |
-| 6      | Joystick driver        | `/cmd_vel`        |
-| 7      | Color detector         | `/detected_color` |
-| 8      | Obstacle detector      | `/my_obstacle`    |
+| 1      | Publisher + Subscriber | `/joy`            |
+| 1      | Joystick driver        | hardware output   |
+| 3      | Color detector         | `/detected_color` |
+| 4      | Obstacle detector      | `/my_obstacle`    |
 
 Now let's combine them into a **simple autonomous robot** that:
 
@@ -177,9 +177,9 @@ def generate_launch_description():
 ## Run It
 
 ```bash
-cd ~/risabotcar_ws
-cbp my_first_pkg
-sos
+cd ~/student_ws
+colcon build
+source install/setup.bash
 
 # Terminal 1: Sensors
 ros2 launch astra_camera astra_mini.launch.py
@@ -229,6 +229,6 @@ You've completed the workshop! Here's where to go from here:
 
 ---
 
-**Previous:** [Module 8 — Obstacle Detection](08-obstacle-detection.md)
+**Previous:** [Module 4 — Obstacle Detection](04-obstacle-detection.md)
 
-🎉 **Congratulations!** You've completed all 9 modules!
+🎉 **Congratulations!** You've completed all 5 modules!

@@ -1,4 +1,4 @@
-# Module 5: Working with Sensors
+# Module 2: Working with Sensors
 
 ## Learning Objectives
 
@@ -120,5 +120,5 @@ front_distance = ranges[front_index]
 
 ---
 
-**Previous:** [Module 4 — Launch Files](04-launch-files.md)
-**Next:** [Module 6 — Joystick Control](06-joystick-control.md)
+**Previous:** [Module 1 — Introduction to ROS 2](01-introduction-to-ros.md)
+**Next:** [Module 3 — Computer Vision Basics](03-computer-vision-basics.md)

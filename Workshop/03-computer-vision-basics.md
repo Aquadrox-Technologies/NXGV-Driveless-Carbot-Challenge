@@ -1,4 +1,4 @@
-# Module 7: Computer Vision Basics
+# Module 3: Computer Vision Basics
 
 ## Learning Objectives
 
@@ -170,5 +170,5 @@ Place white tape or paper lines in front of the camera — the error value shoul
 
 ---
 
-**Previous:** [Module 6 — Joystick Control](06-joystick-control.md)
-**Next:** [Module 8 — Obstacle Detection](08-obstacle-detection.md)
+**Previous:** [Module 2 — Working with Sensors](02-working-with-sensors.md)
+**Next:** [Module 4 — Obstacle Detection](04-obstacle-detection.md)
