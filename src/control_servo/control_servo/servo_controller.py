@@ -370,7 +370,7 @@ class ServoControllerV9(Node):
         if self.awaiting_neutral:
             neutral_thr = float(self._param_cache['unlock_neutral_threshold'])
             raw_throttle = msg.axes[1] if 1 < len(msg.axes) else 0.0
-            raw_steer = msg.axes[3] if 3 < len(msg.axes) else 0.0
+            raw_steer = msg.axes[2] if 2 < len(msg.axes) else 0.0
             if abs(raw_throttle) <= neutral_thr and abs(raw_steer) <= neutral_thr:
                 self.awaiting_neutral = False
                 self.get_logger().info('Controller neutral detected, manual drive enabled')
@@ -430,9 +430,9 @@ class ServoControllerV9(Node):
             # Throttle: Left Stick Y (Axis 1)
             throttle_raw = axis(1)
             
-            # Steering: Right Stick X (Axis 3 — Left/Right)
+            # Steering: Right Stick X (Axis 2 — Left/Right)
             # Ghost state protection handles startup noise from triggers
-            steer_raw = axis(3)
+            steer_raw = axis(2)
             
             # Deadzone
             if abs(throttle_raw) < 0.1: throttle_raw = 0.0
