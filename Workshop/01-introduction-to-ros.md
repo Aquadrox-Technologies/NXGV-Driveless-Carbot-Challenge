@@ -138,11 +138,25 @@ To see this built-in Talker in action:
    ```
 If you move the joysticks, you will see a stream of numbers appearing on your screen! That is the Talker broadcasting its data.
 
+**Configuring Your Controller:**
+Because different gamepads (Xbox, PlayStation, generic) map their joysticks to different array indexes, you can use this `echo` output to configure your code. 
+- While watching the screen, push your **Right Joystick Left and Right**. 
+- Look at the `axes: [0.0, 0.0, 0.0, ...]` array on your screen. 
+- Whichever number changes from `0.0` to `1.0` or `-1.0` is your steering axis! (Usually index `2` or `3`). You will use this number in the code later.
+
+### How They Work Together (The rqt_graph)
+If you were to look at the ROS 2 communication map (called an `rqt_graph`), you would see this:
+
+```text
+[ Talker Node ]  ──publishes──▶  /joy (topic)  ──▶  [ Your Terminal ]
+  (joy_node)                   Joystick Data       (_ros2cli_echo_123)
+```
+*Note: The `echo` command actually creates an invisible Subscriber node just to print the data to your screen!*
+
 ### The Subscriber (Your Node)
 You will write a Node that **Subscribes** to the `/joy` topic. Whenever you move the joystick, your Node will receive the message, calculate the required speed and steering, and send the physical electrical signals to the RISA-bot's motors.
 
-### How They Work Together
-Here is a visual map of what we are building:
+When you run your node alongside `joy_node`, the map will look like this:
 
 ```text
 [ Talker Node ]  ──publishes──▶  /joy (topic)  ──▶  [ Subscriber Node ]
