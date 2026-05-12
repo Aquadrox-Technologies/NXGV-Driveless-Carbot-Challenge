@@ -77,8 +77,11 @@ Key fields:
 ### 1. Start the LiDAR
 
 ```bash
-ros2 run ydlidar_ros2_driver ydlidar_ros2_driver_node
+ros2 run ydlidar_ros2_driver ydlidar_ros2_driver_node --ros-args \
+  -p port:=/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
 ```
+
+> **Why such a long port path?** The robot has multiple USB devices (LiDAR, motor board, camera). Linux assigns `/dev/ttyUSB0`, `/dev/ttyUSB1`, etc. in random order at boot. If you use `/dev/ttyUSB1` and the order changes, you'll connect to the wrong device and get `Check Sum` errors. The `/dev/serial/by-id/...` path is a **stable symlink** that always points to the LiDAR regardless of boot order.
 
 ### 2. Check the scan topic
 
