@@ -430,7 +430,7 @@ class ServoControllerV9(Node):
             # Throttle: Left Stick Y (Axis 1)
             throttle_raw = axis(1)
             
-            # Steering: Right Stick X (Axis 3 — confirmed for this controller)
+            # Steering: Right Stick X (Axis 3 — Left/Right)
             # Ghost state protection handles startup noise from triggers
             steer_raw = axis(3)
             
