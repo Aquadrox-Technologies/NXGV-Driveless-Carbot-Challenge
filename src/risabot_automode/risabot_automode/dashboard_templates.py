@@ -879,6 +879,44 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     color: #888;
     font-size: 0.8em;
   }
+  .param-save-defaults-btn {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(223, 142, 29, 0.3);
+    background: rgba(223, 142, 29, 0.08);
+    color: var(--warning);
+    cursor: pointer;
+    font-size: 0.82em;
+    font-weight: 700;
+    transition: all 0.2s;
+    font-family: inherit;
+    margin-top: 14px;
+    letter-spacing: 0.3px;
+  }
+  .param-save-defaults-btn:hover {
+    background: rgba(223, 142, 29, 0.18);
+    border-color: var(--warning);
+    box-shadow: 0 0 12px rgba(223, 142, 29, 0.15);
+  }
+  .param-save-defaults-btn:active {
+    transform: scale(0.98);
+  }
+  .param-save-defaults-btn.saving {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+  .param-save-defaults-btn.success {
+    background: rgba(64, 160, 43, 0.15);
+    border-color: var(--success);
+    color: var(--success);
+  }
+  .param-save-defaults-btn.error {
+    background: rgba(210, 15, 57, 0.1);
+    border-color: var(--danger);
+    color: var(--danger);
+  }
 </style>
 </head>
 <body>
@@ -1113,6 +1151,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <h3>⚙️ Parameter Tuning</h3>
   <div class="note">💡 Changes apply instantly to nodes but revert to defaults upon restart.</div>
   <div id="paramContainer"></div>
+  <button class="param-save-defaults-btn" id="saveDefaultsBtn" onclick="saveDefaults()">💾 Save Current as Default</button>
+  <div id="saveDefaultsStatus" style="text-align:center;font-size:0.78em;margin-top:6px;min-height:20px;"></div>
 </div>
 
 <!-- ===== CONTROLLER POPOUT ===== -->
@@ -1690,6 +1730,42 @@ async function setParam(node, param) {
     if (status) { status.className = 'param-status err'; status.textContent = 'Error'; }
   }
   setTimeout(() => { if(status) status.textContent = ''; }, 3000);
+}
+
+async function saveDefaults() {
+  if (!confirm('Save ALL current runtime parameters as the new defaults in params.yaml?\n\nThis will overwrite the file on disk. You will need to rebuild (colcon build) for the changes to take effect on next launch.')) {
+    return;
+  }
+  const btn = document.getElementById('saveDefaultsBtn');
+  const status = document.getElementById('saveDefaultsStatus');
+  btn.className = 'param-save-defaults-btn saving';
+  btn.textContent = '⏳ Saving...';
+  status.textContent = '';
+  try {
+    const r = await fetch('/api/save_defaults', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      btn.className = 'param-save-defaults-btn success';
+      btn.textContent = '✓ Saved!';
+      status.style.color = 'var(--success)';
+      status.textContent = d.msg || `${d.updated} params updated`;
+    } else {
+      btn.className = 'param-save-defaults-btn error';
+      btn.textContent = '✗ Failed';
+      status.style.color = 'var(--danger)';
+      status.textContent = d.error || 'Unknown error';
+    }
+  } catch(e) {
+    btn.className = 'param-save-defaults-btn error';
+    btn.textContent = '✗ Error';
+    status.style.color = 'var(--danger)';
+    status.textContent = 'Network error';
+  }
+  setTimeout(() => {
+    btn.className = 'param-save-defaults-btn';
+    btn.textContent = '💾 Save Current as Default';
+    status.textContent = '';
+  }, 5000);
 }
 
 buildParamUI();

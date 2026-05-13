@@ -65,9 +65,10 @@ except ImportError:
 from .dashboard_templates import DASHBOARD_HTML, TEACH_HTML
 
 _DEFAULT_PARAMS = {}
+_PARAMS_SOURCE_PATH = ''  # Path to the SOURCE params.yaml (for writing back)
 
 def load_default_params():
-    global _DEFAULT_PARAMS
+    global _DEFAULT_PARAMS, _PARAMS_SOURCE_PATH
     try:
         from ament_index_python.packages import get_package_share_directory
         try:
@@ -81,6 +82,15 @@ def load_default_params():
             params_file = os.path.abspath(os.path.join(this_dir, '..', '..', 'config', 'params.yaml'))
 
         if os.path.exists(params_file):
+            # Resolve the SOURCE file path (inside src/) for writing back
+            # The share/ copy is read-only after colcon build, so we find the src/ original
+            this_dir = os.path.dirname(os.path.abspath(__file__))
+            source_params = os.path.abspath(os.path.join(this_dir, '..', 'config', 'params.yaml'))
+            if os.path.exists(source_params):
+                _PARAMS_SOURCE_PATH = source_params
+            else:
+                _PARAMS_SOURCE_PATH = params_file  # fallback to whatever we found
+
             with open(params_file, 'r') as f:
                 data = yaml.safe_load(f)
                 if data:
@@ -90,6 +100,7 @@ def load_default_params():
                                 _DEFAULT_PARAMS[node_name] = {}
                             _DEFAULT_PARAMS[node_name].update(node_data['ros__parameters'])
             print(f"Loaded default params from {params_file}")
+            print(f"Source params path for saving: {_PARAMS_SOURCE_PATH}")
     except Exception as e:
         print(f"Failed to load default params: {e}")
 
@@ -653,6 +664,80 @@ def _ros_set_param(node_name, param_name, value_str):
     except Exception as e:
         return False, str(e)
 
+
+def _save_params_to_yaml():
+    """Read current runtime params from all nodes and write them to the source params.yaml."""
+    global _PARAMS_SOURCE_PATH, _DEFAULT_PARAMS
+    if not _PARAMS_SOURCE_PATH:
+        return {'ok': False, 'error': 'No params.yaml path resolved'}
+    if not os.path.exists(_PARAMS_SOURCE_PATH):
+        return {'ok': False, 'error': f'File not found: {_PARAMS_SOURCE_PATH}'}
+
+    try:
+        # Read the existing file to preserve comments structure
+        # We read it as raw text lines to do targeted value replacement
+        with open(_PARAMS_SOURCE_PATH, 'r') as f:
+            yaml_data = yaml.safe_load(f)
+        if not yaml_data:
+            return {'ok': False, 'error': 'Empty params.yaml'}
+
+        # For each node section in the YAML, fetch current runtime values
+        updated_count = 0
+        errors = []
+        for node_name, node_data in yaml_data.items():
+            if not isinstance(node_data, dict) or 'ros__parameters' not in node_data:
+                continue
+            params = node_data['ros__parameters']
+            for param_name in list(params.keys()):
+                value, err = _ros_get_param(node_name, param_name)
+                if err is not None:
+                    # Node not running or param not found — keep existing default
+                    continue
+                # Convert string value back to the correct Python type
+                old_val = params[param_name]
+                try:
+                    if isinstance(old_val, bool):
+                        new_val = value.lower() == 'true'
+                    elif isinstance(old_val, int):
+                        # Handle float strings like "8.0" → int 8
+                        new_val = int(float(value))
+                    elif isinstance(old_val, float):
+                        new_val = float(value)
+                    else:
+                        new_val = value
+                except (ValueError, TypeError):
+                    new_val = value
+
+                if params[param_name] != new_val:
+                    params[param_name] = new_val
+                    updated_count += 1
+
+        # Write updated YAML back
+        # Use a custom representer to avoid YAML anchors and get clean output
+        class CleanDumper(yaml.SafeDumper):
+            pass
+
+        def _repr_str(dumper, data):
+            return dumper.represent_scalar('tag:yaml.org,2002:str', data)
+        CleanDumper.add_representer(str, _repr_str)
+
+        with open(_PARAMS_SOURCE_PATH, 'w') as f:
+            yaml.dump(yaml_data, f, Dumper=CleanDumper, default_flow_style=False,
+                      sort_keys=False, allow_unicode=True, width=120)
+
+        # Also update the in-memory defaults
+        for node_name, node_data in yaml_data.items():
+            if isinstance(node_data, dict) and 'ros__parameters' in node_data:
+                if node_name not in _DEFAULT_PARAMS:
+                    _DEFAULT_PARAMS[node_name] = {}
+                _DEFAULT_PARAMS[node_name].update(node_data['ros__parameters'])
+
+        return {'ok': True, 'msg': f'Saved {updated_count} changed params to {_PARAMS_SOURCE_PATH}',
+                'updated': updated_count, 'path': _PARAMS_SOURCE_PATH}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
 _node_ref = None
 
 class DashboardHandler(http.server.BaseHTTPRequestHandler):
@@ -830,6 +915,13 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                     resp = {'ok': False, 'error': msg}
             except Exception as e:
                 resp = {'ok': False, 'error': str(e)}
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode())
+        elif self.path == '/api/save_defaults':
+            resp = _save_params_to_yaml()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
