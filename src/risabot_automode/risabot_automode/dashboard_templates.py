@@ -1733,7 +1733,7 @@ async function setParam(node, param) {
 }
 
 async function saveDefaults() {
-  if (!confirm('Save ALL current runtime parameters as the new defaults in params.yaml?\n\nThis will overwrite the file on disk. You will need to rebuild (colcon build) for the changes to take effect on next launch.')) {
+  if (!confirm('Save ALL current runtime parameters as the new defaults in params.yaml?\\n\\nThis will overwrite the file on disk. You will need to rebuild (colcon build) for the changes to take effect on next launch.')) {
     return;
   }
   const btn = document.getElementById('saveDefaultsBtn');
