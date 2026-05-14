@@ -483,5 +483,5 @@ You learned that:
 
 ---
 
-**Previous:** [Module 4 — Lane Following](04-lane-follower.md)
-**Next:** Module 6 — Coming Soon
+**Previous:** [Module 4 — Obstacle Detection](05-obstacle-detection.md)
+**Next:** [Module 6 — Putting It Together](06-putting-it-together.md)
