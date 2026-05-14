@@ -83,6 +83,9 @@ fi
 
 export PATH="$PATH:/home/sunrise/.local/bin"
 
+# Disable FastRTPS Shared Memory to prevent /dev/shm corruption
+export FASTRTPS_DEFAULT_PROFILES_FILE=~/risabotcar_ws/src/risabot_automode/config/disable_shm.xml
+
 if [ -f ~/ydlidar_ros2_ws/install/setup.bash ]; then
     source ~/ydlidar_ros2_ws/install/setup.bash
 fi
