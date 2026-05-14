@@ -13,17 +13,18 @@ By the end of this module, you will:
 
 ## 1. The Problem: Too Many Terminals!
 
-Over the previous modules, you built and ran individual pieces of the robot:
+Over the previous modules, you ran nodes one at a time across multiple terminals:
 
-| Module | What You Built | How You Ran It |
-|--------|---------------|----------------|
-| 1 | Joystick driver | `ros2 run my_robot_controller joy_driver` |
-| 2 | Dashboard + sensors | `ros2 run risabot_automode dashboard` |
-| 3 | Lane follower | `ros2 launch risabot_automode lane_test.launch.py` |
-| 4 | Obstacle detector | `ros2 run my_first_pkg obstacle_detector` |
-| 5 | Tunnel wall follower | `ros2 run risabot_automode tunnel_wall_follower` |
+| Module | What You Ran | Terminal |
+|--------|-------------|----------|
+| 1 | `ros2 run joy joy_node` | Terminal 1 |
+| 1 | `ros2 run my_robot_controller joy_driver` | Terminal 2 |
+| 2 | `ros2 launch astra_camera astra_mini.launch.py` | Terminal 3 |
+| 2 | `ros2 run ydlidar_ros2_driver ydlidar_ros2_driver_node ...` | Terminal 4 |
+| 2 | `ros2 run risabot_automode dashboard` | Terminal 5 |
+| 3 | `ros2 launch risabot_automode lane_test.launch.py` | Terminal 6 |
 
-Each time, you had to open **multiple SSH terminals** — one for the camera, one for the LiDAR, one for the dashboard, one for your node... On competition day with 10+ nodes, this becomes completely unmanageable.
+Every piece of the robot needs its own terminal. On competition day with 10+ nodes, this becomes completely unmanageable — opening terminals, sourcing workspaces, remembering the right commands...
 
 The solution is a **launch file**: a single Python script that starts every node in the correct order, with the correct parameters, in one command.
 
@@ -45,6 +46,8 @@ Terminal 6: ros2 run joy joy_node
 Terminal 7: ros2 run control_servo servo_controller
 ...
 ```
+
+You actually already used a launch file in Module 3 when you ran `ros2 launch risabot_automode lane_test.launch.py`. That single command started the camera, the line follower, the auto driver, the joystick, and the dashboard — all at once!
 
 ---
 
@@ -120,9 +123,12 @@ Node(
 ),
 ```
 
+> [!NOTE]
+> Remember from Module 3, the line follower camera has many parameters like `white_threshold`, `n_scanlines`, and `kalman_enabled`. Instead of typing all of those inline, we point to the `params.yaml` file — much cleaner!
+
 ### 3.4. Including Another Launch File
 
-Some packages (like the Astra camera) come with their own launch files. You can include them inside yours:
+Some packages (like the Astra camera) come with their own launch files. Instead of copying all their node definitions into your file, you can include them:
 
 ```python
 IncludeLaunchDescription(
@@ -132,11 +138,11 @@ IncludeLaunchDescription(
 ),
 ```
 
-This is like saying "run their launch file as part of mine."
+This is like saying "run their launch file as part of mine." Remember in Module 2, you ran `ros2 launch astra_camera astra_mini.launch.py` in a separate terminal. Now it is included automatically.
 
 ### 3.5. Delaying Node Startup with `TimerAction`
 
-Some nodes depend on others being ready first. For example, the `line_follower_camera` needs the camera to be publishing frames before it can start processing images. Without a delay, it would start, see no camera data, and either crash or produce errors.
+Some nodes depend on others being ready first. For example, the `line_follower_camera` from Module 3 needs the camera to be publishing frames before it can start processing images. Without a delay, it would start, see no camera data, and produce errors.
 
 ```python
 # Wait 3 seconds for the camera to initialize, then start the line follower
@@ -151,7 +157,7 @@ TimerAction(period=3.0, actions=[
 ]),
 ```
 
-The `auto_driver` (the brain) waits 5 seconds — it needs ALL sensors ready before it starts making decisions:
+The `auto_driver` (the brain from Module 3) waits even longer — 5 seconds — because it needs ALL sensors and perception nodes ready before it starts making decisions:
 
 ```python
 # Wait 5 seconds so all perception nodes are publishing
@@ -170,39 +176,41 @@ TimerAction(period=5.0, actions=[
 
 ## 4. The RISA-bot Bringup Launch File — Full Walkthrough
 
-Here is the full startup sequence of `bringup.launch.py`. Every node you learned about in previous modules is here:
+Here is the complete startup sequence of `bringup.launch.py`. It brings together all the nodes you have been using across the workshop:
 
 ```text
-TIME   NODE                      MODULE   PURPOSE
-──────────────────────────────────────────────────────────────────
-0s     Astra Camera              (2)      Camera hardware driver
-0s     YDLiDAR driver            (2)      LiDAR hardware driver
-0s     TF publisher              (—)      Coordinate frame link
-0s     cmd_safety_controller     (3)      Speed limits & emergency stop
-0s     joy_node                  (1)      Joystick input
-0s     servo_controller          (1)      Motor & steering hardware
-0s     health_monitor            (—)      System health watchdog
-0s     dashboard                 (2)      Web UI at :8080
-──────────────────────────────────────────────────────────────────
-3s     obstacle_avoidance        (4)      LiDAR obstacle detection
-3s     obstacle_avoidance_camera (4)      Camera obstacle detection
-3s     line_follower_camera      (3)      Lane detection
-3s     traffic_light_detector    (—)      Traffic light detection
-3s     tunnel_wall_follower      (5)      LiDAR tunnel navigation
-──────────────────────────────────────────────────────────────────
-5s     auto_driver               (3)      The brain — decides what to do
+TIME   NODE                      PURPOSE
+─────────────────────────────────────────────────────────────────
+0s     Astra Camera              Camera driver (Module 2)
+0s     YDLiDAR driver            LiDAR driver (Module 2)
+0s     TF publisher              Coordinate frame link
+0s     cmd_safety_controller     Speed limits & emergency stop (Module 3)
+0s     joy_node                  Joystick input (Module 1)
+0s     servo_controller          Motor & steering hardware (Module 1)
+0s     health_monitor            System health watchdog
+0s     dashboard                 Web UI at :8080 (Module 2)
+─────────────────────────────────────────────────────────────────
+3s     obstacle_avoidance        LiDAR obstacle detection
+3s     obstacle_avoidance_camera Camera obstacle detection
+3s     line_follower_camera      Lane detection (Module 3)
+3s     traffic_light_detector    Traffic light detection
+3s     tunnel_wall_follower      LiDAR tunnel navigation
+─────────────────────────────────────────────────────────────────
+5s     auto_driver               The brain — decides what to do (Module 3)
 ```
 
 **Notice the three startup groups:**
 1. **Immediate (0s):** Hardware drivers and infrastructure — these must start first
-2. **Delayed 3s:** Perception nodes — wait for sensors to be publishing
+2. **Delayed 3s:** Perception nodes — wait for sensors to be publishing data
 3. **Delayed 5s:** The brain — waits for everything else to be ready
+
+This is the same pattern used in professional robotics and autonomous vehicles: **hardware → perception → decision-making**.
 
 ---
 
 ## 5. Hands-On: Write Your Own Launch File
 
-Now let's create a launch file for the nodes you built in earlier modules!
+Now let's create a launch file that combines the nodes you used across the workshop into a single command.
 
 ### Step 1 — Create the launch directory
 
@@ -217,17 +225,46 @@ Create `~/student_ws/src/my_robot_controller/launch/my_bringup.launch.py`:
 ```python
 import os
 from launch import LaunchDescription
-from launch.actions import TimerAction
+from launch.actions import IncludeLaunchDescription, TimerAction
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
+    # Find the camera package's launch file
+    astra_pkg = get_package_share_directory('astra_camera')
+    
+    # LiDAR serial port (same one you used in Module 2)
+    lidar_port = '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0'
+
     return LaunchDescription([
 
-        # ==================== HARDWARE ====================
+        # ==================== SENSORS (0s) ====================
+        # These start immediately — hardware needs to be ready first
 
-        # Joystick driver (from the joy package)
+        # Camera (include the Astra's own launch file)
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(astra_pkg, 'launch', 'astra_mini.launch.py')
+            )
+        ),
+
+        # LiDAR
+        Node(
+            package='ydlidar_ros2_driver',
+            executable='ydlidar_ros2_driver_node',
+            name='ydlidar_ros2_driver_node',
+            output='screen',
+            parameters=[{
+                'port': lidar_port,
+                'baudrate': 230400,
+                'frame_id': 'laser_frame',
+                'frequency': 10.0,
+            }],
+        ),
+
+        # Joystick (from Module 1)
         Node(
             package='joy',
             executable='joy_node',
@@ -239,41 +276,25 @@ def generate_launch_description():
             }]
         ),
 
-        # ==================== PERCEPTION ====================
-        # Delayed 3s to let the LiDAR and camera initialize
+        # Dashboard (from Module 2)
+        Node(
+            package='risabot_automode',
+            executable='dashboard',
+            name='dashboard',
+            output='screen',
+        ),
 
-        # Your obstacle detector (from Module 4)
-        TimerAction(period=3.0, actions=[
-            Node(
-                package='my_robot_controller',
-                executable='obstacle_detector',
-                name='obstacle_detector',
-                output='screen',
-                parameters=[{
-                    'min_distance': 0.40,
-                    'scan_angle': 30.0,
-                }]
-            ),
-        ]),
-
-        # ==================== BRAIN ====================
-        # Delayed 5s to let perception nodes start first
-
-        # Your simple brain (from Module 4)
-        TimerAction(period=5.0, actions=[
-            Node(
-                package='my_robot_controller',
-                executable='simple_brain',
-                name='simple_brain',
-                output='screen',
-                parameters=[{
-                    'speed': 0.15,
-                    'steering_gain': 0.5,
-                }]
-            ),
-        ]),
+        # Your joystick driver (from Module 1)
+        Node(
+            package='my_robot_controller',
+            executable='joy_driver',
+            name='joy_driver',
+            output='screen',
+        ),
     ])
 ```
+
+This launch file starts the camera, LiDAR, joystick, dashboard, and your joystick driver — all the nodes you used in Modules 1 and 2 — with a single command!
 
 ### Step 3 — Register the launch file in `setup.py`
 
@@ -313,60 +334,81 @@ source install/setup.bash
 ros2 launch my_robot_controller my_bringup.launch.py
 ```
 
-You should see all three nodes start up in sequence — joystick immediately, obstacle detector after 3 seconds, and the brain after 5 seconds.
+You should see all nodes start up — camera, LiDAR, joystick, dashboard, and your driver. Open the dashboard in your browser at `http://192.168.x.x:8080` to see both the camera feed and LiDAR data appear — all launched from one terminal!
 
 ---
 
-## 6. Adding Sensor Nodes to Your Launch File
+## 6. Adding Delays for Dependent Nodes
 
-Your launch file above starts your custom nodes, but the camera and LiDAR still need to be launched separately. Let's fix that by adding them:
+Right now, all nodes start at the same time. But what if you want to add the line follower from Module 3? It needs the camera to be publishing first. Let's add it with a delay:
 
 ```python
-# Add these imports at the top:
-from launch.actions import IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+        # ==================== PERCEPTION (3s) ====================
+        # Wait for sensors to be ready
 
-def generate_launch_description():
-    # Find the astra_camera package
-    astra_pkg = get_package_share_directory('astra_camera')
-    
-    # LiDAR serial port
-    lidar_port = '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0'
-
-    return LaunchDescription([
-
-        # Camera (include its own launch file)
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                os.path.join(astra_pkg, 'launch', 'astra_mini.launch.py')
-            )
-        ),
-
-        # LiDAR
-        Node(
-            package='ydlidar_ros2_driver',
-            executable='ydlidar_ros2_driver_node',
-            name='ydlidar_ros2_driver_node',
-            output='screen',
-            parameters=[{
-                'port': lidar_port,
-                'baudrate': 230400,
-                'frame_id': 'laser_frame',
-                'frequency': 10.0,
-            }],
-        ),
-
-        # ... your other nodes with TimerAction delays ...
-    ])
+        TimerAction(period=3.0, actions=[
+            Node(
+                package='risabot_automode',
+                executable='line_follower_camera',
+                name='line_follower_camera',
+                output='screen',
+                parameters=[{
+                    'white_threshold': 100,
+                    'invert_binary': True,
+                    'n_scanlines': 8,
+                    'show_debug': True,
+                }]
+            ),
+        ]),
 ```
 
-Now `ros2 launch my_robot_controller my_bringup.launch.py` starts **everything** — sensors, perception, and control — in one command. No more juggling 7 terminals!
+Now the line follower waits 3 seconds for the camera to start. Your launch file is beginning to look like the real `bringup.launch.py`!
 
 ---
 
-## 7. Running the Full RISA-bot System
+## 7. Using a Shared Parameter File
 
-Now that you understand how launch files work, let's run the real thing:
+In Module 3, you saw that the RISA-bot has many tunable parameters (PID gains, thresholds, speeds). Typing them all inline in the launch file would be messy. Instead, the RISA-bot uses a single `config/params.yaml` file:
+
+```yaml
+# config/params.yaml — one file for all nodes
+line_follower_camera:
+  ros__parameters:
+    white_threshold: 100
+    invert_binary: true
+    n_scanlines: 8
+    show_debug: true
+
+auto_driver:
+  ros__parameters:
+    forward_speed: 0.15
+    pid_kp: 0.8
+    pid_kd: 0.20
+```
+
+Then in the launch file, every node loads from the same file:
+
+```python
+risabot_pkg = get_package_share_directory('risabot_automode')
+params_file = os.path.join(risabot_pkg, 'config', 'params.yaml')
+
+# Each node points to the shared file:
+Node(
+    package='risabot_automode',
+    executable='line_follower_camera',
+    name='line_follower_camera',
+    parameters=[params_file]      # ← All params loaded from one place
+),
+```
+
+> [!TIP]
+> This is why you could tune parameters using `ros2 param set` in Module 3 and then click **💾 Save Current as Default** on the dashboard — it writes back to this single `params.yaml` file!
+
+---
+
+## 8. Running the Full RISA-bot System
+
+Now that you understand how launch files work, let's run the real `bringup.launch.py`:
 
 ```bash
 cd ~/risabotcar_ws
@@ -374,7 +416,7 @@ source install/setup.bash
 ros2 launch risabot_automode bringup.launch.py
 ```
 
-You will see a stream of log messages as each node initializes. Watch for these key messages:
+Watch for these key messages in the terminal output:
 
 ```
 [ydlidar_ros2_driver_node]: Now lidar is scanning...
@@ -382,96 +424,82 @@ You will see a stream of log messages as each node initializes. Watch for these 
 [dashboard]: Dashboard live!
 [dashboard]:   → http://10.118.151.222:8080
 [line_follower_camera]: Line Follower Camera: Ready
-[tunnel_wall_follower]: Tunnel Wall Follower started (Centerline Path)
 [auto_driver]: Auto Driver Node Starting (Competition Mode)...
 [auto_driver]: State: MANUAL
 ```
 
-Once `auto_driver` prints `State: MANUAL`, the full system is running.
+Once `auto_driver` prints `State: MANUAL`, the full system is running. Open the dashboard in your browser to verify everything is connected.
 
-### Verify on the Dashboard
-
-1. Open `http://<robot_ip>:8080` in your browser.
-2. You should see:
-   - **Status:** Connected (green dot)
-   - **State:** MANUAL
-   - **LiDAR canvas:** Showing real-time distance dots
-   - **Camera:** Click "Enable Camera" to see the live feed
-3. Press **Start** on the joystick to toggle between MANUAL and AUTO mode.
-
----
-
-## 8. Compare: Your Launch File vs RISA-bot's
+### Compare: Your Launch File vs RISA-bot's
 
 | Feature | Your `my_bringup.launch.py` | RISA-bot's `bringup.launch.py` |
 |---------|---------------------------|-------------------------------|
-| Nodes | 3 (joy, obstacle, brain) | 13+ (sensors, perception, control, monitoring) |
-| Sensor drivers | Not included | Camera + LiDAR + TF |
+| Nodes | ~5 (sensors, joy, dashboard) | 13+ (full competition system) |
 | Parameters | Inline values | Central `params.yaml` file |
-| Delays | 3s and 5s groups | Same pattern! |
+| Delays | None yet | 3s for perception, 5s for brain |
 | Safety | None | `cmd_safety_controller` enforces limits |
-| Monitoring | None | `dashboard` + `health_monitor` |
+| Monitoring | Dashboard only | `dashboard` + `health_monitor` |
 
-The core pattern is identical: **start hardware → wait → start perception → wait → start the brain**. The RISA-bot just has more nodes and a centralized parameter file.
+The core pattern is identical: **start hardware → wait → start perception → wait → start the brain**. The RISA-bot just has more nodes.
 
 ---
 
 ## 9. Exercises
 
-### Exercise 1: Add the Dashboard to Your Launch File
+### Exercise 1: Add a Startup Delay
 
-Add the RISA-bot dashboard to your `my_bringup.launch.py`:
+Modify your `my_bringup.launch.py` to delay your `joy_driver` node by 2 seconds. This ensures the `joy_node` has time to connect to the gamepad before your driver tries to subscribe.
 
 ```python
-# Add this to your LaunchDescription list:
-Node(
-    package='risabot_automode',
-    executable='dashboard',
-    name='dashboard',
-    output='screen',
-),
+TimerAction(period=2.0, actions=[
+    Node(
+        package='my_robot_controller',
+        executable='joy_driver',
+        name='joy_driver',
+        output='screen',
+    ),
+]),
 ```
 
-Rebuild and launch. Open the dashboard in your browser — you now have a visual monitor for your system!
+Rebuild and launch. Does the startup feel smoother?
 
-### Exercise 2: Create a Parameter File
+### Exercise 2: Add the Line Follower and Auto Driver
 
-Instead of hardcoding parameters inline, create a `config/params.yaml` for your package:
+Expand your launch file to include the full lane-following pipeline from Module 3:
 
+1. Add `line_follower_camera` with a 3-second delay
+2. Add `cmd_safety_controller` at 0 seconds
+3. Add `servo_controller` at 0 seconds
+4. Add `auto_driver` with a 5-second delay
+
+Your launch file should now start the complete lane-following system in one command — just like `lane_test.launch.py` from Module 3!
+
+### Exercise 3: Create Your Own Parameter File
+
+Create a `config/params.yaml` file inside your package:
+
+```bash
+mkdir -p ~/student_ws/src/my_robot_controller/config
+```
+
+Write a simple parameter file:
 ```yaml
 # ~/student_ws/src/my_robot_controller/config/params.yaml
-obstacle_detector:
+joy_driver:
   ros__parameters:
-    min_distance: 0.40
-    scan_angle: 30.0
-
-simple_brain:
-  ros__parameters:
-    speed: 0.15
-    steering_gain: 0.5
+    max_speed: 0.3
+    servo_center: 102
 ```
 
-Then update your launch file to use it:
-
+Register the config folder in `setup.py`:
 ```python
-risabot_pkg = get_package_share_directory('my_robot_controller')
-params_file = os.path.join(risabot_pkg, 'config', 'params.yaml')
-
-# In each Node:
-parameters=[params_file]
+(os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
 ```
 
-> [!TIP]
-> Don't forget to register the `config/` folder in your `setup.py`'s `data_files` list, just like you did with `launch/`:
-> ```python
-> (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
-> ```
-
-### Exercise 3: Add a New Node to the System
-
-Create a simple "status printer" node that subscribes to `/my_obstacle` and `/lane_error` and prints a summary every second. Add it to your launch file with a 3-second delay.
-
-**Challenge:** Can you make it publish a `String` message on `/system_status` summarizing the robot's current situation (e.g. "Lane OK, No obstacle" or "Lane lost, Obstacle at 0.3m")?
+Update your launch file to load from this file instead of inline parameters. Rebuild and verify the parameters are loaded correctly using:
+```bash
+ros2 param get /joy_driver max_speed
+```
 
 ---
 
