@@ -5,6 +5,7 @@
 By the end of this module, you will:
 - Understand the complete data flow from camera to motor in an autonomous lane follower
 - Know how the RISA-bot detects lane boundaries using image processing
+- Understand the math and methods behind the **Kalman Filter** and **PID Controller**
 - Be able to launch the lane follower using the built-in launch file
 - Observe the system live through the dashboard debug view
 - Know where to look in the code and config file to tune the robot's behaviour
@@ -114,9 +115,9 @@ binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel_close)
 
 After thresholding, the binary image usually has small noisy blobs and tiny gaps in the lane line. These two morphological operations clean it up before we try to locate the lane edges.
 
-### Step 5 — Multi-scanline detection
+### Step 5 — Multi-scanline detection (Weighted Average)
 
-This is the core lane-finding algorithm, inspired by the **Cytron differential line following** technique.
+This is the core lane-finding algorithm, inspired by the **Cytron differential line following** technique. Instead of just looking at one row of pixels, we look at several rows (scanlines) and give more importance (weight) to the ones closer to the robot.
 
 ```text
 Binary image (road crop, 320 × 132):
@@ -127,43 +128,72 @@ Binary image (road crop, 320 × 132):
   row 66 (mid)   ──────────────────────────────────── scanline 4 (weight 1.5)
   ...
   row 131 (near) ──────────────────────────────────── scanline 1 (weight 2.0)
-  
-  For each scanline row, scan left-to-right to find white blobs.
-  Match each blob to the nearest expected lane boundary.
-  Compute lane centre = (left_x + right_x) / 2
 ```
 
-The bottom scanlines (closer to the robot) are given **higher weight** because what's directly in front matters more than a far-away road section.
+For each scanline row, the code scans left-to-right to find white blobs. It matches each blob to the nearest expected lane boundary, and computes the center point for that scanline:
+`center_x = (left_x + right_x) / 2`
+
+Next, it calculates the **weighted average** of all the center points found across the different scanlines:
+
+```text
+               (center_x₁ × weight₁) + (center_x₂ × weight₂) + ...
+avg_center_x = ---------------------------------------------------
+                        weight₁ + weight₂ + ...
+```
 
 ```python
-# After all scanlines, compute weighted average centre
+# In code:
 avg_center_x = sum(pt[0] * wt for pt, wt in zip(center_pts, scan_weights)) / total_weight
-
-# Convert to error: 0 = centred, positive = lane shifted right, negative = lane shifted left
-raw_error = (avg_center_x - image_center) / image_center  # range: -1.0 to +1.0
 ```
 
-### Step 6 — Kalman filter smoothing
+**Why normalize the error?**
+Instead of returning the error in pixels (which changes if we change the camera resolution), we normalize it to a range of `-1.0` to `+1.0`. 
+Since the image width is 320, the image center is 160. If the lane center is found at pixel 320 (maximum deviation to the right), the error is `(320 - 160) / 160 = +1.0`.
+
+```text
+            avg_center_x - image_center
+raw_error = ---------------------------
+                  image_center
+```
 
 ```python
-# Predict: advance the estimate using last velocity
-self._kalman.predict(dt)
+# Convert to error: 0 = centred, positive = lane shifted right, negative = lane shifted left
+raw_error = (avg_center_x - image_center) / image_center
+```
 
-# Update: correct with new measurement (if lane found)
+### Step 6 — Kalman filter smoothing (Prediction & Update)
+
+A **Kalman filter** is a mathematical algorithm used to estimate the true state of a system from noisy measurements. Here, it tracks the lane's position (error) and its rate of change (velocity). 
+
+It works in a continuous two-step cycle:
+
+**1. Predict Step:** Where do we think the lane is now, based on its last known speed and position?
+```text
+position_new = position_old + (velocity_old × Δt)
+```
+```python
+# Advance the estimate using last velocity
+self._kalman.predict(dt)
+```
+*Why this matters:* If the camera briefly loses the lane in a shadow, the filter predicts where it should be based on recent movement. The robot keeps steering correctly instead of freezing.
+
+**2. Update Step:** The camera just gave us a new measurement (`raw_error`). We combine our prediction with this new measurement to get the most accurate estimate.
+```text
+position_final = position_predicted + K × (measurement - position_predicted)
+```
+*(Where `K` is the Kalman Gain, dynamically calculated based on certainty).*
+```python
+# Correct with new measurement (if lane found)
 if abs(raw_error) >= dead_zone:
     self._kalman.update(raw_error)
-
-# Publish the filtered error
-self.filtered_error = self._kalman.position
 ```
-
-A **Kalman filter** tracks both the position (where the lane is) and velocity (how fast it is moving). This gives two benefits:
-1. **Smoothing** — rapid noisy fluctuations are filtered out.
-2. **Prediction** — if the camera briefly loses the lane in a shadow, the filter predicts where it should be based on recent movement. The robot keeps steering correctly instead of freezing.
+*Why this matters:* It provides **smoothing**. Rapid noisy fluctuations from the camera are filtered out, giving the motors a buttery-smooth steering target.
 
 ### Step 7 — Publish
 
 ```python
+# Publish the filtered error
+self.filtered_error = self._kalman.position
 self.error_pub.publish(Float32(data=self.lane_error))
 ```
 
@@ -175,24 +205,47 @@ One number — the filtered lane error — is published to `/lane_error`. That's
 
 Open `src/risabot_automode/risabot_automode/auto_driver.py` and find the `_lane_follow_cmd` method.
 
-The `auto_driver` reads `/lane_error` and computes a steering command using a **PID controller**:
+The `auto_driver` reads `/lane_error` and computes a steering command using a **PID controller**. PID stands for Proportional, Integral, Derivative. It is the most widely used control algorithm in robotics and industry.
 
+The fundamental equation is:
+```text
+Steering = (Kp × error)  +  (Ki × ∫ error dt)  +  (Kd × d(error)/dt)
 ```
-Steering = Kp × error  +  Ki × ∫error dt  +  Kd × (d error / dt)
+
+In Python code, since we process data in discrete time steps (`dt`), the calculus is simplified into basic arithmetic:
+
+| Term | Equation | Role in Steering |
+|------|----------|------------------|
+| **Proportional (P)** | `p_term = Kp * error` | **The Main Muscle:** Steers exactly proportional to how far off-center we are. Larger error = harder turn. If used alone, the robot might oscillate. |
+| **Integral (I)** | `integral += error * dt`<br>`i_term = Ki * integral` | **The Memory:** Accumulates past errors over time. If the robot constantly veers slightly right (due to a heavy battery or misaligned wheel), the integral builds up and pushes it back to center to correct the steady drift. |
+| **Derivative (D)** | `derivative = (error - prev_error) / dt`<br>`d_term = Kd * derivative` | **The Damper (Prediction):** Looks at the *rate of change*. If the robot is rapidly approaching the center, the derivative is negative, which *reduces* the steering force to prevent it from overshooting the center line. |
+
+```python
+# The discrete PID implementation in auto_driver.py:
+p_term = self.pid_kp * error
+self.integral += error * dt
+i_term = self.pid_ki * self.integral
+
+derivative = (error - self.previous_error) / dt
+d_term = self.pid_kd * derivative
+
+steering_command = p_term + i_term + d_term
+self.previous_error = error
 ```
 
-| Term | Name | Role |
-|------|------|------|
-| **Kp × error** | Proportional | Main steering force — larger error = harder turn |
-| **Ki × ∫error** | Integral | Corrects long-term drift (e.g. if robot always veers right) |
-| **Kd × Δerror** | Derivative | Dampens oscillation — slows the correction as it approaches centre |
+### Adaptive Speed (Cornering Logic)
 
-It also applies **adaptive speed**: the robot slows down when the error is large (sharp turn) and speeds up when driving straight.
+Real drivers slow down in sharp turns. The RISA-bot does the same mathematically:
+
+```text
+Speed_multiplier = MAX( min_turn_speed,  1.0 - (scale × |error|) )
+```
 
 ```python
 speed_mult = max(min_turn_speed, 1.0 - speed_error_scale * abs(error))
 linear_x   = forward_speed * speed_mult
 ```
+If the error is `0.0` (straight ahead), `speed_mult` is `1.0` (full speed). If the error is large (a sharp turn), `speed_mult` drops down to `min_turn_speed` so the robot doesn't fly off the track.
 
 The resulting `Twist` message passes through `cmd_safety_controller`, which clamps the values within safe hardware limits and stops everything if no command arrives for 350 ms.
 
@@ -418,9 +471,9 @@ Camera → Image Processing → Lane Error → PID Controller → Motor Command 
 
 You learned that:
 - The camera image is **cropped, contrast-enhanced, and thresholded** to isolate the lane
-- **Multiple horizontal scanlines** find the left and right lane boundaries
-- A **Kalman filter** smooths the error and predicts through momentary lane loss
-- A **PID controller** in `auto_driver` converts the error into a steering command
+- **Multiple horizontal scanlines** find the left and right lane boundaries using a **weighted average** formula
+- A **Kalman filter** smooths the error and predicts through momentary lane loss by combining previous velocity with new measurements
+- A **PID controller** in `auto_driver` converts the error into a steering command by summing the Proportional, Integral, and Derivative components
 - A **safety controller** ensures the hardware is never over-commanded
 - All parameters can be tuned live using `ros2 param set`
 
