@@ -314,4 +314,5 @@ ros2 run my_robot_controller joy_driver
 Push the left stick up/down to drive, and the right stick left/right to steer. Congratulations! You've written your first ROS 2 node and integrated it with physical hardware!
 
 ---
-**Next Steps:** Proceed to [Module 2 — Dashboard & Sensors](02-dashboard-and-sensors.md) to learn how to use the dashboard and read data from cameras and LiDAR.
+**Previous:** [Module 0 — Linux Basics](00-linux-basics.md)
+**Next:** [Module 2 — Dashboard & Sensors](02-dashboard-and-sensors.md) to learn how to use the dashboard and read data from cameras and LiDAR.
