@@ -14,7 +14,7 @@ Launches:
 
 import os
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, TimerAction
+from launch.actions import IncludeLaunchDescription, TimerAction, SetEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -28,10 +28,16 @@ def generate_launch_description():
     # Centralized parameter file for all risabot nodes
     params_file = os.path.join(risabot_pkg, 'config', 'params.yaml')
 
+    # --- Disable FastRTPS shared memory to prevent /dev/shm corruption ---
+    shm_xml = os.path.join(risabot_pkg, 'config', 'disable_shm.xml')
+
     # --- Serial port mapping ---
     lidar_port = '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0'
 
     return LaunchDescription([
+
+        # Disable shared memory transport (prevents DDS communication failures)
+        SetEnvironmentVariable('FASTRTPS_DEFAULT_PROFILES_FILE', shm_xml),
 
         # ==================== SENSORS ====================
 

@@ -195,6 +195,67 @@ Looking at an array of thousands of numbers in the terminal can be confusing! Lu
 
 You will now see the LiDAR canvas drawing red dots in real-time! The dashboard automatically subscribes to the `/scan` topic and converts the distance data into a 2D map of the room around the robot. Try walking around the robot and watch your legs appear on the dashboard!
 
+### 6.7. Adjusting the LiDAR Orientation (Angle Offset)
+
+When you look at the LiDAR canvas on the dashboard, you might notice that objects in front of the robot appear on the **wrong side** of the canvas. This happens because the LiDAR hardware's 0° direction doesn't always match the robot's forward direction — it depends on how the LiDAR is physically mounted on the chassis.
+
+```text
+LiDAR mounted with 0° facing backward:
+
+    Physical Reality:              Dashboard (without offset):
+    
+        FRONT                         "FRONT"
+          ↑                              ↑
+     ───────────                    ───────────
+    |   LiDAR   |                  |   LiDAR   |
+    |   0° →    |  ← facing back   |   0° →    |  ← object in front
+     ───────────                    ───────────     appears behind!
+```
+
+The **`lidar_angle_offset`** parameter corrects this by rotating all readings. It is measured in **radians**:
+
+| LiDAR 0° faces | Offset needed | Value (radians) |
+|-----------------|---------------|-----------------|
+| Forward | No correction | `0.0` |
+| Right (+90°) | Rotate -90° | `1.5708` (π/2) |
+| Backward (+180°) | Rotate -180° | `3.1416` (π) |
+| Left (-90°) | Rotate +90° | `-1.5708` (-π/2) |
+
+**How to find the correct offset:**
+
+1. Start the LiDAR and dashboard.
+2. Stand directly **in front** of the robot.
+3. Look at the dashboard LiDAR canvas — where do the red dots (your legs) appear?
+4. If they appear at the **bottom** of the canvas instead of the **top**, the offset is wrong.
+
+**How to adjust it:**
+
+The RISA-bot's LiDAR is mounted with 0° pointing **backward**, so the offset is `3.1416` (π = 180°). You can change this at runtime:
+
+```bash
+# The dashboard uses this offset for its LiDAR canvas visualization
+# Check the current value in params.yaml:
+cat ~/risabotcar_ws/src/risabot_automode/config/params.yaml | grep lidar_angle_offset
+
+# The tunnel wall follower and obstacle nodes also use it:
+ros2 param set /tunnel_wall_follower lidar_angle_offset 3.1416
+```
+
+The offset is configured in `config/params.yaml` under each node that processes LiDAR data:
+
+```yaml
+tunnel_wall_follower:
+  ros__parameters:
+    lidar_angle_offset: 3.1416   # 180° — LiDAR 0° points backward
+
+obstacle_avoidance:
+  ros__parameters:
+    lidar_angle_offset: 3.1416   # Same offset for obstacle detection
+```
+
+> [!TIP]
+> If you physically remount the LiDAR (e.g. rotate it 90°), you only need to change this one parameter across the nodes — you don't need to rewire anything!
+
 ---
 
 ## 7. Testing Your Sensors
