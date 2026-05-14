@@ -215,5 +215,5 @@ Right now, the node only publishes `True` or `False`. Let's modify it to actuall
 
 ---
 
-**Previous:** [Module 4 — Computer Vision Basics](04-computer-vision-basics.md)
-**Next:** [Module 6 — Putting It Together](06-putting-it-together.md)
+**Previous:** [Module 3 — Lane Following](03-lane-follower.md)
+**Next:** [Module 5 — Tunnel Navigation](05-tunnel-navigation.md)

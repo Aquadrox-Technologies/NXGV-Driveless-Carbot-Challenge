@@ -11,15 +11,14 @@ Hands-on workshop modules for learning ROS 2 using the RISA-bot platform.
 
 ## Modules
 
-| #   | Topic                                                      | Duration | Description                                        |
-| --- | ---------------------------------------------------------- | -------- | -------------------------------------------------- |
-| 1   | [Introduction to ROS 2](01-introduction-to-ros.md)         | 120 min  | Setup, Nodes, Topics, & Joystick                   |
-| 2   | [Introducing the Dashboard](02-introducing-the-dashboard.md) | 20 min   | Setting up the headless robot monitor              |
-| 3   | [Working with Sensors](03-working-with-sensors.md)         | 45 min   | Camera and LiDAR data                              |
-| 4   | [Lane Following](04-lane-follower.md)                      | 60 min   | Image pipeline, PID control, launch & tuning       |
-| 5   | [Computer Vision Basics](04-computer-vision-basics.md)     | 60 min   | OpenCV, HSV filtering, color detection             |
-| 6   | [Obstacle Detection](05-obstacle-detection.md)             | 45 min   | LiDAR processing, obstacle avoidance               |
-| 7   | [Putting It Together](06-putting-it-together.md)           | 60 min   | Combining modules into a full system               |
+| #   | Topic                                                        | Duration | Description                                        |
+| --- | ------------------------------------------------------------ | -------- | -------------------------------------------------- |
+| 1   | [Introduction to ROS 2](01-introduction-to-ros.md)           | 120 min  | Setup, Nodes, Topics, & Joystick                   |
+| 2   | [Dashboard & Sensors](02-dashboard-and-sensors.md)           | 60 min   | Headless robot monitor, Camera & LiDAR data        |
+| 3   | [Lane Following](03-lane-follower.md)                        | 60 min   | Image pipeline, PID control, launch & tuning       |
+| 4   | [Obstacle Detection](05-obstacle-detection.md)               | 45 min   | LiDAR processing, obstacle avoidance               |
+| 5   | [Tunnel Navigation](05-tunnel-navigation.md)                 | 60 min   | LiDAR wall following, RANSAC, PD control           |
+| 6   | [Putting It Together](06-putting-it-together.md)             | 60 min   | Combining modules into a full system               |
 
 ## How to Use
 
