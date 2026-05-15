@@ -117,7 +117,7 @@ SERVICE_EOF
 
 # Reload systemd and enable
 systemctl daemon-reload
-systemctl enable risabot.service
+systemctl disable risabot.service
 
 echo "  ✅ Service 'risabot' created and enabled"
 
