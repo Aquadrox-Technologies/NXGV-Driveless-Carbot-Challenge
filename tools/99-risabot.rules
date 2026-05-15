@@ -1,0 +1,14 @@
+# RISA-bot UDEV Rules
+# ==============================================================================
+
+# 1. Rosmaster (Yahboom Motor Driver Board)
+# Maps the motor controller to /dev/myserial
+# Usually Silicon Labs CP210x USB to UART Bridge
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE:="0666", SYMLINK+="myserial"
+
+# 2. YDLiDAR (Tmini Plus)
+# Already handled by by-id in launch files, but adding a symlink for convenience
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE:="0666", SYMLINK+="ydlidar"
+
+# Note: If both use CP2102, they might conflict. 
+# We prioritize by-id in launch files where possible.

@@ -48,6 +48,9 @@ sudo apt install -y \
     git \
     build-essential \
     git-lfs \
+    ros-humble-joy \
+    python3-numpy \
+    python3-opencv \
     nlohmann-json3-dev \
     libgflags-dev \
     libgoogle-glog-dev
@@ -134,6 +137,14 @@ echo "[6/7] Installing Astra camera USB rules and rosdep packages..."
 ASTRA_SCRIPTS="$WS_DIR/src/ros2_astra_camera/astra_camera/scripts"
 if [ -f "$ASTRA_SCRIPTS/install.sh" ]; then
     sudo bash "$ASTRA_SCRIPTS/install.sh"
+fi
+
+# Install RISA-bot custom udev rules (Rosmaster/LiDAR)
+if [ -f "$WS_DIR/tools/99-risabot.rules" ]; then
+    echo "  Installing RISA-bot udev rules..."
+    sudo cp "$WS_DIR/tools/99-risabot.rules" /etc/udev/rules.d/
+    sudo udevadm control --reload-rules
+    sudo udevadm trigger
 fi
 
 cd "$WS_DIR"

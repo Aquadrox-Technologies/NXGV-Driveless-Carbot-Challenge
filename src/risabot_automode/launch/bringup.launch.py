@@ -58,6 +58,13 @@ def generate_launch_description():
                 'range_max': 16.0,
                 'range_min': 0.02,
                 'frequency': 10.0,
+                'fixed_resolution': True,
+                'reversion': True,
+                'inverted': True,
+                'auto_reconnect': True,
+                'isSingleChannel': False,
+                'invalid_range_is_inf': False,
+                'abnormal_check_count': 4,
             }],
         ),
 
