@@ -46,7 +46,16 @@ sudo apt install -y \
     libjpeg-dev \
     cmake \
     git \
-    build-essential
+    build-essential \
+    git-lfs \
+    nlohmann-json3-dev \
+    libgflags-dev \
+    libgoogle-glog-dev
+
+# Pull git-lfs files (like libOpenNI2 binaries)
+cd "$WS_DIR"
+git lfs install
+git lfs pull
 
 # Init rosdep (skip if already initialized)
 if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
@@ -87,6 +96,22 @@ make -j$(nproc)
 sudo make install
 sudo ldconfig
 echo "  libuvc installed successfully."
+
+# ------------------------------------------------------------------------------
+# 4.5 Install magic_enum (required for Astra camera driver)
+# ------------------------------------------------------------------------------
+echo ""
+echo "[4.5/7] Building and installing magic_enum..."
+cd /tmp
+if [ ! -d "magic_enum" ]; then
+    git clone https://github.com/Neargye/magic_enum.git
+fi
+cd /tmp/magic_enum
+mkdir -p build && cd build
+cmake ..
+sudo make install
+sudo cp -r /usr/local/include/magic_enum/* /usr/local/include/
+echo "  magic_enum installed successfully."
 
 # ------------------------------------------------------------------------------
 # 5. Install Rosmaster_Lib (required for motor/servo control)
