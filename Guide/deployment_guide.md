@@ -1,56 +1,190 @@
-# RISA-Bot: Fresh Robot Deployment Guide
+# RISA-bot New Robot Deployment Guide
 
-This guide outlines the exact, minimal steps required to provision a brand-new RISA-Bot unit (Sunrise OS / Ubuntu 22.04) from scratch, utilizing the automated dependency installer.
-
-## Prerequisites
-- The new robot must be connected to the internet.
-- You must be logged into the robot via SSH or a local terminal.
+> **Time estimate:** ~20–30 min per robot (mostly waiting for the build).  
+> **Prerequisite:** Robot is on the same network, SSH is reachable, ROS 2 Humble is pre-installed on the OS image.
 
 ---
 
-### Step 1: Clone the Repository
-Clone the `refactor-test` branch of the RISA-Bot repository directly into the home directory. The installer relies on the workspace being named `risabotcar_ws`.
+## Step 0 — Identify the Robot IP
+
+Power on the robot and find its IP address (check your router, or connect a monitor):
 
 ```bash
-cd ~
-git clone -b refactor-test https://github.com/eemrull/RISA-bot.git risabotcar_ws
+# From your local machine, test connectivity
+ping <ROBOT_IP>
+ssh sunrise@<ROBOT_IP>     # default password: sunrise
 ```
 
-### Step 2: Run the Automated Setup
-Navigate into the newly cloned workspace and run the installer script. This script requires `sudo` privileges to install system packages and rules, so you will be prompted for your password.
+---
+
+## Step 1 — Clone the Repository
+
+```bash
+# On the ROBOT (via SSH)
+cd ~
+git clone https://github.com/eemrull/RISA-bot.git risabotcar_ws
+cd risabotcar_ws
+git checkout refactor-test
+git lfs install
+git lfs pull
+```
+
+---
+
+## Step 2 — Run the Deployment Script
+
+This installs all system dependencies, builds the workspace, and sets up udev rules and environment variables automatically.
 
 ```bash
 cd ~/risabotcar_ws
 bash tools/install_deps.sh
 ```
 
-**What this script does automatically:**
-1. Sources ROS 2 Humble and updates your `~/.bashrc`.
-2. Installs all required system dependencies via `apt` (rosdep, colcon, cmake, git-lfs, nlohmann-json, etc.).
-3. Pulls down large binary files via `git lfs pull` (like the `libOpenNI2.so` camera libraries).
-4. Clones, builds, and installs the **YDLidar-SDK** (C++ LiDAR driver).
-5. Clones, builds, and installs **libuvc** and **magic_enum** (C++ Camera drivers).
-6. Installs **Rosmaster_Lib** (Hardware/Servo interface).
-7. Installs Orbbec Astra USB `udev` rules.
-8. Runs `rosdep install` to fetch any remaining ROS 2 specific package dependencies.
-9. Runs `colcon build --symlink-install` to compile the entire workspace.
-10. Disables FastRTPS shared memory to prevent known DDS crashes on the Sunrise OS.
+> ⚠️ This will take **10–20 minutes**. The script will:
+> - Install ROS packages (`joy`, `opencv`, `numpy`, build tools)
+> - Build YDLidar SDK, libuvc, magic_enum from source
+> - Install Rosmaster_Lib
+> - Install Astra camera USB rules
+> - **Write the correct udev rules** for the motor board and LiDAR
+> - Build the full workspace with `colcon build`
+> - Configure `~/.bashrc` with workspace source and DDS fix
 
-### Step 3: Apply the Environment
-Once the script successfully completes, apply the new bash configurations to your current terminal session.
+---
+
+## Step 3 — Apply the Correct Hardware Udev Rules ⚠️ CRITICAL
+
+Even though the install script writes the rules, you must **physically replug the USB devices** for the symlinks to activate.
+
+**Unplug and replug BOTH USB cables:**
+- Motor board USB (CH340 chip — black cable to Rosmaster board)
+- LiDAR USB (Silicon Labs CP2102 — thin cable to Tmini Plus)
+
+Then verify the mappings are correct:
+
+```bash
+ls -l /dev/myserial   # MUST point to ttyUSB0  ← Motor board
+ls -l /dev/ydlidar    # MUST point to ttyUSB1  ← LiDAR
+```
+
+**If `/dev/myserial` still points to `ttyUSB1`**, the rules file may be stale. Fix it manually:
+
+```bash
+sudo tee /etc/udev/rules.d/99-risabot.rules > /dev/null << 'EOF'
+# RISA-bot UDEV Rules
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", MODE:="0666", SYMLINK+="myserial"
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE:="0666", SYMLINK+="ydlidar"
+EOF
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Then **unplug and replug the motor board USB cable** again.
+
+**Quick sanity check — verify USB hardware IDs:**
+
+```bash
+# Motor board should be 1a86:7523
+udevadm info /dev/ttyUSB0 | grep -E "ID_VENDOR_ID|ID_MODEL_ID"
+
+# LiDAR should be 10c4:ea60
+udevadm info /dev/ttyUSB1 | grep -E "ID_VENDOR_ID|ID_MODEL_ID"
+```
+
+---
+
+## Step 4 — Source the Environment
 
 ```bash
 source ~/.bashrc
 ```
 
-### Step 4: Launch the Robot
-The robot is now fully provisioned and ready to run. Start the main bringup sequence:
+Or open a fresh SSH session (recommended — all env vars will be clean).
+
+---
+
+## Step 5 — Launch the Stack
 
 ```bash
 ros2 launch risabot_automode bringup.launch.py
 ```
 
-> [!TIP]
-> **Dashboard Access**
-> Once the launch script is running, open a browser on a device connected to the same network and navigate to:
-> `http://<ROBOT_IP>:5000` (e.g., `http://10.77.116.198:5000`)
+Wait ~10s for all nodes to appear. Verify with:
+
+```bash
+ros2 node list
+```
+
+Expected nodes:
+```
+/astra_camera_container
+/auto_driver
+/base_to_laser
+/camera/camera
+/cmd_safety_controller
+/health_monitor
+/joy_node
+/servo_controller
+/ydlidar_ros2_driver_node
+```
+
+---
+
+## Step 6 — Unlock the RC Controller
+
+The software has a **safety lock** that prevents the robot from moving on startup (prevents ghost inputs from joystick drift). You must do this **every time you launch**:
+
+1. **Connect the joystick** via USB before launching.
+2. **Press any button** (e.g. `A`) on the controller.
+   - Terminal should log: `Controller unlocked (Button press detected)`
+3. **Return both thumbsticks to dead center.**
+   - Terminal should log: `Controller neutral detected, manual drive enabled`
+4. The robot is now drivable in RC mode.
+
+> If the robot does not move after this sequence, check the launch terminal for `❌ Failed to connect to Rosmaster`. This means `/dev/myserial` is still wrong — go back to **Step 3**.
+
+---
+
+## Step 7 — Verify Everything Is Working
+
+| Check | Command | Expected |
+|---|---|---|
+| All nodes running | `ros2 node list` | 10+ nodes |
+| LiDAR publishing | `ros2 topic hz /scan` | ~10 Hz |
+| Camera publishing | `ros2 topic hz /camera/color/image_raw` | ~15–30 Hz |
+| Joy reading | `ros2 topic echo /joy --once` | axes and buttons arrays |
+| Motor port | `ls -l /dev/myserial` | `-> ttyUSB0` |
+| Dashboard | Open `http://<ROBOT_IP>:8080` | Web UI visible |
+
+---
+
+## Troubleshooting Reference
+
+### `servo_controller` dies (exit code 1)
+**Cause:** `/dev/myserial` points to the LiDAR port. The LiDAR driver already holds that port open, so the motor driver crashes with a "device busy" error.  
+**Fix:** Redo Step 3. Verify `ls -l /dev/myserial` shows `ttyUSB0`.
+
+### `package 'joy' not found` at launch
+**Fix:** `sudo apt install -y ros-humble-joy` then re-source.
+
+### Camera: `wait for device connect...`
+**Fix:** Unplug and replug the camera USB. The Orbbec Astra needs the udev permission rules **and** a physical reconnect to activate.
+
+### LiDAR doesn't scan / node crashes
+**Fix:** Verify the LiDAR port in `bringup.launch.py` matches `ls -l /dev/serial/by-id/`. Should be the Silicon Labs `CP2102` entry.
+
+### Multiple nodes crash on fresh install (exit code 1)
+**Cause:** Python dependencies missing (`cv2`, `numpy`, `Rosmaster_Lib`).  
+**Fix:** Re-run `bash tools/install_deps.sh`.
+
+### `/dev/myserial` still points to `ttyUSB1` after udev trigger
+**Cause:** `udevadm trigger` does not remove symlinks created by old rules for already-connected devices.  
+**Fix:** Write rules inline with `tee` (see Step 3 manual fix), **then physically replug** the motor board USB cable.
+
+---
+
+## USB Device Reference
+
+| Device | Chip | Vendor:Product | Symlink |
+|---|---|---|---|
+| Rosmaster Motor Board | CH340 | `1a86:7523` | `/dev/myserial` |
+| YDLiDAR Tmini Plus | Silicon Labs CP2102 | `10c4:ea60` | `/dev/ydlidar` |
+| Orbbec Astra Camera | — | via USB rules | Handled by `56-orbbec-usb.rules` |

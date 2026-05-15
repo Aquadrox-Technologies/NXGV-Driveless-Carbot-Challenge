@@ -139,13 +139,22 @@ if [ -f "$ASTRA_SCRIPTS/install.sh" ]; then
     sudo bash "$ASTRA_SCRIPTS/install.sh"
 fi
 
-# Install RISA-bot custom udev rules (Rosmaster/LiDAR)
-if [ -f "$WS_DIR/tools/99-risabot.rules" ]; then
-    echo "  Installing RISA-bot udev rules..."
-    sudo cp "$WS_DIR/tools/99-risabot.rules" /etc/udev/rules.d/
-    sudo udevadm control --reload-rules
-    sudo udevadm trigger
-fi
+# Install RISA-bot custom udev rules (written inline — avoids stale git file issues)
+# Motor board: CH340 chip (1a86:7523) -> /dev/myserial
+# LiDAR:       Silicon Labs CP2102 (10c4:ea60) -> /dev/ydlidar
+echo "  Installing RISA-bot udev rules..."
+sudo tee /etc/udev/rules.d/99-risabot.rules > /dev/null << 'UDEV_EOF'
+# RISA-bot UDEV Rules
+# ==============================================================================
+# 1. Rosmaster Motor Driver Board (CH340 chip — Vendor 1a86, Product 7523)
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", MODE:="0666", SYMLINK+="myserial"
+# 2. YDLiDAR Tmini Plus (Silicon Labs CP2102 — Vendor 10c4, Product ea60)
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE:="0666", SYMLINK+="ydlidar"
+UDEV_EOF
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+echo "  Udev rules installed. Replug USB devices to activate symlinks."
+
 
 cd "$WS_DIR"
 rosdep install --from-paths src --ignore-src -r -y
