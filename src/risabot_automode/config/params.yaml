@@ -34,6 +34,10 @@ auto_driver:
     # Challenge 1→2 sequencing (time-based gating)
     t_post_obstacle_sec: 1.5     # re-center delay after obstacle clears (before roundabout)
     t_roundabout_sec: 8.0        # time inside roundabout before exiting
+    # Hill Climbing Mode (Challenge 5)
+    hill_pitch_threshold: 12.0   # trigger angle in degrees (IMU pitch)
+    hill_drive_speed: 0.35       # boost speed (m/s) to climb the incline
+    hill_steer_scale: 0.0        # multiplier for camera lane error (0.0 = drive straight)
 
 # --- Command Safety Controller ---
 cmd_safety_controller:

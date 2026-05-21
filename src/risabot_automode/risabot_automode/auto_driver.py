@@ -71,6 +71,7 @@ class ChallengeState(Enum):
     EMERGENCY_STOP = 10      # External e-stop asserted
     ROUNDABOUT = 11          # Traversing roundabout (lane follow on Lap 1)
     LANE_RECOVERY = 12       # Reversing after losing the lane
+    HILL = 13                # Hill climbing mode
 
 
 class AutoDriver(Node):
@@ -139,6 +140,7 @@ class AutoDriver(Node):
         self.declare_parameter('enable_subsumption_obstacle', False)
         self.declare_parameter('hill_pitch_threshold', 12.0)
         self.declare_parameter('hill_drive_speed', 0.15)
+        self.declare_parameter('hill_steer_scale', 0.0)
 
         # Challenge sequencing — time-based gating
         self.declare_parameter('t_post_obstacle_sec', 1.5)  # delay after obstacle clears before entering roundabout
@@ -288,6 +290,7 @@ class AutoDriver(Node):
             't_roundabout_sec':    float(self.get_parameter('t_roundabout_sec').value),
             'hill_pitch_threshold': float(self.get_parameter('hill_pitch_threshold').value),
             'hill_drive_speed':    float(self.get_parameter('hill_drive_speed').value),
+            'hill_steer_scale':    float(self.get_parameter('hill_steer_scale').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -537,6 +540,13 @@ class AutoDriver(Node):
             self._obs_was_active = False
             self.get_logger().info('Obstruction cleared → roundabout countdown started')
 
+        # Determine if we are on the hill (with hysteresis)
+        is_on_hill = False
+        if self.state == ChallengeState.HILL:
+            is_on_hill = (self.current_pitch >= (self._param_cache['hill_pitch_threshold'] - 4.0))
+        else:
+            is_on_hill = (self.current_pitch >= self._param_cache['hill_pitch_threshold'])
+
         # --- Priority Evaluation Engine (Sequenced) ---
 
         # Priority 1: Terminal (Finished)
@@ -610,20 +620,26 @@ class AutoDriver(Node):
         #     target_state = ChallengeState.TRAFFIC_LIGHT
         #     self.stop_reason = f'TRAFFIC LIGHT {self.traffic_light_state.upper()}'
 
+        # Priority 8.2: Hill Climb (Challenge 5)
+        elif is_on_hill:
+            target_state = ChallengeState.HILL
+            self.stop_reason = f'HILL CLIMBING ({self.current_pitch:.1f}°)'
+            cmd.linear.x = float(self._param_cache['hill_drive_speed'])
+            steer_scale = float(self._param_cache['hill_steer_scale'])
+            if steer_scale > 0.0:
+                lf_cmd = self._lane_follow_cmd()
+                cmd.angular.z = lf_cmd.angular.z * steer_scale
+            else:
+                cmd.angular.z = 0.0
+
         # Priority 8.5: Lane recovery (lost lane)
         # Stop in place instead of reversing — safer for testing.
         # Re-enable reverse by uncommenting the two lines below.
         elif self.lane_lost:
-            if self.current_pitch >= float(self._param_cache['hill_pitch_threshold']):
-                target_state = ChallengeState.LANE_FOLLOW
-                self.stop_reason = f'LANE LOST - HILL CLIMBING ({self.current_pitch:.1f}°)'
-                cmd.linear.x = float(self._param_cache['hill_drive_speed'])
-                cmd.angular.z = 0.0
-            else:
-                target_state = ChallengeState.LANE_RECOVERY
-                self.stop_reason = 'LANE LOST - STOPPED'
-                cmd.linear.x = 0.0
-                cmd.angular.z = 0.0
+            target_state = ChallengeState.LANE_RECOVERY
+            self.stop_reason = 'LANE LOST - STOPPED'
+            cmd.linear.x = 0.0
+            cmd.angular.z = 0.0
 
         # Priority 9: Default — Lane Follow
         else:
@@ -647,6 +663,7 @@ class AutoDriver(Node):
                 ChallengeState.BOOM_GATE,
                 ChallengeState.REVERSE_ADJUST,
                 ChallengeState.EMERGENCY_STOP,
+                ChallengeState.HILL,
             }
             allow_switch = (
                 target_state in immediate_states
