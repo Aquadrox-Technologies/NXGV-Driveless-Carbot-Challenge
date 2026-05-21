@@ -338,7 +338,7 @@ class LineFollowerCamera(Node):
         min_width = self._param_cache['min_line_width_px']
         invert = self._param_cache.get('invert_binary', False)
         # In invert mode the lane is wider than border lines
-        max_width = w * 2 // 3 if invert else w // 3
+        max_width = w - 10 if invert else w // 3
         search_radius = self._param_cache['search_radius_px']
 
         left_points = []
@@ -562,6 +562,8 @@ class LineFollowerCamera(Node):
                 self.frames_lost += 1
                 if self.frames_lost >= self._param_cache['hold_error_frames']:
                     self.lane_lost_pub.publish(Bool(data=True))
+                    self._expected_left = None
+                    self._expected_right = None
                 raw_error = 0.0
 
             # ── 7. Filtering: Kalman or EMA ─────────────────────────────────
