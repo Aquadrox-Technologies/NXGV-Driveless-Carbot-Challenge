@@ -610,6 +610,16 @@ def _ros_get_param(node_name, param_name):
                 return str(v.double_value), None
             elif v.type == ParameterType.PARAMETER_STRING:
                 return v.string_value, None
+            elif v.type == ParameterType.PARAMETER_BYTE_ARRAY:
+                return list(v.byte_array_value), None
+            elif v.type == ParameterType.PARAMETER_BOOL_ARRAY:
+                return list(v.bool_array_value), None
+            elif v.type == ParameterType.PARAMETER_INTEGER_ARRAY:
+                return list(v.integer_array_value), None
+            elif v.type == ParameterType.PARAMETER_DOUBLE_ARRAY:
+                return list(v.double_array_value), None
+            elif v.type == ParameterType.PARAMETER_STRING_ARRAY:
+                return list(v.string_array_value), None
             elif v.type == ParameterType.PARAMETER_NOT_SET:
                 return None, 'Not set'
             else:
@@ -628,8 +638,32 @@ def _ros_set_param(node_name, param_name, value_str):
         param = RosParameter()
         param.name = param_name
         pv = ParameterValue()
-        # Infer type from string
-        if value_str.lower() in ('true', 'false'):
+        
+        # Support setting array values
+        if value_str.startswith('[') and value_str.endswith(']'):
+            try:
+                arr = json.loads(value_str)
+                if isinstance(arr, list):
+                    if all(isinstance(x, bool) for x in arr):
+                        pv.type = ParameterType.PARAMETER_BOOL_ARRAY
+                        pv.bool_array_value = arr
+                    elif all(isinstance(x, int) for x in arr):
+                        pv.type = ParameterType.PARAMETER_INTEGER_ARRAY
+                        pv.integer_array_value = arr
+                    elif all(isinstance(x, (int, float)) for x in arr):
+                        pv.type = ParameterType.PARAMETER_DOUBLE_ARRAY
+                        pv.double_array_value = [float(x) for x in arr]
+                    elif all(isinstance(x, str) for x in arr):
+                        pv.type = ParameterType.PARAMETER_STRING_ARRAY
+                        pv.string_array_value = arr
+                    else:
+                        raise ValueError("Unsupported array element type")
+                else:
+                    raise ValueError("Not a list")
+            except Exception:
+                pv.type = ParameterType.PARAMETER_STRING
+                pv.string_value = value_str
+        elif value_str.lower() in ('true', 'false'):
             pv.type = ParameterType.PARAMETER_BOOL
             pv.bool_value = value_str.lower() == 'true'
         else:
@@ -703,6 +737,8 @@ def _save_params_to_yaml():
                         new_val = int(float(value))
                     elif isinstance(old_val, float):
                         new_val = float(value)
+                    elif isinstance(old_val, list):
+                        new_val = value
                     else:
                         new_val = value
                 except (ValueError, TypeError):
