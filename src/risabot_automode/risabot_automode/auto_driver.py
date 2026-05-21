@@ -37,6 +37,7 @@ from .topics import (
     DASH_STATE_TOPIC,
     LANE_ERROR_TOPIC,
     LANE_LOST_TOPIC,
+    IMU_PITCH_TOPIC,
     LOOP_STATS_TOPIC,
     OBSTACLE_CAMERA_TOPIC,
     OBSTACLE_FUSED_TOPIC,
@@ -103,6 +104,7 @@ class AutoDriver(Node):
         self.stop_reason = ''
         self.lane_error = 0.0
         self.lane_lost = False
+        self.current_pitch = 0.0
         self.cmd_safety_estop = False
         self.cmd_safety_last_time = 0.0
 
@@ -135,6 +137,8 @@ class AutoDriver(Node):
         # Distance threshold (only for determining if a lap is complete after passing traffic light)
         self.declare_parameter('dist_lap_complete', 1.0)
         self.declare_parameter('enable_subsumption_obstacle', False)
+        self.declare_parameter('hill_pitch_threshold', 12.0)
+        self.declare_parameter('hill_drive_speed', 0.15)
 
         # Challenge sequencing — time-based gating
         self.declare_parameter('t_post_obstacle_sec', 1.5)  # delay after obstacle clears before entering roundabout
@@ -198,6 +202,10 @@ class AutoDriver(Node):
         )
         self.lane_lost_sub = self.create_subscription(
             Bool, LANE_LOST_TOPIC, self.lane_lost_callback,
+            QoSPresetProfiles.SENSOR_DATA.value
+        )
+        self.pitch_sub = self.create_subscription(
+            Float32, IMU_PITCH_TOPIC, self.pitch_callback,
             QoSPresetProfiles.SENSOR_DATA.value
         )
 
@@ -278,6 +286,8 @@ class AutoDriver(Node):
             # Challenge sequencing
             't_post_obstacle_sec': float(self.get_parameter('t_post_obstacle_sec').value),
             't_roundabout_sec':    float(self.get_parameter('t_roundabout_sec').value),
+            'hill_pitch_threshold': float(self.get_parameter('hill_pitch_threshold').value),
+            'hill_drive_speed':    float(self.get_parameter('hill_drive_speed').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -302,6 +312,9 @@ class AutoDriver(Node):
 
     def lane_lost_callback(self, msg: Bool) -> None:
         self.lane_lost = msg.data
+
+    def pitch_callback(self, msg: Float32) -> None:
+        self.current_pitch = msg.data
 
     def mode_callback(self, msg: Bool) -> None:
         """Store auto/manual mode flag."""
@@ -601,10 +614,16 @@ class AutoDriver(Node):
         # Stop in place instead of reversing — safer for testing.
         # Re-enable reverse by uncommenting the two lines below.
         elif self.lane_lost:
-            target_state = ChallengeState.LANE_RECOVERY
-            self.stop_reason = 'LANE LOST - STOPPED'
-            cmd.linear.x = 0.0
-            cmd.angular.z = 0.0
+            if self.current_pitch >= float(self._param_cache['hill_pitch_threshold']):
+                target_state = ChallengeState.LANE_FOLLOW
+                self.stop_reason = f'LANE LOST - HILL CLIMBING ({self.current_pitch:.1f}°)'
+                cmd.linear.x = float(self._param_cache['hill_drive_speed'])
+                cmd.angular.z = 0.0
+            else:
+                target_state = ChallengeState.LANE_RECOVERY
+                self.stop_reason = 'LANE LOST - STOPPED'
+                cmd.linear.x = 0.0
+                cmd.angular.z = 0.0
 
         # Priority 9: Default — Lane Follow
         else:

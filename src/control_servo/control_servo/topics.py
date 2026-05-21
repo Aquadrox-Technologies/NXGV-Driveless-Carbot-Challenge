@@ -1,4 +1,4 @@
-"""Shared topic and frame constants for control_servo nodes."""
+# Shared topic and frame constants for control_servo nodes.
 
 AUTO_MODE_TOPIC = '/auto_mode'
 SET_CHALLENGE_TOPIC = '/set_challenge'
@@ -8,6 +8,8 @@ ODOM_TOPIC = '/odom'
 JOY_TOPIC = '/joy'
 DASH_CTRL_TOPIC = '/dashboard_ctrl'
 LOOP_STATS_TOPIC = '/loop_stats'
+IMU_PITCH_TOPIC = '/imu/pitch'
 
 ODOM_FRAME = 'odom'
 BASE_FRAME = 'base_link'
+

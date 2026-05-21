@@ -44,6 +44,7 @@ HEALTH_STATUS_TOPIC = '/health_status'
 # Sensors
 ODOM_TOPIC = '/odom'
 JOY_TOPIC = '/joy'
+IMU_PITCH_TOPIC = '/imu/pitch'
 CAMERA_IMAGE_TOPIC = '/camera/color/image_raw'
 CAMERA_DEBUG_LINE_TOPIC = '/camera/debug/line_follower'
 CAMERA_DEBUG_TL_TOPIC = '/camera/debug/traffic_light'

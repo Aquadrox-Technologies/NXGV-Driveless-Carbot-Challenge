@@ -32,7 +32,7 @@ from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, String, Float32
 
 from Rosmaster_Lib import Rosmaster
 from .topics import (
@@ -46,6 +46,7 @@ from .topics import (
     ODOM_FRAME,
     ODOM_TOPIC,
     SET_CHALLENGE_TOPIC,
+    IMU_PITCH_TOPIC,
 )
 
 # --- Defaults ---
@@ -153,6 +154,7 @@ class ServoControllerV9(Node):
         try:
             self.bot = Rosmaster()
             self.bot.create_receive_threading()
+            self.bot.set_auto_report_state(True)
             
             self.bot.set_motor(0, 0, 0, 0)
             self.bot.set_pwm_servo(self.servo_steer_id, self.servo_center)
@@ -168,6 +170,7 @@ class ServoControllerV9(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, CMD_VEL_TOPIC, 10)
         self.odom_pub = self.create_publisher(Odometry, ODOM_TOPIC, 10)
         self.loop_stats_pub = self.create_publisher(String, LOOP_STATS_TOPIC, 10)
+        self.pitch_pub = self.create_publisher(Float32, IMU_PITCH_TOPIC, 10)
 
         # Subscribers
         self.create_subscription(Joy, JOY_TOPIC, self.joy_callback, 10)
@@ -554,6 +557,15 @@ class ServoControllerV9(Node):
         if dt <= 0.001 or dt > 0.3:
             self.last_odom_time = now
             return
+
+        # Read IMU Pitch
+        try:
+            roll, pitch, yaw = self.bot.get_imu_attitude_data()
+            pitch_msg = Float32()
+            pitch_msg.data = float(pitch)
+            self.pitch_pub.publish(pitch_msg)
+        except Exception as e:
+            self.get_logger().error(f"Failed to read/publish IMU pitch: {e}")
 
         try:
             # Reads 4 motors: FL, FR, RL, RR 
