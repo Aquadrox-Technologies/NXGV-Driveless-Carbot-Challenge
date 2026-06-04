@@ -1,0 +1,38 @@
+# ============================================================
+# YOLOv8 Dataset Configuration — RISA-Bot Signage Detection
+# ============================================================
+# INSTRUCTIONS:
+#   1. Update 'path' below to the ABSOLUTE path of your dataset folder
+#   2. Ensure your dataset follows this structure:
+#        <path>/
+#        ├── images/
+#        │   ├── train/   (*.jpg, *.png)
+#        │   └── val/     (*.jpg, *.png)
+#        └── labels/
+#            ├── train/   (*.txt, YOLO format)
+#            └── val/     (*.txt, YOLO format)
+#   3. Update 'names' to match the class IDs used in your label files
+#
+# YOLO label format (one line per object in each .txt file):
+#   <class_id> <x_center> <y_center> <width> <height>
+#   All values normalized to [0, 1] relative to image dimensions.
+# ============================================================
+
+# Absolute path to dataset root
+path: /home/sunrise/dataset/signage   # <-- CHANGE THIS to your dataset location
+
+# Relative paths to image directories (relative to 'path')
+train: images/train
+val: images/val
+
+# Class names — must match the class IDs in your .txt label files
+# class 0 = parking_sign, class 1 = traffic_light_red, etc.
+# Add/remove classes to match YOUR labeled dataset.
+nc: 1
+names:
+  0: parking_sign
+  # Uncomment below if you labeled more classes:
+  # 1: traffic_light_red
+  # 2: traffic_light_yellow
+  # 3: traffic_light_green
+  # 4: stop_sign

@@ -21,6 +21,7 @@ graph TD
         TUN["tunnel_wall_follower"]
         OBS["obstruction_avoidance"]
         PARK["parking_controller"]
+        SIG["signage_detector (YOLO)"]
     end
 
     subgraph Control
@@ -37,7 +38,7 @@ graph TD
     CAM -->|"/camera/color/image_raw"| LF
     CAM -->|"/camera/color/image_raw"| OA_CAM
     CAM -->|"/camera/color/image_raw"| TL
-    CAM -->|"/camera/color/image_raw"| PARK
+    CAM -->|"/camera/color/image_raw"| SIG
 
     LIDAR -->|"/scan"| OA_LID
     LIDAR -->|"/scan"| BG
@@ -51,7 +52,9 @@ graph TD
     BG -->|"/boom_gate_open"| AD
     TUN -->|"/tunnel_detected + /tunnel_cmd_vel"| AD
     OBS -->|"/obstruction_active + /obstruction_cmd_vel"| AD
-    PARK -->|"/parking_signboard_detected + /parking_cmd_vel + /parking_complete + /parking_status"| AD
+    PARK -->|"/parking_cmd_vel + /parking_complete + /parking_status"| AD
+    SIG -->|"/parking_signboard_detected"| AD
+    SIG -->|"/signage_detections"| DASH
 
     AD -->|"/cmd_vel_auto_raw"| CSC
     CSC -->|"/cmd_vel_auto"| SC
@@ -112,5 +115,6 @@ Lap 2: Lane Follow → Obstruction → Roundabout →
 | `tunnel_wall_follower.py`   | PD wall following in tunnel             |
 | `boom_gate_detector.py`     | LiDAR gate barrier detection            |
 | `parking_controller.py`     | Odometry-based parking maneuvers        |
+| `signage_detector.py`       | YOLO-based signage detection (parking)  |
 | `health_monitor.py`         | Topic freshness and runtime health      |
 | `config/params.yaml`        | Centralized tunable parameters          |

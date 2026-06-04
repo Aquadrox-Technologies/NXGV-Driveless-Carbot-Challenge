@@ -38,6 +38,10 @@ PARKING_COMPLETE_TOPIC = '/parking_complete'
 PARKING_SIGN_TOPIC = '/parking_signboard_detected'
 PARKING_STATUS_TOPIC = '/parking_status'
 
+# Signage detection
+SIGNAGE_DETECTIONS_TOPIC = '/signage_detections'
+CAMERA_DEBUG_SIGNAGE_TOPIC = '/camera/debug/signage'
+
 # Diagnostics
 HEALTH_STATUS_TOPIC = '/health_status'
 

@@ -4,36 +4,29 @@ Parking Controller Node
 Executes pre-programmed parallel and perpendicular parking maneuvers
 using odometry-based dead reckoning. Triggered by the auto_driver state machine.
 
-Detects triangle signboard via camera to identify parking zones.
-Uses LiDAR for wall clearance confirmation.
+Signage detection is handled by the separate signage_detector node,
+which publishes on /parking_signboard_detected.
 
 Topics:
-  Subscribes: /odom, /scan, /camera/color/image_raw, /parking_command (String)
-  Publishes:  /parking_cmd_vel (Twist), /parking_complete (Bool)
+  Subscribes: /odom, /parking_command (String), /dashboard_state (String)
+  Publishes:  /parking_cmd_vel (Twist), /parking_complete (Bool), /parking_status (String)
 """
 
 from enum import Enum
 from typing import Dict
 
-import cv2
-import numpy as np
 import rclpy
-from cv_bridge import CvBridge
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
-from rclpy.qos import QoSPresetProfiles
-from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, String
 
 from .topics import (
-    CAMERA_IMAGE_TOPIC,
     DASH_STATE_TOPIC,
     ODOM_TOPIC,
     PARKING_CMD_TOPIC,
     PARKING_COMPLETE_TOPIC,
-    PARKING_SIGN_TOPIC,
     PARKING_STATUS_TOPIC,
     PARKING_VEL_TOPIC,
 )
@@ -70,8 +63,6 @@ class ParkingController(Node):
         self.declare_parameter('park_wait_time', 3.0)           # seconds to wait in slot
         self.declare_parameter('drive_speed', 0.15)             # m/s linear speed
         self.declare_parameter('reverse_speed', -0.12)          # m/s reverse speed
-        self.declare_parameter('signboard_min_area', 500)       # px^2 minimum contour area
-        self.declare_parameter('signboard_resize_width', 320)   # downscale width for faster processing
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
         self.add_on_set_parameters_callback(self._on_params)
@@ -79,7 +70,6 @@ class ParkingController(Node):
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, PARKING_VEL_TOPIC, 10)
         self.complete_pub = self.create_publisher(Bool, PARKING_COMPLETE_TOPIC, 10)
-        self.signboard_pub = self.create_publisher(Bool, PARKING_SIGN_TOPIC, 10)
         self.status_pub = self.create_publisher(String, PARKING_STATUS_TOPIC, 10)
 
         # Subscribers
@@ -88,12 +78,6 @@ class ParkingController(Node):
         )
         self.command_sub = self.create_subscription(
             String, PARKING_CMD_TOPIC, self.command_callback, 10
-        )
-        self.bridge = CvBridge()
-        self.camera_sub = self.create_subscription(
-            Image, CAMERA_IMAGE_TOPIC,
-            self.camera_callback,
-            QoSPresetProfiles.SENSOR_DATA.value
         )
         self.dash_state_sub = self.create_subscription(
             String, DASH_STATE_TOPIC, self.dash_state_callback, 10
@@ -108,7 +92,6 @@ class ParkingController(Node):
         self.current_speed = 0.0
         self.distance_traveled = 0.0
         self.last_odom_time = self.get_clock().now()
-        self.signboard_detected = False
         self.current_command = 'none'
 
         # Timer for control loop
@@ -127,8 +110,6 @@ class ParkingController(Node):
             'park_wait_time': float(self.get_parameter('park_wait_time').value),
             'drive_speed': float(self.get_parameter('drive_speed').value),
             'reverse_speed': float(self.get_parameter('reverse_speed').value),
-            'signboard_min_area': int(self.get_parameter('signboard_min_area').value),
-            'signboard_resize_width': int(self.get_parameter('signboard_resize_width').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -155,54 +136,6 @@ class ParkingController(Node):
                 self.current_lap = int(parts[1])
         except Exception:
             pass
-
-    def camera_callback(self, msg: Image) -> None:
-        """Detect triangle signboard to identify parking zone."""
-        # --- PERFORMANCE OPTIMIZATION ---
-        # Do not waste CPU parsing the camera image if we are not on Lap 2 
-        # or if parking is already finished.
-        if self.current_lap < 2 or self.phase == ParkingPhase.DONE:
-            return
-            
-        try:
-            bgr = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-            h, w = bgr.shape[:2]
-            resize_w = self._param_cache['signboard_resize_width']
-            if resize_w > 0 and w > resize_w:
-                scale = resize_w / float(w)
-                bgr = cv2.resize(bgr, (resize_w, int(h * scale)))
-
-            # Convert to grayscale and detect edges
-            gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-            edges = cv2.Canny(blurred, 50, 150)
-
-            # Find contours
-            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            triangle_found = False
-            for cnt in contours:
-                area = cv2.contourArea(cnt)
-                if area < self._param_cache['signboard_min_area']:  # too small
-                    continue
-
-                # Approximate contour to polygon
-                peri = cv2.arcLength(cnt, True)
-                approx = cv2.approxPolyDP(cnt, 0.04 * peri, True)
-
-                # Triangle = 3 vertices
-                if len(approx) == 3:
-                    triangle_found = True
-                    break
-
-            if triangle_found != self.signboard_detected:
-                self.signboard_detected = triangle_found
-                sign_msg = Bool()
-                sign_msg.data = triangle_found
-                self.signboard_pub.publish(sign_msg)
-
-        except Exception as e:
-            self.get_logger().error(f'Camera processing error: {e}')
 
     def command_callback(self, msg: String) -> None:
         """Receive parking command from auto_driver state machine."""
