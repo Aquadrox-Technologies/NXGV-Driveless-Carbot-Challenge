@@ -39,6 +39,31 @@ from .topics import (
 )
 
 
+# ── Auto-discover workspace root and model path ─────────────────────────
+_THIS_DIR = Path(__file__).resolve().parent
+_WS_ROOT = _THIS_DIR.parent.parent.parent  # risabotcar_ws/
+
+# Common locations where best.pt might live (searched in order)
+_MODEL_SEARCH_PATHS = [
+    _WS_ROOT / 'tools' / 'train_signage_model' / 'runs',
+    _WS_ROOT / 'models',
+    _THIS_DIR / 'models',
+    _THIS_DIR,
+]
+
+
+def _find_best_pt() -> str:
+    """Search known directories for the most recent best.pt file."""
+    for search_root in _MODEL_SEARCH_PATHS:
+        if search_root.exists():
+            candidates = list(search_root.rglob('best.pt'))
+            if candidates:
+                # Return the most recently modified one
+                best = max(candidates, key=lambda p: p.stat().st_mtime)
+                return str(best)
+    return ''
+
+
 class SignageDetector(Node):
     """YOLOv8-based signage detector with confidence gating."""
 
@@ -46,7 +71,7 @@ class SignageDetector(Node):
         super().__init__('signage_detector')
 
         # ── Parameters ───────────────────────────────────────────────────
-        self.declare_parameter('model_path', '')
+        self.declare_parameter('model_path', _find_best_pt())
         self.declare_parameter('confidence_threshold', 0.6)
         self.declare_parameter('min_bbox_area', 800)          # px² minimum to trigger
         self.declare_parameter('required_confidence', 3)       # consecutive frames
@@ -134,9 +159,21 @@ class SignageDetector(Node):
     def _load_model(self) -> None:
         """Load YOLOv8 model from the configured path."""
         model_path = self._param_cache.get('model_path', '')
+
+        # Auto-discover if no path configured or path doesn't exist
+        if not model_path or not Path(model_path).exists():
+            discovered = _find_best_pt()
+            if discovered:
+                model_path = discovered
+                self._param_cache['model_path'] = discovered
+                self.get_logger().info(
+                    f'Auto-discovered model: {discovered}'
+                )
+
         if not model_path:
             self.get_logger().warn(
-                'No model_path set — signage detection disabled. '
+                'No model_path set and no best.pt found in workspace. '
+                'Signage detection disabled. '
                 'Set the model_path parameter to your trained best.pt file.'
             )
             self.model = None

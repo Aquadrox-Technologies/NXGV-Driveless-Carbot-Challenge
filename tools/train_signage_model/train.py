@@ -110,9 +110,9 @@ def main():
 
     if args.resume:
         print('Resuming from last checkpoint...\n')
-        model.train(resume=True)
+        results = model.train(resume=True)
     else:
-        model.train(
+        results = model.train(
             data=str(data_path),
             epochs=args.epochs,
             imgsz=args.imgsz,
@@ -139,8 +139,19 @@ def main():
 
     # ── Evaluate on validation set ───────────────────────────────────────
     print('\n=== Validation Results ===\n')
-    best_path = Path('runs/detect/signage_v1/weights/best.pt')
-    if best_path.exists():
+
+    # Dynamically find best.pt from the trainer's save directory
+    save_dir = Path(str(results.save_dir)) if results and hasattr(results, 'save_dir') else None
+    best_path = save_dir / 'weights' / 'best.pt' if save_dir else None
+
+    # Fallback: search for best.pt under runs/
+    if not best_path or not best_path.exists():
+        candidates = list(Path('runs').rglob('best.pt'))
+        if candidates:
+            # Use the most recently modified one
+            best_path = max(candidates, key=lambda p: p.stat().st_mtime)
+
+    if best_path and best_path.exists():
         best_model = YOLO(str(best_path))
         metrics = best_model.val(data=str(data_path), imgsz=args.imgsz)
         print(f'\n  mAP50    : {metrics.box.map50:.4f}')
@@ -150,9 +161,9 @@ def main():
 
         # Quality gate
         if metrics.box.map50 < 0.8:
-            print('\n  ⚠ WARNING: mAP50 < 0.8 — consider adding more training images')
+            print('\n  WARNING: mAP50 < 0.8 -- consider adding more training images')
         else:
-            print('\n  ✓ Model quality looks good!')
+            print('\n  Model quality looks good!')
 
         # ── Export to ONNX ───────────────────────────────────────────────
         print('\n=== Exporting to ONNX ===\n')
@@ -162,7 +173,7 @@ def main():
         print(f'  ONNX    : {best_path.with_suffix(".onnx").resolve()}')
         print(f'\nCopy best.pt to your robot and set the model_path parameter.')
     else:
-        print('ERROR: best.pt not found — training may have failed.')
+        print('ERROR: best.pt not found -- training may have failed.')
         sys.exit(1)
 
 
