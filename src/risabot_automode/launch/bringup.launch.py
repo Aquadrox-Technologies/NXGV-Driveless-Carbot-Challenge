@@ -134,6 +134,17 @@ def generate_launch_description():
             ),
         ]),
 
+        # G3. Signage detector (YOLOv8)
+        TimerAction(period=3.0, actions=[
+            Node(
+                package='risabot_automode',
+                executable='signage_detector',
+                name='signage_detector',
+                output='screen',
+                parameters=[params_file]
+            ),
+        ]),
+
         # ==================== CONTROL ====================
 
         # H. Auto Driver (brain — delayed 5s to let sensors initialize)
