@@ -41,11 +41,20 @@ from .topics import (
 
 # ── Auto-discover workspace root and model path ─────────────────────────
 def _find_ws_root() -> Path:
-    """Traverse upwards to find the true workspace root containing src, install, or .git."""
+    """Traverse upwards to find the true workspace root."""
     current = Path(__file__).resolve()
     for parent in current.parents:
-        if (parent / 'install').exists() or (parent / 'src').exists() or (parent / '.git').exists():
+        # Check if this parent has the tools directory (which means it's the root)
+        if (parent / 'tools' / 'train_signage_model').exists():
             return parent
+        # Standard ROS 2 workspace structure
+        if (parent / 'src').exists() and (parent / 'build').exists():
+            return parent
+            
+    # Hardcoded fallbacks for the known robot and dev environments
+    if (Path.home() / 'risabotcar_ws').exists():
+        return Path.home() / 'risabotcar_ws'
+        
     return current.parent.parent.parent  # Fallback
 
 _THIS_DIR = Path(__file__).resolve().parent
