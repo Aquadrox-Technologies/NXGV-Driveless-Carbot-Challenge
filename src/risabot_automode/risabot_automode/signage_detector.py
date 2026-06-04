@@ -60,17 +60,23 @@ _MODEL_SEARCH_PATHS = [
 ]
 
 
-def _find_best_pt() -> str:
+def _find_best_pt(logger=None) -> str:
     """Search known directories for the most recent best.pt file."""
+    if logger:
+        logger.info(f"Auto-discovering best.pt. WS_ROOT={_WS_ROOT}")
     for search_root in _MODEL_SEARCH_PATHS:
-        if search_root.exists():
+        exists = search_root.exists()
+        if logger:
+            logger.info(f"Checking path: {search_root} (exists: {exists})")
+        if exists:
             candidates = list(search_root.rglob('best.pt'))
+            if logger:
+                logger.info(f"Found {len(candidates)} best.pt candidates in {search_root}")
             if candidates:
                 # Return the most recently modified one
                 best = max(candidates, key=lambda p: p.stat().st_mtime)
                 return str(best)
     return ''
-
 
 
 class SignageDetector(Node):
@@ -171,7 +177,7 @@ class SignageDetector(Node):
 
         # Auto-discover if no path configured or path doesn't exist
         if not model_path or not Path(model_path).exists():
-            discovered = _find_best_pt()
+            discovered = _find_best_pt(logger=self.get_logger())
             if discovered:
                 model_path = discovered
                 self._param_cache['model_path'] = discovered
