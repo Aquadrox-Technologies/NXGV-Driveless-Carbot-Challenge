@@ -40,8 +40,16 @@ from .topics import (
 
 
 # ── Auto-discover workspace root and model path ─────────────────────────
+def _find_ws_root() -> Path:
+    """Traverse upwards to find the true workspace root containing src, install, or .git."""
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / 'install').exists() or (parent / 'src').exists() or (parent / '.git').exists():
+            return parent
+    return current.parent.parent.parent  # Fallback
+
 _THIS_DIR = Path(__file__).resolve().parent
-_WS_ROOT = _THIS_DIR.parent.parent.parent  # risabotcar_ws/
+_WS_ROOT = _find_ws_root()
 
 # Common locations where best.pt might live (searched in order)
 _MODEL_SEARCH_PATHS = [
@@ -62,6 +70,7 @@ def _find_best_pt() -> str:
                 best = max(candidates, key=lambda p: p.stat().st_mtime)
                 return str(best)
     return ''
+
 
 
 class SignageDetector(Node):

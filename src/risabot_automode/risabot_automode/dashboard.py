@@ -53,6 +53,8 @@ from .topics import (
     SET_CHALLENGE_TOPIC,
     TRAFFIC_LIGHT_TOPIC,
     TUNNEL_DETECTED_TOPIC,
+    CAMERA_DEBUG_SIGNAGE_TOPIC,
+    PARKING_SIGN_TOPIC,
 )
 
 try:
@@ -154,6 +156,7 @@ class DashboardNode(Node):
             'tunnel_detected': None,
             'obstruction_active': None,
             'parking_complete': None,
+            'parking_sign_detected': None,
             'stop_reason': '',
             'lane_error': 0.0,
             'cmd_lin_x': 0.0,
@@ -185,6 +188,7 @@ class DashboardNode(Node):
             'tunnel_detected': 0.0,
             'obstruction_active': 0.0,
             'parking_complete': 0.0,
+            'parking_sign_detected': 0.0,
             'lane_error': 0.0,
             'cmd_vel': 0.0,
             'odom': 0.0,
@@ -214,6 +218,7 @@ class DashboardNode(Node):
         self.create_subscription(Bool, TUNNEL_DETECTED_TOPIC, self._tunnel_cb, 10)
         self.create_subscription(Bool, OBSTRUCTION_ACTIVE_TOPIC, self._obst_cb, 10)
         self.create_subscription(Bool, PARKING_COMPLETE_TOPIC, self._park_cb, 10)
+        self.create_subscription(Bool, PARKING_SIGN_TOPIC, self._parking_sign_cb, 10)
         self.create_subscription(String, HEALTH_STATUS_TOPIC, self._health_cb, 10)
         self.create_subscription(String, CMD_SAFETY_STATUS_TOPIC, self._cmd_safety_cb, 10)
         self.create_subscription(String, LOOP_STATS_TOPIC, self._loop_stats_cb, 10)
@@ -232,6 +237,7 @@ class DashboardNode(Node):
         self.create_subscription(Image, CAMERA_DEBUG_LINE_TOPIC, lambda msg: self._image_cb(msg, 'line_follower'), qos)
         self.create_subscription(Image, CAMERA_DEBUG_TL_TOPIC, lambda msg: self._image_cb(msg, 'traffic_light'), qos)
         self.create_subscription(Image, CAMERA_DEBUG_OBS_TOPIC, lambda msg: self._image_cb(msg, 'obstacle'), qos)
+        self.create_subscription(Image, CAMERA_DEBUG_SIGNAGE_TOPIC, lambda msg: self._image_cb(msg, 'signage'), qos)
 
         # LiDAR scan for 2D visualization
         self.create_subscription(LaserScan, '/scan', self._scan_cb, qos)
@@ -333,6 +339,10 @@ class DashboardNode(Node):
     def _park_cb(self, msg: Bool) -> None:
         """Update parking completion flag."""
         self._set('parking_complete', msg.data, 'parking_complete')
+
+    def _parking_sign_cb(self, msg: Bool) -> None:
+        """Update parking signboard detection flag."""
+        self._set('parking_sign_detected', msg.data, 'parking_sign_detected')
 
     def _lane_cb(self, msg: Float32) -> None:
         """Update lane error."""
@@ -874,7 +884,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 mapping = {
                     'line_follower': 'line_follower_camera',
                     'traffic_light': 'traffic_light_detector',
-                    'obstacle': 'obstacle_avoidance_camera'
+                    'obstacle': 'obstacle_avoidance_camera',
+                    'signage': 'signage_detector'
                 }
                 for v, node_name in mapping.items():
                     val_str = 'true' if v == selected_view else 'false'
