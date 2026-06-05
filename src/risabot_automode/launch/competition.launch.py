@@ -133,6 +133,15 @@ def generate_launch_description():
             parameters=[params_file]
         ),
 
+        # I2. Signage detector (YOLOv5 BPU model)
+        Node(
+            package='risabot_automode',
+            executable='signage_detector',
+            name='signage_detector',
+            output='screen',
+            parameters=[params_file]
+        ),
+
         # I. Tunnel wall follower (NEW)
         Node(
             package='risabot_automode',

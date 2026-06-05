@@ -288,5 +288,5 @@ signage_detector:
     model_path: "/home/sunrise/risabot_signs_640x640_nv12.bin"
     conf_threshold: 0.40
     iou_threshold: 0.45
-    show_debug: false
+    show_debug: true
 

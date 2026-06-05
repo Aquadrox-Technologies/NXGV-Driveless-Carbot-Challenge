@@ -31,7 +31,10 @@ from .topics import (
 
 # Graceful import of BPU runtime library
 try:
-    import hobot_dnn
+    try:
+        from hobot_dnn import pyeasy_dnn as dnn
+    except ImportError:
+        from hobot_dnn_rdkx5 import pyeasy_dnn as dnn
     BPU_AVAILABLE = True
 except ImportError:
     BPU_AVAILABLE = False
@@ -86,7 +89,7 @@ class SignageDetector(Node):
             try:
                 model_path = str(self._param_cache['model_path'])
                 self.get_logger().info(f'Loading BPU model from: {model_path}')
-                self.models = hobot_dnn.load(model_path)
+                self.models = dnn.load(model_path)
                 self.model = self.models[0]
                 self.get_logger().info('BPU model loaded successfully.')
             except Exception as e:
