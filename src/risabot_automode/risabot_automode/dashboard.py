@@ -1005,7 +1005,7 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 action = data.get('action', '')
-                if action in ('record', 'stop', 'playback') and _node_ref:
+                if action in ('record', 'stop', 'playback', 'save') and _node_ref:
                     _node_ref.rp_cmd_pub.publish(String(data=action))
                     resp = {'ok': True, 'msg': f'Sent: {action}'}
                 else:

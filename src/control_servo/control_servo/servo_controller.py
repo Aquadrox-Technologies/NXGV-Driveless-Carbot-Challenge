@@ -246,6 +246,9 @@ class ServoControllerV9(Node):
         self.playback_index = 0
         self.playback_timer = None    # one-shot timer handle
 
+        # Load preset movement if available
+        self._load_recording()
+
         self.get_logger().info("🎮 V9 Ready: Right Stick X = Steer | LB/RB = Challenges | A = Record/Stop | X = Play/Stop Playback")
         self._update_dash()
 
@@ -518,7 +521,7 @@ class ServoControllerV9(Node):
         """Forward auto commands to hardware when in auto mode."""
         self.last_auto_cmd_time = time.monotonic()
         self.auto_cmd_stale_reported = False
-        if not self.manual_mode:
+        if not self.manual_mode and self.rp_state != 'PLAYBACK':
             self.process_twist(msg)
 
     def process_twist(self, msg: Twist) -> None:
@@ -757,6 +760,29 @@ class ServoControllerV9(Node):
 
     # ─────────── Record & Playback methods ───────────
 
+    def _load_recording(self) -> None:
+        """Load persistent movement recording from disk."""
+        import os
+        filepath = os.path.expanduser('~/recorded_movement.json')
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'r') as f:
+                    self.record_buffer = json.load(f)
+                self.get_logger().info(f"Loaded {len(self.record_buffer)} recorded movement samples from {filepath}")
+            except Exception as e:
+                self.get_logger().error(f"Failed to load recorded movement: {e}")
+
+    def _save_recording(self) -> None:
+        """Save current record buffer persistently to disk."""
+        import os
+        filepath = os.path.expanduser('~/recorded_movement.json')
+        try:
+            with open(filepath, 'w') as f:
+                json.dump(self.record_buffer, f)
+            self.get_logger().info(f"Saved {len(self.record_buffer)} movement samples to {filepath}")
+        except Exception as e:
+            self.get_logger().error(f"Failed to save recorded movement: {e}")
+
     def _publish_rp_state(self) -> None:
         """Publish current record/playback state and buffer size."""
         payload = json.dumps({
@@ -780,6 +806,8 @@ class ServoControllerV9(Node):
         elif cmd == 'playback':
             if self.rp_state == 'IDLE' and len(self.record_buffer) > 0:
                 self._start_playback()
+        elif cmd == 'save':
+            self._save_recording()
         self._publish_rp_state()
 
     def _start_recording(self) -> None:

@@ -1063,6 +1063,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span class="icon">▶</span>
           <span class="label" style="font-size:0.7em; letter-spacing:0.5px; text-transform:uppercase;">Play</span>
         </button>
+        <button class="rp-btn save" id="rpBtnSave" onclick="rpCmd('save')" style="flex:1; padding:8px 4px; border-radius:8px; border:1px solid rgba(30,144,255,0.3); font-size:0.8em; font-weight:700; cursor:pointer; background:rgba(30,144,255,0.1); color:#1e90ff; display:flex; flex-direction:column; align-items:center; gap:4px; font-family:inherit;">
+          <span class="icon">💾</span>
+          <span class="label" style="font-size:0.7em; letter-spacing:0.5px; text-transform:uppercase;">Save</span>
+        </button>
       </div>
 
       <!-- Progress Bar (visible during playback) -->
@@ -1578,6 +1582,7 @@ function update() {
       const btnRec = document.getElementById('rpBtnRecord');
       const btnStop = document.getElementById('rpBtnStop');
       const btnPlay = document.getElementById('rpBtnPlay');
+      const btnSave = document.getElementById('rpBtnSave');
 
       if (btnRec) {
         btnRec.classList.toggle('active', rpState === 'RECORDING');
@@ -1589,6 +1594,9 @@ function update() {
       }
       if (btnStop) {
         btnStop.disabled = (rpState === 'IDLE');
+      }
+      if (btnSave) {
+        btnSave.disabled = (rpState !== 'IDLE' || bufSize === 0);
       }
 
       const progressTrack = document.getElementById('rpProgress');
@@ -2258,6 +2266,14 @@ TEACH_HTML = """<!DOCTYPE html>
     box-shadow: 0 0 24px rgba(105,240,174,0.4);
   }
 
+  .rp-btn.save {
+    background: rgba(30,144,255,0.1);
+    color: #1e90ff;
+    border-color: rgba(30,144,255,0.3);
+  }
+  .rp-btn.save:hover { background: rgba(30,144,255,0.2); border-color: #1e90ff; transform: translateY(-2px); }
+  .rp-btn.save:active { transform: scale(0.96); }
+
   .rp-btn:disabled {
     opacity: 0.3;
     cursor: not-allowed;
@@ -2494,7 +2510,7 @@ TEACH_HTML = """<!DOCTYPE html>
         </div>
       </div>
       <div style="text-align:center;">
-        <button class="reset-btn" onclick="resetOdom()">âŸ² Reset Odometry</button>
+        <button class="reset-btn" onclick="resetOdom()">⟲ Reset Odometry</button>
       </div>
     </div>
 
@@ -2505,7 +2521,7 @@ TEACH_HTML = """<!DOCTYPE html>
 
     <!-- Record & Playback Card -->
     <div class="card">
-      <h2>ðŸŽ¬ Record &amp; Playback</h2>
+      <h2>🎬 Record &amp; Playback</h2>
 
       <!-- State Display -->
       <div class="rp-state-display">
@@ -2515,16 +2531,20 @@ TEACH_HTML = """<!DOCTYPE html>
       <!-- Control Buttons -->
       <div class="rp-buttons">
         <button class="rp-btn record" id="rpBtnRecord" onclick="rpCmd('record')">
-          <span class="icon">âº</span>
+          <span class="icon">🔴</span>
           <span class="label">Record</span>
         </button>
         <button class="rp-btn stop" id="rpBtnStop" onclick="rpCmd('stop')">
-          <span class="icon">â¹</span>
+          <span class="icon">⏹</span>
           <span class="label">Stop</span>
         </button>
         <button class="rp-btn play" id="rpBtnPlay" onclick="rpCmd('playback')">
-          <span class="icon">â–¶</span>
+          <span class="icon">▶</span>
           <span class="label">Play</span>
+        </button>
+        <button class="rp-btn save" id="rpBtnSave" onclick="rpCmd('save')">
+          <span class="icon">💾</span>
+          <span class="label">Save</span>
         </button>
       </div>
 
@@ -2660,6 +2680,7 @@ function update() {
       const btnRec = document.getElementById('rpBtnRecord');
       const btnStop = document.getElementById('rpBtnStop');
       const btnPlay = document.getElementById('rpBtnPlay');
+      const btnSave = document.getElementById('rpBtnSave');
 
       btnRec.classList.toggle('active', rpState === 'RECORDING');
       btnPlay.classList.toggle('active', rpState === 'PLAYBACK');
@@ -2667,6 +2688,9 @@ function update() {
       btnRec.disabled = (rpState === 'PLAYBACK');
       btnPlay.disabled = (rpState === 'RECORDING' || bufSize === 0);
       btnStop.disabled = (rpState === 'IDLE');
+      if (btnSave) {
+        btnSave.disabled = (rpState !== 'IDLE' || bufSize === 0);
+      }
 
       // Progress bar
       const progressTrack = document.getElementById('rpProgress');
