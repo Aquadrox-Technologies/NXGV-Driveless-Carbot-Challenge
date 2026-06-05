@@ -505,17 +505,6 @@ class ServoControllerV9(Node):
 
             self.apply_hardware(motor_pwm, steer_angle)
 
-            # Record sample if we are in RECORDING state
-            if self.rp_state == 'RECORDING':
-                now = time.monotonic()
-                dt = now - self.record_last_sample_time if self.record_last_sample_time > 0 else 0.05
-                self.record_last_sample_time = now
-                self.record_buffer.append({
-                    'dt': dt,
-                    'motor_pwm': motor_pwm,
-                    'servo_angle': steer_angle,
-                })
-
             # Publish to /cmd_vel so dashboard can track manual velocity for odom
             cmd = Twist()
             cmd.linear.x = throttle_raw * self.current_speed_limit / 100.0  # approximate m/s
@@ -609,6 +598,14 @@ class ServoControllerV9(Node):
     def _encoder_read_loop(self) -> None:
         """Read hardware encoders and compute/publish /odom"""
         self.encoder_loop_monitor.tick()
+
+        # Steady 20Hz recording loop
+        if self.rp_state == 'RECORDING':
+            self.record_buffer.append({
+                'motor_pwm': self.target_motor_val,
+                'servo_angle': self.target_servo_val
+            })
+
         now = time.monotonic()
         dt = now - self.last_odom_time
         
@@ -771,7 +768,6 @@ class ServoControllerV9(Node):
     def _start_recording(self) -> None:
         """Enter RECORDING state: clear buffer, begin sampling."""
         self.record_buffer = []
-        self.record_last_sample_time = time.monotonic()
         self.rp_state = 'RECORDING'
         self.get_logger().info(f'🔴 RECORDING started (buffer cleared)')
         self._publish_rp_state()
@@ -791,11 +787,13 @@ class ServoControllerV9(Node):
         self.playback_index = 0
         self.get_logger().info(f'▶ PLAYBACK started ({len(self.record_buffer)} samples)')
         self._publish_rp_state()
+        # Start the periodic playback timer at 20Hz (0.05 seconds)
+        self.playback_timer = self.create_timer(0.05, self._playback_timer_cb)
         # Kick off the first step immediately
         self._playback_step()
 
     def _playback_step(self) -> None:
-        """Apply the next recorded command and schedule the following one."""
+        """Apply the next recorded command."""
         # Safety: abort if state changed externally
         if self.rp_state != 'PLAYBACK':
             return
@@ -807,27 +805,22 @@ class ServoControllerV9(Node):
             return
 
         sample = self.record_buffer[self.playback_index]
-        self.apply_hardware(sample['motor_pwm'], sample['servo_angle'])
+        self.target_motor_val = sample['motor_pwm']
+        self.target_servo_val = sample['servo_angle']
+        try:
+            self.bot.set_motor(self.target_motor_val, 0, 0, 0)
+            self.bot.set_pwm_servo(self.servo_steer_id, self.target_servo_val)
+            self.sent_motor_val = self.target_motor_val
+            self.sent_servo_val = self.target_servo_val
+            self.last_hw_send_time = time.monotonic()
+        except Exception as e:
+            pass
+
         self.playback_index += 1
         self._publish_rp_state()
 
-        # Schedule next step after the recorded delta-time
-        if self.playback_index < len(self.record_buffer):
-            next_dt = self.record_buffer[self.playback_index]['dt']
-            # Clamp dt to reasonable range (10ms – 500ms) to avoid stuck timers
-            next_dt = max(0.01, min(0.5, next_dt))
-            self.playback_timer = self.create_timer(next_dt, self._playback_timer_cb)
-        else:
-            # Last sample applied, schedule end
-            self.playback_timer = self.create_timer(0.1, self._playback_timer_cb)
-
     def _playback_timer_cb(self) -> None:
-        """One-shot timer callback for playback stepping."""
-        # Destroy the timer so it only fires once (one-shot pattern)
-        if self.playback_timer is not None:
-            self.playback_timer.cancel()
-            self.destroy_timer(self.playback_timer)
-            self.playback_timer = None
+        """Periodic timer callback for playback stepping."""
         self._playback_step()
 
     def _stop_playback(self) -> None:
