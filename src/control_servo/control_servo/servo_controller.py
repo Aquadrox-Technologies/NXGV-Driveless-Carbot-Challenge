@@ -47,6 +47,8 @@ from .topics import (
     ODOM_TOPIC,
     SET_CHALLENGE_TOPIC,
     IMU_PITCH_TOPIC,
+    RECORD_PLAYBACK_STATE_TOPIC,
+    RECORD_PLAYBACK_CMD_TOPIC,
 )
 
 # --- Defaults ---
@@ -171,10 +173,12 @@ class ServoControllerV9(Node):
         self.odom_pub = self.create_publisher(Odometry, ODOM_TOPIC, 10)
         self.loop_stats_pub = self.create_publisher(String, LOOP_STATS_TOPIC, 10)
         self.pitch_pub = self.create_publisher(Float32, IMU_PITCH_TOPIC, 10)
+        self.rp_state_pub = self.create_publisher(String, RECORD_PLAYBACK_STATE_TOPIC, 10)
 
         # Subscribers
         self.create_subscription(Joy, JOY_TOPIC, self.joy_callback, 10)
         self.create_subscription(Twist, AUTO_CMD_VEL_TOPIC, self.cmd_vel_auto_callback, 10)
+        self.create_subscription(String, RECORD_PLAYBACK_CMD_TOPIC, self._record_playback_cmd_cb, 10)
 
         # State
         self.manual_mode = True
@@ -235,7 +239,14 @@ class ServoControllerV9(Node):
         self.last_auto_cmd_time = 0.0
         self.auto_cmd_stale_reported = False
 
-        self.get_logger().info("🎮 V9 Ready: Right Stick X = Steer | LB/RB = Challenges")
+        # --- Record & Playback state ---
+        self.rp_state = 'IDLE'       # 'IDLE', 'RECORDING', 'PLAYBACK'
+        self.record_buffer = []       # list of {dt, motor_pwm, servo_angle}
+        self.record_last_sample_time = 0.0
+        self.playback_index = 0
+        self.playback_timer = None    # one-shot timer handle
+
+        self.get_logger().info("🎮 V9 Ready: Right Stick X = Steer | LB/RB = Challenges | X = Record/Play")
         self._update_dash()
 
     def _update_param_cache(self) -> None:
@@ -389,8 +400,28 @@ class ServoControllerV9(Node):
         def rose(idx): # Rising edge
             return btn(idx) == 1 and (idx >= len(self.prev_buttons) or self.prev_buttons[idx] == 0)
 
+        # 0. Record & Playback toggle (Button X = index 3)
+        if rose(3):
+            if self.rp_state == 'IDLE':
+                if len(self.record_buffer) > 0 and self.manual_mode:
+                    # Buffer exists — start playback
+                    self._start_playback()
+                else:
+                    # No buffer or first press — start recording
+                    self._start_recording()
+            elif self.rp_state == 'RECORDING':
+                self._stop_recording()
+            elif self.rp_state == 'PLAYBACK':
+                self._stop_playback()
+
         # 1. Toggle Mode (Start=11, Y=4)
         if rose(11) or rose(4): 
+            # Abort any active record/playback when switching modes
+            if self.rp_state != 'IDLE':
+                if self.rp_state == 'RECORDING':
+                    self._stop_recording()
+                elif self.rp_state == 'PLAYBACK':
+                    self._stop_playback()
             self.manual_mode = not self.manual_mode
             self.auto_mode_pub.publish(Bool(data=not self.manual_mode))
             self.get_logger().info(f"Mode: {'MANUAL' if self.manual_mode else 'AUTO'}")
@@ -428,8 +459,8 @@ class ServoControllerV9(Node):
             self.get_logger().info(f"Speed Limit: {self.current_speed_limit}")
             self._update_dash()
 
-        # 4. MANUAL DRIVING
-        if self.manual_mode and self.joy_alive:
+        # 4. MANUAL DRIVING (skip during playback — robot is auto-replaying)
+        if self.manual_mode and self.joy_alive and self.rp_state != 'PLAYBACK':
             # Throttle: Left Stick Y (Axis 1)
             throttle_raw = axis(1)
             
@@ -456,6 +487,17 @@ class ServoControllerV9(Node):
             steer_angle = max(min_angle, min(max_angle, steer_angle))
 
             self.apply_hardware(motor_pwm, steer_angle)
+
+            # Record sample if we are in RECORDING state
+            if self.rp_state == 'RECORDING':
+                now = time.monotonic()
+                dt = now - self.record_last_sample_time if self.record_last_sample_time > 0 else 0.05
+                self.record_last_sample_time = now
+                self.record_buffer.append({
+                    'dt': dt,
+                    'motor_pwm': motor_pwm,
+                    'servo_angle': steer_angle,
+                })
 
             # Publish to /cmd_vel so dashboard can track manual velocity for odom
             cmd = Twist()
@@ -681,6 +723,106 @@ class ServoControllerV9(Node):
 
         except Exception as e:
             self.get_logger().error(f"Failed to read encoders: {e}")
+
+    # ─────────── Record & Playback methods ───────────
+
+    def _publish_rp_state(self) -> None:
+        """Publish current record/playback state and buffer size."""
+        payload = json.dumps({
+            'state': self.rp_state,
+            'buffer_size': len(self.record_buffer),
+            'playback_index': self.playback_index,
+        }, separators=(',', ':'))
+        self.rp_state_pub.publish(String(data=payload))
+
+    def _record_playback_cmd_cb(self, msg: String) -> None:
+        """Handle record/playback commands from the dashboard."""
+        cmd = msg.data.strip().lower()
+        if cmd == 'record':
+            if self.rp_state == 'IDLE':
+                self._start_recording()
+        elif cmd == 'stop':
+            if self.rp_state == 'RECORDING':
+                self._stop_recording()
+            elif self.rp_state == 'PLAYBACK':
+                self._stop_playback()
+        elif cmd == 'playback':
+            if self.rp_state == 'IDLE' and len(self.record_buffer) > 0:
+                self._start_playback()
+        self._publish_rp_state()
+
+    def _start_recording(self) -> None:
+        """Enter RECORDING state: clear buffer, begin sampling."""
+        self.record_buffer = []
+        self.record_last_sample_time = time.monotonic()
+        self.rp_state = 'RECORDING'
+        self.get_logger().info(f'🔴 RECORDING started (buffer cleared)')
+        self._publish_rp_state()
+
+    def _stop_recording(self) -> None:
+        """Exit RECORDING state: keep buffer, return to IDLE."""
+        self.rp_state = 'IDLE'
+        self.get_logger().info(f'⏹ RECORDING stopped ({len(self.record_buffer)} samples saved)')
+        self._publish_rp_state()
+
+    def _start_playback(self) -> None:
+        """Enter PLAYBACK state: begin replaying the recorded buffer."""
+        if len(self.record_buffer) == 0:
+            self.get_logger().warn('▶ Cannot start playback: buffer is empty')
+            return
+        self.rp_state = 'PLAYBACK'
+        self.playback_index = 0
+        self.get_logger().info(f'▶ PLAYBACK started ({len(self.record_buffer)} samples)')
+        self._publish_rp_state()
+        # Kick off the first step immediately
+        self._playback_step()
+
+    def _playback_step(self) -> None:
+        """Apply the next recorded command and schedule the following one."""
+        # Safety: abort if state changed externally
+        if self.rp_state != 'PLAYBACK':
+            return
+
+        if self.playback_index >= len(self.record_buffer):
+            # Reached end of recording
+            self.get_logger().info('🏁 PLAYBACK complete — stopping robot')
+            self._stop_playback()
+            return
+
+        sample = self.record_buffer[self.playback_index]
+        self.apply_hardware(sample['motor_pwm'], sample['servo_angle'])
+        self.playback_index += 1
+        self._publish_rp_state()
+
+        # Schedule next step after the recorded delta-time
+        if self.playback_index < len(self.record_buffer):
+            next_dt = self.record_buffer[self.playback_index]['dt']
+            # Clamp dt to reasonable range (10ms – 500ms) to avoid stuck timers
+            next_dt = max(0.01, min(0.5, next_dt))
+            self.playback_timer = self.create_timer(next_dt, self._playback_timer_cb)
+        else:
+            # Last sample applied, schedule end
+            self.playback_timer = self.create_timer(0.1, self._playback_timer_cb)
+
+    def _playback_timer_cb(self) -> None:
+        """One-shot timer callback for playback stepping."""
+        # Destroy the timer so it only fires once (one-shot pattern)
+        if self.playback_timer is not None:
+            self.playback_timer.cancel()
+            self.destroy_timer(self.playback_timer)
+            self.playback_timer = None
+        self._playback_step()
+
+    def _stop_playback(self) -> None:
+        """Exit PLAYBACK state: stop robot, cancel timer, return to IDLE."""
+        if self.playback_timer is not None:
+            self.playback_timer.cancel()
+            self.destroy_timer(self.playback_timer)
+            self.playback_timer = None
+        self.rp_state = 'IDLE'
+        self.stop_robot()
+        self.get_logger().info('⏹ PLAYBACK stopped')
+        self._publish_rp_state()
 
     def stop_robot(self) -> None:
         self.target_motor_val = 0

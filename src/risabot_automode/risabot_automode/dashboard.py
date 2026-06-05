@@ -55,6 +55,8 @@ from .topics import (
     TUNNEL_DETECTED_TOPIC,
     CAMERA_DEBUG_SIGNAGE_TOPIC,
     PARKING_SIGN_TOPIC,
+    RECORD_PLAYBACK_STATE_TOPIC,
+    RECORD_PLAYBACK_CMD_TOPIC,
 )
 
 try:
@@ -177,6 +179,9 @@ class DashboardNode(Node):
             'cmd_safety_estop': False,
             'cmd_safety_timeout_count': 0,
             'loop_stats': {},
+            'rp_state': 'IDLE',
+            'rp_buffer_size': 0,
+            'rp_playback_index': 0,
         }
         self.topic_last_update = {
             'auto_mode': 0.0,
@@ -200,8 +205,12 @@ class DashboardNode(Node):
             'health_status': 0.0,
             'cmd_safety_status': 0.0,
             'loop_stats': 0.0,
+            'record_playback_state': 0.0,
         }
         self.data_lock = threading.Lock()
+
+        # Record & Playback command publisher
+        self.rp_cmd_pub = self.create_publisher(String, RECORD_PLAYBACK_CMD_TOPIC, 10)
 
         # State tracking
         self._state_entry_time = time.time()
@@ -244,6 +253,9 @@ class DashboardNode(Node):
 
         # Tunnel debug for LiDAR overlay
         self.create_subscription(String, '/tunnel_debug', self._tunnel_debug_cb, 10)
+
+        # Record & Playback state from servo_controller
+        self.create_subscription(String, RECORD_PLAYBACK_STATE_TOPIC, self._rp_state_cb, 10)
 
         # Simulate odometry since hardware might not publish
         self.create_timer(0.05, self._simulate_odom_loop)
@@ -517,6 +529,18 @@ class DashboardNode(Node):
         """Store tunnel debug info for dashboard overlay."""
         with self.tunnel_debug_lock:
             self.tunnel_debug = msg.data
+
+    def _rp_state_cb(self, msg: String) -> None:
+        """Update record/playback state from servo_controller."""
+        try:
+            payload = json.loads(msg.data)
+            with self.data_lock:
+                self.data['rp_state'] = str(payload.get('state', 'IDLE'))
+                self.data['rp_buffer_size'] = int(payload.get('buffer_size', 0))
+                self.data['rp_playback_index'] = int(payload.get('playback_index', 0))
+                self.topic_last_update['record_playback_state'] = time.monotonic()
+        except Exception:
+            pass
 
     def _image_cb(self, msg: Image, view_name: str) -> None:
         """Convert ROS Image to JPEG conditionally, tracking active view and clients."""
@@ -969,6 +993,25 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(resp).encode())
         elif self.path == '/api/save_defaults':
             resp = _save_params_to_yaml()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode())
+        elif self.path == '/api/record_playback':
+            # Handle Record/Playback commands from dashboard
+            content_len = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_len)
+            try:
+                data = json.loads(body)
+                action = data.get('action', '')
+                if action in ('record', 'stop', 'playback') and _node_ref:
+                    _node_ref.rp_cmd_pub.publish(String(data=action))
+                    resp = {'ok': True, 'msg': f'Sent: {action}'}
+                else:
+                    resp = {'ok': False, 'error': f'Invalid action: {action}'}
+            except Exception as e:
+                resp = {'ok': False, 'error': str(e)}
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
