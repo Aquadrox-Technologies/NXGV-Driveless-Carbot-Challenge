@@ -547,9 +547,26 @@ class ServoControllerV9(Node):
         self.cmd_vel_pub.publish(msg)
 
     def apply_hardware(self, motor_pwm: int, steer_angle: int) -> None:
-        """Update target hardware state; timer loop handles transmission."""
+        """Update target hardware state and write immediately to hardware on change."""
         self.target_motor_val = motor_pwm
         self.target_servo_val = steer_angle
+        
+        # Write immediately if changed to minimize input latency
+        if (self.target_motor_val != getattr(self, 'sent_motor_val', None) or 
+            self.target_servo_val != getattr(self, 'sent_servo_val', None)):
+            try:
+                self.bot.set_motor(self.target_motor_val, 0, 0, 0)
+                self.bot.set_pwm_servo(self.servo_steer_id, self.target_servo_val)
+                self.sent_motor_val = self.target_motor_val
+                self.sent_servo_val = self.target_servo_val
+                self.last_hw_send_time = time.monotonic()
+                self.hw_error_count = 0
+                self.hw_error_tripped = False
+            except Exception as e:
+                self.hw_error_count += 1
+                if self.hw_error_count >= int(self._param_cache['hw_fail_limit']) and not self.hw_error_tripped:
+                    self.hw_error_tripped = True
+                    self.stop_robot()
 
     def _hardware_update_loop(self) -> None:
         """Send 10Hz heartbeat to Rosmaster, but only update on change or 1-second timeout to prevent serial spam."""
@@ -805,16 +822,7 @@ class ServoControllerV9(Node):
             return
 
         sample = self.record_buffer[self.playback_index]
-        self.target_motor_val = sample['motor_pwm']
-        self.target_servo_val = sample['servo_angle']
-        try:
-            self.bot.set_motor(self.target_motor_val, 0, 0, 0)
-            self.bot.set_pwm_servo(self.servo_steer_id, self.target_servo_val)
-            self.sent_motor_val = self.target_motor_val
-            self.sent_servo_val = self.target_servo_val
-            self.last_hw_send_time = time.monotonic()
-        except Exception as e:
-            pass
+        self.apply_hardware(sample['motor_pwm'], sample['servo_angle'])
 
         self.playback_index += 1
         self._publish_rp_state()
