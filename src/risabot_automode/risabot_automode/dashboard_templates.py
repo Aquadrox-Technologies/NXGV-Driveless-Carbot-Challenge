@@ -201,6 +201,49 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .mode-AUTO { background: #4caf50; color: #fff; box-shadow: 0 0 8px rgba(76,175,80,0.3); }
   .mode-MANUAL { background: #d32f2f; color: #fff; box-shadow: 0 0 8px rgba(211,47,47,0.3); }
 
+  /* ===== RECORD & PLAYBACK ===== */
+  .rp-state-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    transition: all 0.4s;
+  }
+  .rp-state-badge.idle {
+    background: rgba(108,112,134,0.15);
+    color: var(--text);
+    border: 1px solid rgba(108,112,134,0.3);
+  }
+  .rp-state-badge.recording {
+    background: rgba(255,82,82,0.15);
+    color: var(--danger);
+    border: 1px solid rgba(255,82,82,0.4);
+    animation: recPulse 1.5s ease infinite;
+  }
+  .rp-state-badge.playback {
+    background: rgba(105,240,174,0.15);
+    color: var(--success);
+    border: 1px solid rgba(105,240,174,0.4);
+    animation: playPulse 1.5s ease infinite;
+  }
+  @keyframes recPulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,82,82,0.3)} 50%{box-shadow:0 0 20px 4px rgba(255,82,82,0.2)} }
+  @keyframes playPulse { 0%,100%{box-shadow:0 0 0 0 rgba(105,240,174,0.3)} 50%{box-shadow:0 0 20px 4px rgba(105,240,174,0.2)} }
+
+  .rp-btn.record.active {
+    background: var(--danger) !important;
+    color: #fff !important;
+    border-color: var(--danger) !important;
+    box-shadow: 0 0 16px rgba(210,15,57,0.4);
+  }
+  .rp-btn.play.active {
+    background: var(--success) !important;
+    color: #fff !important;
+    border-color: var(--success) !important;
+    box-shadow: 0 0 16px rgba(64,160,43,0.4);
+  }
+
   .lap-badge {
     padding: 4px 10px;
     border-radius: 6px;
@@ -933,10 +976,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
 <!-- HEADER -->
 <div class="header">
-  <h1>ðŸ¤– RISA-Bot <span style="font-size:0.6em;color:rgba(255,255,255,0.4);vertical-align:middle;">v2.0</span></h1>
+  <h1>🤖 RISA-Bot <span style="font-size:0.6em;color:rgba(255,255,255,0.4);vertical-align:middle;">v2.0</span></h1>
   <div class="conn-badge">
     <span class="header-meta" id="uptimeText">00:00:00</span>
-    <span class="latency-badge" id="latencyText">â€” ms</span>
+    <span class="latency-badge" id="latencyText">— ms</span>
     <span class="conn-dot" id="connDot"></span>
     <span id="connText">Connecting...</span>
   </div>
@@ -952,15 +995,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="card">
       <h3 style="display:flex;align-items:center;justify-content:space-between;">State Machine <span class="mode-badge" id="modeBadge">MANUAL</span></h3>
       <div style="margin-top:4px;">
-        <span class="state-badge" id="stateBadge">â€”</span>
+        <span class="state-badge" id="stateBadge">—</span>
       </div>
       <div style="margin-top:8px;">
-        <span class="lap-badge" id="lapBadge">Lap â€”</span>
+        <span class="lap-badge" id="lapBadge">Lap —</span>
       </div>
       <div class="info-row">
-        <span>â± <span id="stateTime">0</span>s</span>
-        <span>ðŸ“ <span id="stateDist">0.00</span>m</span>
-        <span>ðŸ <span id="lapTimer" style="font-variant-numeric:tabular-nums;">00:00</span></span>
+        <span>⏱️ <span id="stateTime">0</span>s</span>
+        <span>📝 <span id="stateDist">0.00</span>m</span>
+        <span>⏱️ <span id="lapTimer" style="font-variant-numeric:tabular-nums;">00:00</span></span>
       </div>
       <div id="stopReasonRow" style="margin-top:6px;">
         <span id="stopBadge" style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:0.75em;font-weight:700;letter-spacing:0.5px;background:rgba(166,227,161,0.15);color:#a6e3a1;">DRIVING</span>
@@ -1002,6 +1045,44 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- Record & Playback -->
+    <div class="card">
+      <h3 style="display:flex;align-items:center;justify-content:space-between;">🎬 Record &amp; Playback <span class="rp-state-badge idle" id="rpStateBadge">IDLE</span></h3>
+      
+      <!-- Control Buttons -->
+      <div class="rp-buttons" style="display:flex; gap:8px; margin-top:10px;">
+        <button class="rp-btn record" id="rpBtnRecord" onclick="rpCmd('record')" style="flex:1; padding:8px 4px; border-radius:8px; border:1px solid rgba(255,82,82,0.3); font-size:0.8em; font-weight:700; cursor:pointer; background:rgba(255,82,82,0.1); color:#d20f39; display:flex; flex-direction:column; align-items:center; gap:4px; font-family:inherit;">
+          <span class="icon">🔴</span>
+          <span class="label" style="font-size:0.7em; letter-spacing:0.5px; text-transform:uppercase;">Record</span>
+        </button>
+        <button class="rp-btn stop" id="rpBtnStop" onclick="rpCmd('stop')" style="flex:1; padding:8px 4px; border-radius:8px; border:1px solid rgba(255,215,64,0.3); font-size:0.8em; font-weight:700; cursor:pointer; background:rgba(255,215,64,0.1); color:#df8e1d; display:flex; flex-direction:column; align-items:center; gap:4px; font-family:inherit;">
+          <span class="icon">⏹</span>
+          <span class="label" style="font-size:0.7em; letter-spacing:0.5px; text-transform:uppercase;">Stop</span>
+        </button>
+        <button class="rp-btn play" id="rpBtnPlay" onclick="rpCmd('playback')" style="flex:1; padding:8px 4px; border-radius:8px; border:1px solid rgba(105,240,174,0.3); font-size:0.8em; font-weight:700; cursor:pointer; background:rgba(105,240,174,0.1); color:#40a02b; display:flex; flex-direction:column; align-items:center; gap:4px; font-family:inherit;">
+          <span class="icon">▶</span>
+          <span class="label" style="font-size:0.7em; letter-spacing:0.5px; text-transform:uppercase;">Play</span>
+        </button>
+      </div>
+
+      <!-- Progress Bar (visible during playback) -->
+      <div class="progress-track" id="rpProgress" style="display:none; height:6px; background:var(--surface2); border-radius:3px; overflow:hidden; margin-top:10px; margin-bottom:10px;">
+        <div class="progress-fill" id="rpProgressFill" style="width:0%; height:100%; border-radius:3px; background:linear-gradient(90deg, var(--accent), #40a02b); transition:width 0.15s ease;"></div>
+      </div>
+
+      <!-- Buffer / Progress Info -->
+      <div class="rp-info" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;">
+        <div class="rp-info-item" style="background:var(--surface2); border-radius:8px; padding:8px; text-align:center;">
+          <div class="value" id="rpBufferSize" style="font-family:'JetBrains Mono',monospace; font-size:1.4em; font-weight:800; color:var(--accent); line-height:1.2;">0</div>
+          <div class="label" style="font-size:0.65em; color:#666; text-transform:uppercase; letter-spacing:1px; margin-top:2px;">Samples</div>
+        </div>
+        <div class="rp-info-item" style="background:var(--surface2); border-radius:8px; padding:8px; text-align:center;">
+          <div class="value" id="rpDuration" style="font-family:'JetBrains Mono',monospace; font-size:1.4em; font-weight:800; color:var(--accent); line-height:1.2;">0.0</div>
+          <div class="label" style="font-size:0.65em; color:#666; text-transform:uppercase; letter-spacing:1px; margin-top:2px;">Duration (s)</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Lane Following -->
     <div class="card">
       <h3>Lane Following</h3>
@@ -1026,7 +1107,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="col">
     <div class="card cam-card">
       <h3>Camera Feed</h3>
-      <button class="cam-toggle" id="camBtn" onclick="toggleCam()">ðŸ“· Enable Camera</button>
+      <button class="cam-toggle" id="camBtn" onclick="toggleCam()">📷 Enable Camera</button>
       <div class="cam-tabs" id="camTabs" style="display:none;">
         <div class="cam-tab active" onclick="setCamView('raw', this)">Raw</div>
         <div class="cam-tab" onclick="setCamView('line_follower', this)">Lane Lines</div>
@@ -1036,7 +1117,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
       <div class="cam-container" id="camContainer">
         <div class="cam-off" id="camOff">
-          <div class="icon">ðŸ“·</div>
+          <div class="icon">📷</div>
           Click above to enable
         </div>
         <img id="camImg" src="" alt="Camera" style="display:none;">
@@ -1047,7 +1128,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <h3 style="margin:0;">LiDAR Top View</h3>
-        <span id="lidarStatus" style="font-size:0.8em; font-weight:600; color:#888;">â— Waiting</span>
+        <span id="lidarStatus" style="font-size:0.8em; font-weight:600; color:#888;">● Waiting</span>
       </div>
       <canvas id="lidarCanvas" width="320" height="320" style="width:100%; margin-top:8px; border-radius:12px; background:#0a0a0f; border:1px solid rgba(0,0,0,0.1);"></canvas>
     </div>
@@ -1059,16 +1140,16 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <!-- Sensors -->
     <div class="card">
       <h3>Sensors</h3>
-      <div class="s-row"><span class="s-label">LiDAR</span><span class="s-val"><span class="dot dot-gray" id="dotLidar"></span><span id="valLidar">â€”</span></span></div>
-      <div class="s-row"><span class="s-label">Camera</span><span class="s-val"><span class="dot dot-gray" id="dotCam"></span><span id="valCam">â€”</span></span></div>
-      <div class="s-row"><span class="s-label">Fused</span><span class="s-val"><span class="dot dot-gray" id="dotFused"></span><span id="valFused">â€”</span></span></div>
-      <div class="s-row"><span class="s-label">Boom Gate</span><span class="s-val"><span class="dot dot-gray" id="dotGate"></span><span id="valGate">â€”</span></span></div>
-      <div class="s-row"><span class="s-label">Tunnel</span><span class="s-val"><span class="dot dot-gray" id="dotTunnel"></span><span id="valTunnel">â€”</span></span></div>
-      <div class="s-row"><span class="s-label">Obstruction</span><span class="s-val"><span class="dot dot-gray" id="dotObst"></span><span id="valObst">â€”</span></span></div>
-      <div class="s-row"><span class="s-label">Parking</span><span class="s-val"><span class="dot dot-gray" id="dotPark"></span><span id="valPark">â€”</span></span></div>
-      <div class="s-row"><span class="s-label">Signage</span><span class="s-val"><span class="dot dot-gray" id="dotSignage"></span><span id="valSignage">â€”</span></span></div>
-      <div class="s-row"><span class="s-label">Health</span><span class="s-val"><span class="dot dot-gray" id="dotHealth"></span><span id="valHealth">â€”</span></span></div>
-      <div class="s-row"><span class="s-label">Stale Streams</span><span class="s-val" id="valStale">â€”</span></div>
+      <div class="s-row"><span class="s-label">LiDAR</span><span class="s-val"><span class="dot dot-gray" id="dotLidar"></span><span id="valLidar">—</span></span></div>
+      <div class="s-row"><span class="s-label">Camera</span><span class="s-val"><span class="dot dot-gray" id="dotCam"></span><span id="valCam">—</span></span></div>
+      <div class="s-row"><span class="s-label">Fused</span><span class="s-val"><span class="dot dot-gray" id="dotFused"></span><span id="valFused">—</span></span></div>
+      <div class="s-row"><span class="s-label">Boom Gate</span><span class="s-val"><span class="dot dot-gray" id="dotGate"></span><span id="valGate">—</span></span></div>
+      <div class="s-row"><span class="s-label">Tunnel</span><span class="s-val"><span class="dot dot-gray" id="dotTunnel"></span><span id="valTunnel">—</span></span></div>
+      <div class="s-row"><span class="s-label">Obstruction</span><span class="s-val"><span class="dot dot-gray" id="dotObst"></span><span id="valObst">—</span></span></div>
+      <div class="s-row"><span class="s-label">Parking</span><span class="s-val"><span class="dot dot-gray" id="dotPark"></span><span id="valPark">—</span></span></div>
+      <div class="s-row"><span class="s-label">Signage</span><span class="s-val"><span class="dot dot-gray" id="dotSignage"></span><span id="valSignage">—</span></span></div>
+      <div class="s-row"><span class="s-label">Health</span><span class="s-val"><span class="dot dot-gray" id="dotHealth"></span><span id="valHealth">—</span></span></div>
+      <div class="s-row"><span class="s-label">Stale Streams</span><span class="s-val" id="valStale">—</span></div>
     </div>
 
     <!-- Odometry -->
@@ -1078,7 +1159,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="s-row"><span class="s-label">Speed</span><span class="s-val" id="odomSpeed">0.000 m/s</span></div>
       <div class="s-row"><span class="s-label">Pos X</span><span class="s-val" id="odomX">0.00 m</span></div>
       <div class="s-row"><span class="s-label">Pos Y</span><span class="s-val" id="odomY">0.00 m</span></div>
-      <div class="s-row"><span class="s-label">Heading</span><span class="s-val" id="odomYaw">0Â°</span></div>
+      <div class="s-row"><span class="s-label">Heading</span><span class="s-val" id="odomYaw">0°</span></div>
       <button onclick="fetch('/api/reset_odom',{method:'POST'}).then(update)" style="margin-top:10px;width:100%;padding:6px;background:#333;color:#fff;border:1px solid #555;border-radius:4px;cursor:pointer;">Reset Odometry</button>
     </div>
 
@@ -1087,13 +1168,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <h3>Controller</h3>
       <div class="ctrl-grid">
         <div class="ctrl-btn" id="btnLB">LB</div>
-        <div class="ctrl-btn" id="btnUp">â–²</div>
+        <div class="ctrl-btn" id="btnUp">▲</div>
         <div class="ctrl-btn" id="btnRB">RB</div>
-        <div class="ctrl-btn" id="btnLeft">â—€</div>
+        <div class="ctrl-btn" id="btnLeft">◀</div>
         <div class="ctrl-btn" id="btnStart">STA</div>
-        <div class="ctrl-btn" id="btnRight">â–¶</div>
+        <div class="ctrl-btn" id="btnRight">▶</div>
         <div class="ctrl-btn" id="btnX">X</div>
-        <div class="ctrl-btn" id="btnDown">â–¼</div>
+        <div class="ctrl-btn" id="btnDown">▼</div>
         <div class="ctrl-btn" id="btnY">Y</div>
         <div class="ctrl-btn" id="btnA">A</div>
         <div class="ctrl-btn" id="btnLT">LT</div>
@@ -1110,7 +1191,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <div class="joy-label" id="joyValR">R: 0.0, 0.0</div>
         </div>
       </div>
-      <div class="btn-debug" id="btnDebug">Press a button to see indexâ€¦</div>
+      <div class="btn-debug" id="btnDebug">Press a button to see index…</div>
     </div>
 
   </div>
@@ -1119,18 +1200,18 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <!-- ===== BEHAVIOR PRIORITY VISUALIZER ===== -->
 <div class="flow-section">
   <div class="flow-card">
-    <h3>ðŸ§  Hybrid Action Priority <span style="font-size:0.85em;color:#444;font-weight:400;text-transform:none;letter-spacing:0;"> â€” Highlighted block is the currently active overriding behavior</span></h3>
+    <h3>🧠 Hybrid Action Priority <span style="font-size:0.85em;color:#444;font-weight:400;text-transform:none;letter-spacing:0;"> — Highlighted block is the currently active overriding behavior</span></h3>
     <div class="flow-bar" id="flowBar">
       <div class="flow-node" id="flow_LANE_FOLLOW">Lane Follow</div>
-      <span class="flow-arrow">â—€</span>
+      <span class="flow-arrow">◀</span>
       <div class="flow-node" id="flow_TUNNEL">Tunnel</div>
-      <span class="flow-arrow">â—€</span>
+      <span class="flow-arrow">◀</span>
       <div class="flow-node" id="flow_OBSTRUCTION">Obstruction</div>
-      <span class="flow-arrow">â—€</span>
+      <span class="flow-arrow">◀</span>
       <div class="flow-node" id="flow_BOOM_GATE">Boom Gate</div>
-      <span class="flow-arrow">â—€</span>
+      <span class="flow-arrow">◀</span>
       <div class="flow-node" id="flow_TRAFFIC_LIGHT">Traffic Light</div>
-      <span class="flow-arrow">â—€</span>
+      <span class="flow-arrow">◀</span>
       <div class="flow-node" id="flow_MANUAL">Manual Control</div>
     </div>
   </div>
@@ -1139,7 +1220,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <!-- ===== EVENT LOG ===== -->
 <div class="log-section">
   <div class="log-card">
-    <h3><span style="opacity:0.6">ðŸ“</span> Event Log</h3>
+    <h3><span style="opacity:0.6">📝 </span> Event Log</h3>
     <div class="log-scroll" id="logScroll">
       <div class="log-entry"><span class="log-time">--:--:--</span><span class="log-event">Dashboard started</span></div>
     </div>
@@ -1148,25 +1229,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
 <!-- ===== PARAMETER TUNING ===== -->
 <!-- ===== PARAMETER TUNING DRAWER ===== -->
-<div class="param-popout-tab" onclick="toggleParamDrawer()">âš™ï¸ Parameters</div>
+<div class="param-popout-tab" onclick="toggleParamDrawer()">⚙️ Parameters</div>
 <div class="param-drawer" id="paramDrawer">
-  <h3>âš™ï¸ Parameter Tuning</h3>
-  <div class="note">ðŸ’¡ Changes apply instantly to nodes but revert to defaults upon restart.</div>
+  <h3>⚙️ Parameter Tuning</h3>
+  <div class="note">💡 Changes apply instantly to nodes but revert to defaults upon restart.</div>
   <div id="paramContainer"></div>
-  <button class="param-save-defaults-btn" id="saveDefaultsBtn" onclick="saveDefaults()">ðŸ’¾ Save Current as Default</button>
+  <button class="param-save-defaults-btn" id="saveDefaultsBtn" onclick="saveDefaults()">💾 Save Current as Default</button>
   <div id="saveDefaultsStatus" style="text-align:center;font-size:0.78em;margin-top:6px;min-height:20px;"></div>
 </div>
 
 <!-- ===== CONTROLLER POPOUT ===== -->
-<div class="ctrl-popout-tab" onclick="toggleCtrlDrawer()">ðŸŽ® Controls</div>
+<div class="ctrl-popout-tab" onclick="toggleCtrlDrawer()">🎮 Controls</div>
 <div class="ctrl-drawer" id="ctrlDrawer">
-  <h3>ðŸŽ® Control Mapping</h3>
+  <h3>🎮 Control Mapping</h3>
   <div class="ctrl-section-label">Driving</div>
   <div class="ctrl-map-row"><span class="ctrl-key">L Stick Y</span><span class="ctrl-desc">Throttle (forward/reverse)</span></div>
   <div class="ctrl-map-row"><span class="ctrl-key">R Stick X</span><span class="ctrl-desc">Steering (left/right)</span></div>
   <div class="ctrl-section-label">Speed</div>
-  <div class="ctrl-map-row"><span class="ctrl-key">D-Pad â–²</span><span class="ctrl-desc">Speed up (shift gear)</span></div>
-  <div class="ctrl-map-row"><span class="ctrl-key">D-Pad â–¼</span><span class="ctrl-desc">Speed down (shift gear)</span></div>
+  <div class="ctrl-map-row"><span class="ctrl-key">D-Pad ▲</span><span class="ctrl-desc">Speed up (shift gear)</span></div>
+  <div class="ctrl-map-row"><span class="ctrl-key">D-Pad ▼</span><span class="ctrl-desc">Speed down (shift gear)</span></div>
   <div class="ctrl-section-label">Mode</div>
   <div class="ctrl-map-row"><span class="ctrl-key">Y</span><span class="ctrl-desc">Toggle Auto/Manual mode</span></div>
   <div class="ctrl-map-row"><span class="ctrl-key">Start</span><span class="ctrl-desc">Toggle Auto/Manual mode</span></div>
@@ -1285,6 +1366,14 @@ function setCamView(view, btn) {
   });
 }
 
+function rpCmd(action) {
+  fetch('/api/record_playback', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action})
+  }).catch(() => {});
+}
+
 let last_data_time = 0;
 function update() {
   const fetchStart = performance.now();
@@ -1307,7 +1396,7 @@ function update() {
 
       // Log state changes
       if (currentState !== lastState && lastState !== '') {
-        addLogEntry(`State: <span class="log-val">${lastState}</span> â†’ <span class="log-val">${currentState}</span>`);
+        addLogEntry(`State: <span class="log-val">${lastState}</span> ➔ <span class="log-val">${currentState}</span>`);
       }
       lastState = currentState;
 
@@ -1334,18 +1423,18 @@ function update() {
       const stopEl = document.getElementById('stopBadge');
       const sr = d.stop_reason || '';
       if (sr.length > 0) {
-        stopEl.textContent = 'â›” ' + sr;
+        stopEl.textContent = '⛔ ' + sr;
         stopEl.style.background = 'rgba(243,139,168,0.2)';
         stopEl.style.color = '#f38ba8';
         if (sr !== lastStopReason && lastStopReason === '') {
-          addLogEntry(`â›” Stopped: <span class="log-val">${sr}</span>`);
+          addLogEntry(`⛔ Stopped: <span class="log-val">${sr}</span>`);
         }
       } else {
         stopEl.textContent = 'DRIVING';
         stopEl.style.background = 'rgba(64,160,43,0.15)';
         stopEl.style.color = '#40a02b';
         if (lastStopReason && lastStopReason.length > 0) {
-          addLogEntry(`âœ… Resumed driving`);
+          addLogEntry(`✅ Resumed driving`);
         }
       }
       lastStopReason = sr;
@@ -1359,7 +1448,7 @@ function update() {
       // Sensors
       function ss(dId, vId, v, tl, fl) {
         const dot = document.getElementById(dId), val = document.getElementById(vId);
-        if (v===null||v===undefined){dot.className='dot dot-gray';val.textContent='â€”';return;}
+        if (v===null||v===undefined){dot.className='dot dot-gray';val.textContent='—';return;}
         dot.className = v ? 'dot dot-red' : 'dot dot-green';
         val.textContent = v ? (tl||'YES') : (fl||'NO');
       }
@@ -1372,7 +1461,7 @@ function update() {
       ss('dotSignage','valSignage',d.parking_sign_detected,'DETECTED','CLEAR');
       if (d.health_ok === null || d.health_ok === undefined) {
         document.getElementById('dotHealth').className = 'dot dot-gray';
-        document.getElementById('valHealth').textContent = 'â€”';
+        document.getElementById('valHealth').textContent = '—';
       } else if (d.health_ok) {
         document.getElementById('dotHealth').className = 'dot dot-green';
         document.getElementById('valHealth').textContent = 'OK';
@@ -1413,7 +1502,7 @@ function update() {
       document.getElementById('odomSpeed').textContent = d.speed.toFixed(3)+' m/s';
       document.getElementById('odomX').textContent = (d.odom_x || 0).toFixed(2) + ' m';
       document.getElementById('odomY').textContent = (d.odom_y || 0).toFixed(2) + ' m';
-      document.getElementById('odomYaw').textContent = ((d.odom_yaw || 0) * 180 / Math.PI).toFixed(1) + 'Â°';
+      document.getElementById('odomYaw').textContent = ((d.odom_yaw || 0) * 180 / Math.PI).toFixed(1) + '°';
 
       // Speed & Selector
       document.getElementById('speedPct').textContent = d.speed_pct+'%';
@@ -1465,6 +1554,52 @@ function update() {
         dr.style.top = ry + '%';
         dr.classList.toggle('active', Math.abs(d.axes[2]) > 0.05 || Math.abs(d.axes[3]) > 0.05);
       }
+
+      // ── Record & Playback State ──
+      const rpState = d.rp_state || 'IDLE';
+      const bufSize = d.rp_buffer_size || 0;
+      const pbIdx = d.rp_playback_index || 0;
+
+      const badge = document.getElementById('rpStateBadge');
+      if (badge) {
+        badge.textContent = rpState;
+        badge.className = 'rp-state-badge ' + rpState.toLowerCase();
+      }
+
+      const bufSizeEl = document.getElementById('rpBufferSize');
+      if (bufSizeEl) bufSizeEl.textContent = bufSize;
+      
+      const durEl = document.getElementById('rpDuration');
+      if (durEl) durEl.textContent = (bufSize * 0.05).toFixed(1);
+
+      const btnRec = document.getElementById('rpBtnRecord');
+      const btnStop = document.getElementById('rpBtnStop');
+      const btnPlay = document.getElementById('rpBtnPlay');
+
+      if (btnRec) {
+        btnRec.classList.toggle('active', rpState === 'RECORDING');
+        btnRec.disabled = (rpState === 'PLAYBACK');
+      }
+      if (btnPlay) {
+        btnPlay.classList.toggle('active', rpState === 'PLAYBACK');
+        btnPlay.disabled = (rpState === 'RECORDING' || bufSize === 0);
+      }
+      if (btnStop) {
+        btnStop.disabled = (rpState === 'IDLE');
+      }
+
+      const progressTrack = document.getElementById('rpProgress');
+      const progressFill = document.getElementById('rpProgressFill');
+      if (progressTrack && progressFill) {
+        if (rpState === 'PLAYBACK' && bufSize > 0) {
+          progressTrack.style.display = 'block';
+          const pct = Math.min(100, (pbIdx / bufSize) * 100);
+          progressFill.style.width = pct + '%';
+        } else {
+          progressTrack.style.display = 'none';
+          progressFill.style.width = '0%';
+        }
+      }
     })
     .catch(()=>{
       document.getElementById('connDot').style.background='#f44336';
@@ -1475,7 +1610,7 @@ function update() {
 const PARAM_TIPS = {
   // Signage Detector
   model_path:'Path to YOLO model file (.pt or .onnx)', confidence_threshold:'Detection confidence threshold (0.0-1.0)',
-  min_bbox_area:'Minimum bounding box area to trigger (pxÂ²)', process_every_n:'Process every N frames (1=every frame)',
+  min_bbox_area:'Minimum bounding box area to trigger (px²)', process_every_n:'Process every N frames (1=every frame)',
   parking_class_name:'Class name to treat as parking sign',
   // Traffic light
   red_h_low1:'Red hue range 1 lower bound (HSV)', red_h_high1:'Red hue range 1 upper bound',
@@ -1489,12 +1624,12 @@ const PARAM_TIPS = {
   // Line follower (MDPI-enhanced scanline)
   n_scanlines:'Number of horizontal scanlines to sample', min_valid_scanlines:'Min scanlines for confident lock',
   min_line_width_px:'Min white region width in pixels (noise filter)',
-  crop_ratio_base:'Bottom crop ratio â€” how much of the frame is road',
+  crop_ratio_base:'Bottom crop ratio — how much of the frame is road',
   white_threshold:'Fixed gray threshold for binary (used when use_otsu=false)',
   use_otsu:'Use Otsu auto-threshold instead of fixed white_threshold',
-  invert_binary:'Invert binary image â€” detect dark lane (true) or white borders (false)',
-  morph_open_size:'Morphological OPEN kernel size â€” removes small noise blobs (0=disable, 3=default)',
-  morph_close_size:'Morphological CLOSE kernel size â€” fills small gaps in lines (0=disable, 5=default)',
+  invert_binary:'Invert binary image — detect dark lane (true) or white borders (false)',
+  morph_open_size:'Morphological OPEN kernel size — removes small noise blobs (0=disable, 3=default)',
+  morph_close_size:'Morphological CLOSE kernel size — fills small gaps in lines (0=disable, 5=default)',
   search_radius_px:'Blob-to-expected-position match radius in pixels',
   clahe_enabled:'Enable CLAHE adaptive lighting normalization', clahe_clip_limit:'CLAHE contrast clip limit',
   // IPM (Birds Eye View)
@@ -1502,27 +1637,27 @@ const PARAM_TIPS = {
   ipm_bottom_width_ratio:'Wide end of trapezoid (usually 1.0)',
   // Kalman filter
   kalman_enabled:'Use Kalman filter instead of EMA for lane smoothing',
-  kalman_process_noise:'Q â€” how much the filter trusts its model (lower=smoother)',
-  kalman_measurement_noise:'R â€” how much the filter trusts measurements (lower=more reactive)',
+  kalman_process_noise:'Q — how much the filter trusts its model (lower=smoother)',
+  kalman_measurement_noise:'R — how much the filter trusts measurements (lower=more reactive)',
   // Legacy EMA
-  smoothing_alpha:'EMA smoothing (0=smooth, 1=raw) â€” used when Kalman disabled', dead_zone:'Tolerance threshold â€” ignore error below this',
+  smoothing_alpha:'EMA smoothing (0=smooth, 1=raw) — used when Kalman disabled', dead_zone:'Tolerance threshold — ignore error below this',
   hold_error_frames:'Frames to hold last known error when lines lost',
   error_decay_rate:'Per-frame decay for held error (0.92 = halves in ~9 frames)',
   debug_print_rate:'Seconds between console debug prints',
   // Auto driver
-  steering_gain:'Lane steering gain (legacy)', forward_speed:'Max forward speed (m/s) â€” on a straight',
+  steering_gain:'Lane steering gain (legacy)', forward_speed:'Max forward speed (m/s) — on a straight',
   stale_timeout:'Seconds before module data is stale', dist_lap_complete:'Distance after green to mark lap',
   enable_subsumption_obstacle:'Enable fused obstacle reverse adjust', max_odom_speed:'Ignore odom speed spikes above this',
   min_state_dwell_sec:'Minimum hold time for non-emergency behavior switches',
   publish_loop_stats:'Enable loop timing diagnostics stream',
   // PID Steering
-  pid_kp:'[PID] Proportional gain â€” how hard to steer. Too high â†’ oscillation/weaving',
-  pid_ki:'[PID] Integral gain â€” corrects long-term drift. Keep very small (0.0â€“0.05)',
-  pid_kd:'[PID] Derivative gain â€” dampens oscillation. Too high â†’ jittery steering',
+  pid_kp:'[PID] Proportional gain — how hard to steer. Too high → oscillation/weaving',
+  pid_ki:'[PID] Integral gain — corrects long-term drift. Keep very small (0.0–0.05)',
+  pid_kd:'[PID] Derivative gain — dampens oscillation. Too high → jittery steering',
   pid_integral_max:'[PID] Anti-windup clamp for I term. Prevents integral runaway in long turns',
-  speed_error_scale:'Adaptive speed: higher = robot slows more in turns (try 1.0â€“2.5)',
+  speed_error_scale:'Adaptive speed: higher = robot slows more in turns (try 1.0–2.5)',
   min_turn_speed:'Adaptive speed: minimum speed multiplier in a sharp turn (0.4 = 40% of max)',
-  lane_steer_slew:'Max steering change per second â€” lower = smoother but slower response (Cytron accel limit)',
+  lane_steer_slew:'Max steering change per second — lower = smoother but slower response (Cytron accel limit)',
   // Command safety
   publish_hz:'Safety controller publish loop frequency',
   cmd_timeout:'Max age for raw auto commands before forced zero',

@@ -942,13 +942,13 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(result).encode())
         elif self.path.startswith('/teach'):
             self.send_response(200)
-            self.send_header('Content-Type', 'text/html')
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Cache-Control', 'no-cache')
             self.end_headers()
             self.wfile.write(TEACH_HTML.encode())
         else:
             self.send_response(200)
-            self.send_header('Content-Type', 'text/html')
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Cache-Control', 'no-cache')
             self.end_headers()
             self.wfile.write(DASHBOARD_HTML.encode())

@@ -400,17 +400,18 @@ class ServoControllerV9(Node):
         def rose(idx): # Rising edge
             return btn(idx) == 1 and (idx >= len(self.prev_buttons) or self.prev_buttons[idx] == 0)
 
-        # 0. Record & Playback toggle (Button X = index 3)
+        # 0. Record / Stop Record toggle (Button A = index 0)
+        if rose(0):
+            if self.rp_state == 'IDLE':
+                self._start_recording()
+            elif self.rp_state == 'RECORDING':
+                self._stop_recording()
+
+        # Play / Stop Playback toggle (Button X = index 3)
         if rose(3):
             if self.rp_state == 'IDLE':
                 if len(self.record_buffer) > 0 and self.manual_mode:
-                    # Buffer exists — start playback
                     self._start_playback()
-                else:
-                    # No buffer or first press — start recording
-                    self._start_recording()
-            elif self.rp_state == 'RECORDING':
-                self._stop_recording()
             elif self.rp_state == 'PLAYBACK':
                 self._stop_playback()
 
