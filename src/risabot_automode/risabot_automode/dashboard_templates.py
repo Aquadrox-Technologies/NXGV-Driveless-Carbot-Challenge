@@ -1342,7 +1342,7 @@ function toggleCam() {
   const img = document.getElementById('camImg');
   if(b.classList.contains('active')) {
     b.classList.remove('active');
-    b.textContent = '\uD83D\uDCF7 Enable Camera';
+    b.textContent = String.fromCodePoint(0x1F4F7) + ' Enable Camera';
     d.classList.remove('active');
     t.style.display = 'none';
     off.style.display = 'flex';
@@ -1350,7 +1350,7 @@ function toggleCam() {
     img.src = '';
   } else {
     b.classList.add('active');
-    b.textContent = '\uD83D\uDCF7 Disable Camera';
+    b.textContent = String.fromCodePoint(0x1F4F7) + ' Disable Camera';
     d.classList.add('active');
     t.style.display = 'flex';
     off.style.display = 'none';
