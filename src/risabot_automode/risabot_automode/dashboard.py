@@ -51,6 +51,7 @@ from .topics import (
     PARKING_COMPLETE_TOPIC,
     HEALTH_STATUS_TOPIC,
     SET_CHALLENGE_TOPIC,
+    SIGNAGE_DEBUG_TOPIC,
     TRAFFIC_LIGHT_TOPIC,
     TUNNEL_DETECTED_TOPIC,
     PARKING_SIGN_TOPIC,
@@ -180,6 +181,7 @@ class DashboardNode(Node):
             'rp_state': 'IDLE',
             'rp_buffer_size': 0,
             'rp_playback_index': 0,
+            'parking_sign_detected': None,
         }
         self.topic_last_update = {
             'auto_mode': 0.0,
@@ -203,6 +205,7 @@ class DashboardNode(Node):
             'cmd_safety_status': 0.0,
             'loop_stats': 0.0,
             'record_playback_state': 0.0,
+            'parking_sign': 0.0,
         }
         self.data_lock = threading.Lock()
 
@@ -242,6 +245,10 @@ class DashboardNode(Node):
         self.create_subscription(Image, CAMERA_DEBUG_LINE_TOPIC, lambda msg: self._image_cb(msg, 'line_follower'), qos)
         self.create_subscription(Image, CAMERA_DEBUG_TL_TOPIC, lambda msg: self._image_cb(msg, 'traffic_light'), qos)
         self.create_subscription(Image, CAMERA_DEBUG_OBS_TOPIC, lambda msg: self._image_cb(msg, 'obstacle'), qos)
+        self.create_subscription(Image, SIGNAGE_DEBUG_TOPIC, lambda msg: self._image_cb(msg, 'signage'), qos)
+
+        # Parking signboard detection flag
+        self.create_subscription(Bool, PARKING_SIGN_TOPIC, self._parking_sign_cb, 10)
 
         # LiDAR scan for 2D visualization
         self.create_subscription(LaserScan, '/scan', self._scan_cb, qos)
@@ -532,6 +539,10 @@ class DashboardNode(Node):
                 self.topic_last_update['record_playback_state'] = time.monotonic()
         except Exception:
             pass
+
+    def _parking_sign_cb(self, msg: Bool) -> None:
+        """Update parking signboard detection flag."""
+        self._set('parking_sign_detected', msg.data, 'parking_sign')
 
     def _image_cb(self, msg: Image, view_name: str) -> None:
         """Convert ROS Image to JPEG conditionally, tracking active view and clients."""
@@ -899,7 +910,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 mapping = {
                     'line_follower': 'line_follower_camera',
                     'traffic_light': 'traffic_light_detector',
-                    'obstacle': 'obstacle_avoidance_camera'
+                    'obstacle': 'obstacle_avoidance_camera',
+                    'signage': 'signage_detector'
                 }
                 for v, node_name in mapping.items():
                     val_str = 'true' if v == selected_view else 'false'

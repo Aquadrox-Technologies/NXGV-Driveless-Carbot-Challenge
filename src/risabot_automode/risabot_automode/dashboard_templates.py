@@ -1117,6 +1117,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <div class="cam-tab" onclick="setCamView('line_follower', this)">Lane Lines</div>
         <div class="cam-tab" onclick="setCamView('traffic_light', this)">Traffic Light</div>
         <div class="cam-tab" onclick="setCamView('obstacle', this)">Obstacle</div>
+        <div class="cam-tab" onclick="setCamView('signage', this)">Signage</div>
       </div>
       <div class="cam-container" id="camContainer">
         <div class="cam-off" id="camOff">
@@ -1150,6 +1151,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="s-row"><span class="s-label">Tunnel</span><span class="s-val"><span class="dot dot-gray" id="dotTunnel"></span><span id="valTunnel">—</span></span></div>
       <div class="s-row"><span class="s-label">Obstruction</span><span class="s-val"><span class="dot dot-gray" id="dotObst"></span><span id="valObst">—</span></span></div>
       <div class="s-row"><span class="s-label">Parking</span><span class="s-val"><span class="dot dot-gray" id="dotPark"></span><span id="valPark">—</span></span></div>
+      <div class="s-row"><span class="s-label">Signage</span><span class="s-val"><span class="dot dot-gray" id="dotSignage"></span><span id="valSignage">—</span></span></div>
       <div class="s-row"><span class="s-label">Health</span><span class="s-val"><span class="dot dot-gray" id="dotHealth"></span><span id="valHealth">—</span></span></div>
       <div class="s-row"><span class="s-label">Stale Streams</span><span class="s-val" id="valStale">—</span></div>
     </div>
@@ -1340,7 +1342,7 @@ function toggleCam() {
   const img = document.getElementById('camImg');
   if(b.classList.contains('active')) {
     b.classList.remove('active');
-    b.textContent = 'ðŸ“· Enable Camera';
+    b.textContent = '\uD83D\uDCF7 Enable Camera';
     d.classList.remove('active');
     t.style.display = 'none';
     off.style.display = 'flex';
@@ -1348,7 +1350,7 @@ function toggleCam() {
     img.src = '';
   } else {
     b.classList.add('active');
-    b.textContent = 'â¹ Disable Camera';
+    b.textContent = '\uD83D\uDCF7 Disable Camera';
     d.classList.add('active');
     t.style.display = 'flex';
     off.style.display = 'none';
@@ -1463,6 +1465,7 @@ function update() {
       ss('dotTunnel','valTunnel',d.tunnel_detected,'IN TUNNEL','NO');
       ss('dotObst','valObst',d.obstruction_active,'DODGING','NO');
       ss('dotPark','valPark',d.parking_complete,'DONE','NO');
+      ss('dotSignage','valSignage',d.parking_sign_detected,'DETECTED','CLEAR');
       if (d.health_ok === null || d.health_ok === undefined) {
         document.getElementById('dotHealth').className = 'dot dot-gray';
         document.getElementById('valHealth').textContent = '—';
@@ -1725,7 +1728,12 @@ const PARAM_TIPS = {
   publish_period:'Health publish period (s)', timeout_perception:'Perception timeout (s)',
   timeout_state:'State timeout (s)', timeout_control:'Control timeout (s)',
   timeout_odom:'Odometry timeout (s)', timeout_joy:'Joystick timeout (s)',
-  show_debug:'Publish annotated debug frame', print_debug:'Enable console debug printing'
+  show_debug:'Publish annotated debug frame', print_debug:'Enable console debug printing',
+  // Signage detector (BPU)
+  model_path:'Path to compiled BPU .bin model file',
+  conf_threshold:'YOLO confidence threshold (0.0–1.0)',
+  iou_threshold:'NMS IoU threshold (0.0–1.0)',
+  min_parking_sign_width:'Min pixel width for parking sign trigger (0 = disabled)'
 };
 const PARAM_GROUPS = [
   { node: 'traffic_light_detector', label: 'Traffic Light', params: [
@@ -1798,6 +1806,10 @@ const PARAM_GROUPS = [
   { node: 'health_monitor', label: 'Health Monitor', params: [
     'publish_period','timeout_perception','timeout_state',
     'timeout_control','timeout_odom','timeout_joy'
+  ]},
+  { node: 'signage_detector', label: 'Signage Detector (BPU)', params: [
+    'model_path','conf_threshold','iou_threshold',
+    'min_parking_sign_width','heartbeat_sec','show_debug'
   ]},
 ];
 
