@@ -1035,7 +1035,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         </div>
       </div>
       <div class="meter"><div class="meter-fill meter-orange" id="speedBar" style="width:25%"></div></div>
-      <div style="margin-top:6px;font-size:0.65em;color:#444;text-align:center;">D-pad â–²/â–¼ to shift</div>
+      <div style="margin-top:6px;font-size:0.65em;color:#444;text-align:center;">D-pad ▲/▼ to shift</div>
       <div style="margin-top:12px;">
         <div class="s-row">
           <span class="s-label">Selector</span>
@@ -1254,6 +1254,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="ctrl-section-label">Challenge</div>
   <div class="ctrl-map-row"><span class="ctrl-key">RB</span><span class="ctrl-desc">Next challenge state</span></div>
   <div class="ctrl-map-row"><span class="ctrl-key">LB</span><span class="ctrl-desc">Previous challenge state</span></div>
+  <div class="ctrl-section-label">Record & Playback</div>
+  <div class="ctrl-map-row"><span class="ctrl-key">A</span><span class="ctrl-desc">Record / Stop Recording</span></div>
+  <div class="ctrl-map-row"><span class="ctrl-key">X</span><span class="ctrl-desc">Play / Stop Playback</span></div>
   <div class="ctrl-section-label">Camera</div>
   <div class="ctrl-map-row"><span class="ctrl-key">R Stick Y</span><span class="ctrl-desc">Camera tilt (if enabled)</span></div>
 </div>
@@ -2560,19 +2563,13 @@ TEACH_HTML = """<!DOCTYPE html>
 
     <!-- Controller Mapping -->
     <div class="card">
-      <h2>ðŸŽ® Controller Mapping</h2>
+      <h2>🎮 Controller Mapping</h2>
       <div class="controller-hint">
-        <div class="hint-row"><span class="hint-key">X</span> Toggle Record / Playback</div>
+        <div class="hint-row"><span class="hint-key">A</span> Record / Stop Recording</div>
+        <div class="hint-row"><span class="hint-key">X</span> Play / Stop Playback</div>
         <div class="hint-row"><span class="hint-key">Y</span> Auto/Manual Mode</div>
         <div class="hint-row"><span class="hint-key">LB/RB</span> Cycle Challenge State</div>
-        <div class="hint-row"><span class="hint-key">D-Pad</span> Speed â–²/â–¼</div>
-        <div style="margin-top:10px; font-size:0.85em; color:#555; line-height:1.5;">
-          <strong>X Button Flow:</strong><br>
-          1st press â†’ Start Recording<br>
-          2nd press â†’ Stop Recording<br>
-          3rd press â†’ Start Playback<br>
-          During Playback â†’ Abort
-        </div>
+        <div class="hint-row"><span class="hint-key">D-Pad</span> Speed ▲/▼</div>
       </div>
     </div>
 

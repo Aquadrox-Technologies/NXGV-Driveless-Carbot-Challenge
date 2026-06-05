@@ -246,7 +246,7 @@ class ServoControllerV9(Node):
         self.playback_index = 0
         self.playback_timer = None    # one-shot timer handle
 
-        self.get_logger().info("🎮 V9 Ready: Right Stick X = Steer | LB/RB = Challenges | X = Record/Play")
+        self.get_logger().info("🎮 V9 Ready: Right Stick X = Steer | LB/RB = Challenges | A = Record/Stop | X = Play/Stop Playback")
         self._update_dash()
 
     def _update_param_cache(self) -> None:
