@@ -210,28 +210,6 @@ parking_controller:
     drive_speed: 0.15
     reverse_speed: -0.12
 
-# --- Signage Detector (YOLO-based) ---
-# TUNING GUIDE:
-#   model_path            : absolute path to your trained YOLOv8 best.pt file
-#   confidence_threshold  : YOLO confidence cutoff (higher = fewer false positives)
-#   min_bbox_area         : ignore detections smaller than this (px²) — controls trigger distance
-#                           raise to require the robot to be closer before triggering parking
-#   required_confidence   : consecutive detection frames before publishing True
-#   process_every_n       : frame skip factor (1=every frame, 2=every other, etc.)
-#   parking_class_name    : must match the class name in your trained model
-signage_detector:
-  ros__parameters:
-    model_path: ""                    # <-- SET THIS to /path/to/best.pt on the robot
-    confidence_threshold: 0.6
-    min_bbox_area: 800                # px² — ignore distant/small detections
-    required_confidence: 3            # consecutive frames before triggering
-    process_every_n: 2                # skip frames for performance (1=every frame)
-    resize_width: 320
-    parking_class_name: "parking_sign"
-    show_debug: true
-    print_debug: false
-    debug_print_rate: 0.5
-    heartbeat_sec: 0.5
 
 # --- Camera Obstacle Detection ---
 obstacle_avoidance_camera:
@@ -303,3 +281,12 @@ servo_controller:
     publish_loop_stats: true
     odom_frame_id: "odom"
     base_frame_id: "base_link"
+
+# --- BPU Signage Detector ---
+signage_detector:
+  ros__parameters:
+    model_path: "/home/sunrise/risabot_signs_640x640_nv12.bin"
+    conf_threshold: 0.40
+    iou_threshold: 0.45
+    show_debug: false
+

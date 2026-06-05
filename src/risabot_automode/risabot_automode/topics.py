@@ -36,11 +36,10 @@ PARKING_CMD_TOPIC = '/parking_command'
 PARKING_VEL_TOPIC = '/parking_cmd_vel'
 PARKING_COMPLETE_TOPIC = '/parking_complete'
 PARKING_SIGN_TOPIC = '/parking_signboard_detected'
+HILL_SIGN_TOPIC = '/hill_sign_detected'
 PARKING_STATUS_TOPIC = '/parking_status'
 
-# Signage detection
-SIGNAGE_DETECTIONS_TOPIC = '/signage_detections'
-CAMERA_DEBUG_SIGNAGE_TOPIC = '/camera/debug/signage'
+
 
 # Diagnostics
 HEALTH_STATUS_TOPIC = '/health_status'
@@ -53,6 +52,7 @@ CAMERA_IMAGE_TOPIC = '/camera/color/image_raw'
 CAMERA_DEBUG_LINE_TOPIC = '/camera/debug/line_follower'
 CAMERA_DEBUG_TL_TOPIC = '/camera/debug/traffic_light'
 CAMERA_DEBUG_OBS_TOPIC = '/camera/debug/obstacle'
+SIGNAGE_DEBUG_TOPIC = '/camera/debug/signage'
 
 # Frames
 ODOM_FRAME = 'odom'

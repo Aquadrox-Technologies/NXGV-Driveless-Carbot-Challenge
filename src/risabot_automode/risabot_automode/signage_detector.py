@@ -1,25 +1,14 @@
 #!/usr/bin/env python3
 """
-Signage Detector Node — YOLOv8 Object Detection for RISA-Bot
+Signage Detector Node — YOLOv5 BPU Model Inference via hobot_dnn
 
-Runs a trained YOLOv8-nano model on camera frames to detect parking signage
-(and optionally traffic lights, stop signs, etc.).
-
-When a parking sign is detected with sufficient confidence for N consecutive
-frames AND the bounding box is large enough (close enough), publishes True
-on /parking_signboard_detected to trigger the parking maneuver.
-
-Topics:
-  Subscribes: /camera/color/image_raw (Image)
-  Publishes:  /parking_signboard_detected (Bool)
-              /signage_detections (String, JSON)
-              /camera/debug/signage (Image)
+Loads the compiled .bin model, subscribes to camera raw images,
+runs hardware-accelerated BPU inference, and publishes processed state updates.
+Features a platform-check so it runs gracefully on RDK X5 and idles on non-RDK systems.
 """
 
-import json
 import time
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict
 
 import cv2
 import numpy as np
@@ -31,382 +20,419 @@ from rclpy.qos import QoSPresetProfiles
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, String
 
+# Import topics from our shared module
 from .topics import (
-    CAMERA_DEBUG_SIGNAGE_TOPIC,
     CAMERA_IMAGE_TOPIC,
+    HILL_SIGN_TOPIC,
     PARKING_SIGN_TOPIC,
-    SIGNAGE_DETECTIONS_TOPIC,
+    SIGNAGE_DEBUG_TOPIC,
+    TRAFFIC_LIGHT_TOPIC,
 )
 
-
-# ── Auto-discover workspace root and model path ─────────────────────────
-def _find_ws_root() -> Path:
-    """Traverse upwards to find the true workspace root."""
-    current = Path(__file__).resolve()
-    for parent in current.parents:
-        # Check if this parent has the tools directory (which means it's the root)
-        if (parent / 'tools' / 'train_signage_model').exists():
-            return parent
-        # Standard ROS 2 workspace structure
-        if (parent / 'src').exists() and (parent / 'build').exists():
-            return parent
-            
-    # Hardcoded fallbacks for the known robot and dev environments
-    if (Path.home() / 'risabotcar_ws').exists():
-        return Path.home() / 'risabotcar_ws'
-        
-    return current.parent.parent.parent  # Fallback
-
-_THIS_DIR = Path(__file__).resolve().parent
-_WS_ROOT = _find_ws_root()
-
-# Common locations where best.pt might live (searched in order)
-_MODEL_SEARCH_PATHS = [
-    _WS_ROOT / 'tools' / 'train_signage_model' / 'runs',
-    _WS_ROOT / 'models',
-    _THIS_DIR / 'models',
-    _THIS_DIR,
-]
-
-
-def _find_best_pt(logger=None) -> str:
-    """Search known directories for the most recent best.pt file."""
-    if logger:
-        logger.info(f"Auto-discovering best.pt. WS_ROOT={_WS_ROOT}")
-    for search_root in _MODEL_SEARCH_PATHS:
-        exists = search_root.exists()
-        if logger:
-            logger.info(f"Checking path: {search_root} (exists: {exists})")
-        if exists:
-            candidates = list(search_root.rglob('best.pt'))
-            if logger:
-                logger.info(f"Found {len(candidates)} best.pt candidates in {search_root}")
-            if candidates:
-                # Return the most recently modified one
-                best = max(candidates, key=lambda p: p.stat().st_mtime)
-                return str(best)
-    return ''
+# Graceful import of BPU runtime library
+try:
+    import hobot_dnn
+    BPU_AVAILABLE = True
+except ImportError:
+    BPU_AVAILABLE = False
 
 
 class SignageDetector(Node):
-    """YOLOv8-based signage detector with confidence gating."""
+    """BPU-accelerated signage detector node for competition signs & traffic lights."""
 
     def __init__(self):
         super().__init__('signage_detector')
 
-        # ── Parameters ───────────────────────────────────────────────────
-        self.declare_parameter('model_path', _find_best_pt())
-        self.declare_parameter('confidence_threshold', 0.6)
-        self.declare_parameter('min_bbox_area', 800)          # px² minimum to trigger
-        self.declare_parameter('required_confidence', 3)       # consecutive frames
-        self.declare_parameter('process_every_n', 2)           # frame skip (1=every)
-        self.declare_parameter('resize_width', 320)
-        self.declare_parameter('parking_class_name', 'parking_sign')
-        self.declare_parameter('show_debug', True)
-        self.declare_parameter('print_debug', False)
-        self.declare_parameter('debug_print_rate', 0.5)
-        self.declare_parameter('heartbeat_sec', 0.5)
+        # ── Tunable parameters ─────────────────────────────────────────────
+        self.declare_parameter('model_path',             '/home/sunrise/risabot_signs_640x640_nv12.bin')
+        self.declare_parameter('conf_threshold',         0.40)
+        self.declare_parameter('iou_threshold',          0.45)
+        self.declare_parameter('show_debug',             False)
+        self.declare_parameter('heartbeat_sec',          0.5)
+        self.declare_parameter('min_parking_sign_width', 0)  # Min pixel width for parking sign trigger (0 = disable)
 
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
         self.add_on_set_parameters_callback(self._on_params)
 
-        # ── Load YOLO model ──────────────────────────────────────────────
-        self.model = None
-        self.model_loaded = False
-        self._load_model()
-
-        # ── Publishers ───────────────────────────────────────────────────
-        self.signboard_pub = self.create_publisher(Bool, PARKING_SIGN_TOPIC, 10)
-        self.detections_pub = self.create_publisher(
-            String, SIGNAGE_DETECTIONS_TOPIC, 10
-        )
-        self.debug_pub = self.create_publisher(
-            Image, CAMERA_DEBUG_SIGNAGE_TOPIC, 10
-        )
-
-        # ── Subscriber ───────────────────────────────────────────────────
         self.bridge = CvBridge()
-        self.camera_sub = self.create_subscription(
-            Image,
-            CAMERA_IMAGE_TOPIC,
-            self.camera_callback,
-            QoSPresetProfiles.SENSOR_DATA.value,
-        )
+        self.bpu_available = BPU_AVAILABLE
 
-        # ── Detection state ──────────────────────────────────────────────
-        self.frame_count = 0
-        self.parking_confidence_count = 0
-        self.parking_detected = False
-        self._last_debug_print = 0.0
+        # ── Detection & Gating state ────────────────────────────────────────
+        self.hill_sign_active = False
+        self.parking_sign_active = False
+        self.traffic_light_active = 'unknown'
 
-        # ── Heartbeat — re-publish last state on a timer ─────────────────
+        self.detected_hill_consecutive = 0
+        self.detected_parking_consecutive = 0
+        self.detected_tl_red_consecutive = 0
+        self.detected_tl_green_consecutive = 0
+        self.detected_tl_yellow_consecutive = 0
+
+        # ── ROS publishers & subscribers ────────────────────────────────────
+        self.parking_pub = self.create_publisher(Bool, PARKING_SIGN_TOPIC, 10)
+        self.traffic_light_pub = self.create_publisher(String, TRAFFIC_LIGHT_TOPIC, 10)
+        self.hill_pub = self.create_publisher(Bool, HILL_SIGN_TOPIC, 10)
+        self.debug_pub = self.create_publisher(Image, SIGNAGE_DEBUG_TOPIC, 10)
+
+        # Heartbeat timer — continuously publishes last states to keep topics fresh
         self._heartbeat_timer = self.create_timer(
             float(self._param_cache['heartbeat_sec']),
-            self._heartbeat_publish,
+            self.publish_states
         )
 
-        self.get_logger().info('Signage Detector started (YOLOv8)')
+        # ── Initialize BPU Runtime ──────────────────────────────────────────
+        if self.bpu_available:
+            try:
+                model_path = str(self._param_cache['model_path'])
+                self.get_logger().info(f'Loading BPU model from: {model_path}')
+                self.models = hobot_dnn.load(model_path)
+                self.model = self.models[0]
+                self.get_logger().info('BPU model loaded successfully.')
+            except Exception as e:
+                self.get_logger().error(f'Failed to load BPU model: {e}')
+                self.bpu_available = False
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Parameter helpers
-    # ──────────────────────────────────────────────────────────────────────
+        if not self.bpu_available:
+            self.get_logger().warn(
+                'hobot_dnn runtime not available or failed to load. '
+                'Node will operate in dummy/idle mode (no BPU inference).'
+            )
+
+        # Camera raw subscriber
+        self.color_sub = self.create_subscription(
+            Image,
+            CAMERA_IMAGE_TOPIC,
+            self.image_callback,
+            QoSPresetProfiles.SENSOR_DATA.value
+        )
+        self.get_logger().info('Signage Detector node initialized.')
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Parameter management
+    # ──────────────────────────────────────────────────────────────────────────
 
     def _update_param_cache(self) -> None:
         self._param_cache = {
-            'model_path':            str(self.get_parameter('model_path').value),
-            'confidence_threshold':  float(self.get_parameter('confidence_threshold').value),
-            'min_bbox_area':         int(self.get_parameter('min_bbox_area').value),
-            'required_confidence':   int(self.get_parameter('required_confidence').value),
-            'process_every_n':       int(self.get_parameter('process_every_n').value),
-            'resize_width':          int(self.get_parameter('resize_width').value),
-            'parking_class_name':    str(self.get_parameter('parking_class_name').value),
-            'show_debug':            bool(self.get_parameter('show_debug').value),
-            'print_debug':           bool(self.get_parameter('print_debug').value),
-            'debug_print_rate':      float(self.get_parameter('debug_print_rate').value),
-            'heartbeat_sec':         float(self.get_parameter('heartbeat_sec').value),
+            'model_path':             str(self.get_parameter('model_path').value),
+            'conf_threshold':         float(self.get_parameter('conf_threshold').value),
+            'iou_threshold':          float(self.get_parameter('iou_threshold').value),
+            'show_debug':             bool(self.get_parameter('show_debug').value),
+            'heartbeat_sec':          float(self.get_parameter('heartbeat_sec').value),
+            'min_parking_sign_width': int(self.get_parameter('min_parking_sign_width').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
         for p in params:
             if p.name in self._param_cache:
                 self._param_cache[p.name] = p.value
-            # Reload model if path changed
-            if p.name == 'model_path':
-                self._load_model()
         return SetParametersResult(successful=True)
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Model loading
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────────────
+    # State publishing helper
+    # ──────────────────────────────────────────────────────────────────────────
 
-    def _load_model(self) -> None:
-        """Load YOLOv8 model from the configured path."""
-        model_path = self._param_cache.get('model_path', '')
+    def publish_states(self) -> None:
+        """Publish the current latch states of the sign/light flags."""
+        self.parking_pub.publish(Bool(data=self.parking_sign_active))
+        self.traffic_light_pub.publish(String(data=self.traffic_light_active))
+        self.hill_pub.publish(Bool(data=self.hill_sign_active))
 
-        # Auto-discover if no path configured or path doesn't exist
-        if not model_path or not Path(model_path).exists():
-            discovered = _find_best_pt(logger=self.get_logger())
-            if discovered:
-                model_path = discovered
-                self._param_cache['model_path'] = discovered
-                self.get_logger().info(
-                    f'Auto-discovered model: {discovered}'
-                )
+    # ──────────────────────────────────────────────────────────────────────────
+    # Image preprocessing (BGR to NV12)
+    # ──────────────────────────────────────────────────────────────────────────
 
-        if not model_path:
-            self.get_logger().warn(
-                'No model_path set and no best.pt found in workspace. '
-                'Signage detection disabled. '
-                'Set the model_path parameter to your trained best.pt file.'
-            )
-            self.model = None
-            self.model_loaded = False
-            return
+    def bgr_to_nv12(self, bgr: np.ndarray) -> np.ndarray:
+        """Resize BGR image to 640x640 and convert to NV12 layout for BPU."""
+        # 1. Resize image to model input shape
+        resized = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
+        # 2. Convert to YUV I420
+        yuv = cv2.cvtColor(resized, cv2.COLOR_BGR2YUV_I420)
+        # yuv has shape (960, 640)
+        
+        # 3. Extract planar components
+        y = yuv[0:640, :]
+        u = yuv[640:800, :]
+        v = yuv[800:960, :]
+        
+        # 4. Interleave U and V for NV12 format
+        u_flat = u.reshape(-1)
+        v_flat = v.reshape(-1)
+        
+        uv_interleaved = np.zeros(len(u_flat) + len(v_flat), dtype=np.uint8)
+        uv_interleaved[0::2] = u_flat
+        uv_interleaved[1::2] = v_flat
+        uv_planar = uv_interleaved.reshape(320, 640)
+        
+        # 5. Stack Y and interleaved UV planes
+        nv12 = np.vstack((y, uv_planar))
+        return nv12
 
-        path = Path(model_path)
-        if not path.exists():
-            self.get_logger().error(f'Model file not found: {path}')
-            self.model = None
-            self.model_loaded = False
+    # ──────────────────────────────────────────────────────────────────────────
+    # Vectorized Non-Maximum Suppression
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def nms(self, boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> list:
+        """Standard vectorized NMS in Numpy."""
+        if len(boxes) == 0:
+            return []
+        x1 = boxes[:, 0]
+        y1 = boxes[:, 1]
+        x2 = boxes[:, 2]
+        y2 = boxes[:, 3]
+        areas = (x2 - x1) * (y2 - y1)
+        
+        order = scores.argsort()[::-1]
+        keep = []
+        
+        while order.size > 0:
+            i = order[0]
+            keep.append(i)
+            
+            xx1 = np.maximum(x1[i], x1[order[1:]])
+            yy1 = np.maximum(y1[i], y1[order[1:]])
+            xx2 = np.minimum(x2[i], x2[order[1:]])
+            yy2 = np.minimum(y2[i], y2[order[1:]])
+            
+            w = np.maximum(0.0, xx2 - xx1)
+            h = np.maximum(0.0, yy2 - yy1)
+            
+            inter = w * h
+            ovr = inter / (areas[i] + areas[order[1:]] - inter)
+            
+            inds = np.where(ovr <= iou_threshold)[0]
+            order = order[inds + 1]
+            
+        return keep
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Main camera callback
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def image_callback(self, msg: Image) -> None:
+        """Receive image, perform BPU inference, parse predictions, filter and publish."""
+        if not self.bpu_available:
             return
 
         try:
-            from ultralytics import YOLO
-            self.model = YOLO(str(path))
-            self.model_loaded = True
-            # Log class names from the model
-            class_names = self.model.names if hasattr(self.model, 'names') else {}
-            self.get_logger().info(
-                f'Loaded YOLO model: {path.name} '
-                f'({len(class_names)} classes: {class_names})'
-            )
-        except ImportError:
-            self.get_logger().error(
-                'ultralytics not installed! Run: pip install ultralytics'
-            )
-            self.model = None
-            self.model_loaded = False
-        except Exception as e:
-            self.get_logger().error(f'Failed to load model {path}: {e}')
-            self.model = None
-            self.model_loaded = False
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Camera callback
-    # ──────────────────────────────────────────────────────────────────────
-
-    def camera_callback(self, msg: Image) -> None:
-        """Run YOLO inference on camera frame."""
-        if not self.model_loaded or self.model is None:
-            return
-
-        # Frame skipping for performance
-        self.frame_count += 1
-        skip = max(1, int(self._param_cache['process_every_n']))
-        if self.frame_count % skip != 0:
-            return
-
-        try:
+            # Convert ROS Image to OpenCV BGR
             bgr = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-            h, w = bgr.shape[:2]
-
-            # Resize for faster inference
-            resize_w = self._param_cache['resize_width']
-            if resize_w > 0 and w > resize_w:
-                scale = resize_w / float(w)
-                bgr = cv2.resize(bgr, (resize_w, int(h * scale)))
-
-            # ── Run YOLO inference ───────────────────────────────────────
-            results = self.model(
-                bgr,
-                conf=self._param_cache['confidence_threshold'],
-                verbose=False,
-            )
-
-            # ── Parse detections ─────────────────────────────────────────
-            parking_class = self._param_cache['parking_class_name']
-            min_area = self._param_cache['min_bbox_area']
-            parking_found = False
-            detections: List[Dict] = []
-
-            if results and len(results) > 0:
-                result = results[0]
-                if result.boxes is not None and len(result.boxes) > 0:
-                    for box in result.boxes:
-                        cls_id = int(box.cls[0])
-                        conf = float(box.conf[0])
-                        class_name = self.model.names.get(cls_id, f'class_{cls_id}')
-
-                        # Bounding box (xyxy format)
-                        x1, y1, x2, y2 = box.xyxy[0].tolist()
-                        bbox_area = (x2 - x1) * (y2 - y1)
-
-                        det = {
-                            'class': class_name,
-                            'confidence': round(conf, 3),
-                            'bbox': [round(x1), round(y1), round(x2), round(y2)],
-                            'area': round(bbox_area),
-                        }
-                        detections.append(det)
-
-                        # Check for parking sign with sufficient size
-                        if class_name == parking_class and bbox_area >= min_area:
-                            parking_found = True
-
-            # ── Confidence gating (consecutive frames) ───────────────────
-            if parking_found:
-                self.parking_confidence_count += 1
+            
+            # Preprocess to NV12 format
+            nv12 = self.bgr_to_nv12(bgr)
+            
+            # Forward pass on BPU
+            # hobot_dnn forward takes list of inputs
+            outputs = self.model.forward([nv12])
+            pred = outputs[0].buffer
+            
+            # Reshape/squeeze predictions to 2D
+            if len(pred.shape) == 3:
+                pred = pred[0] # Shape is now (25200, nc + 5)
+                
+            conf_threshold = float(self._param_cache['conf_threshold'])
+            iou_threshold = float(self._param_cache['iou_threshold'])
+            
+            # YOLOv5 outputs: box coordinates [0:4], objectness score [4], class scores [5:]
+            # Calculate absolute score = objectness * class_probability
+            scores = pred[:, 4:5] * pred[:, 5:]
+            class_ids = np.argmax(pred[:, 5:], axis=1)
+            max_scores = pred[:, 4] * pred[np.arange(len(pred)), 5 + class_ids]
+            
+            # Filter by confidence threshold
+            keep_indices = max_scores >= conf_threshold
+            filtered_boxes = pred[keep_indices, 0:4]
+            filtered_scores = max_scores[keep_indices]
+            filtered_class_ids = class_ids[keep_indices]
+            
+            if len(filtered_boxes) > 0:
+                # Convert from [x_center, y_center, w, h] to [x1, y1, x2, y2]
+                x_center = filtered_boxes[:, 0]
+                y_center = filtered_boxes[:, 1]
+                w = filtered_boxes[:, 2]
+                h = filtered_boxes[:, 3]
+                
+                x1 = x_center - w / 2.0
+                y1 = y_center - h / 2.0
+                x2 = x_center + w / 2.0
+                y2 = y_center + h / 2.0
+                
+                boxes_x1y1x2y2 = np.stack([x1, y1, x2, y2], axis=1)
+                
+                # Perform Non-Maximum Suppression
+                keep = self.nms(boxes_x1y1x2y2, filtered_scores, iou_threshold)
+                final_boxes = boxes_x1y1x2y2[keep]
+                final_scores = filtered_scores[keep]
+                final_class_ids = filtered_class_ids[keep]
             else:
-                self.parking_confidence_count = 0
+                final_boxes = np.empty((0, 4))
+                final_scores = np.array([])
+                final_class_ids = np.array([])
 
-            required = self._param_cache['required_confidence']
-            new_detected = self.parking_confidence_count >= required
+            # Update detection states and publish updates
+            self.update_detection_states(final_boxes, final_class_ids)
+            self.publish_states()
 
-            # Only publish on state change
-            if new_detected != self.parking_detected:
-                self.parking_detected = new_detected
-                sign_msg = Bool()
-                sign_msg.data = new_detected
-                self.signboard_pub.publish(sign_msg)
-                if new_detected:
-                    self.get_logger().info(
-                        f'PARKING SIGN DETECTED (confidence: {self.parking_confidence_count})'
-                    )
-                else:
-                    self.get_logger().info('Parking sign lost')
-
-            # ── Publish all detections as JSON ───────────────────────────
-            if detections:
-                det_msg = String()
-                det_msg.data = json.dumps(detections, separators=(',', ':'))
-                self.detections_pub.publish(det_msg)
-
-            # ── Debug visualization ──────────────────────────────────────
+            # Render debug frames if requested
             if self._param_cache['show_debug']:
-                self._draw_debug(bgr, detections, parking_found, required)
-
-            # ── Console debug ────────────────────────────────────────────
-            if self._param_cache['print_debug'] and detections:
-                now = time.monotonic()
-                if now - self._last_debug_print >= self._param_cache['debug_print_rate']:
-                    classes = [d['class'] for d in detections]
-                    print(
-                        f'\r[SIG] Detections: {classes} '
-                        f'| Park: {self.parking_confidence_count}/{required}',
-                        end='', flush=True,
-                    )
-                    self._last_debug_print = now
+                self.draw_debug(bgr, final_boxes, final_scores, final_class_ids)
 
         except Exception as e:
-            self.get_logger().error(f'Signage detection error: {e}')
+            self.get_logger().error(f'Inference error: {e}')
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Debug visualization
-    # ──────────────────────────────────────────────────────────────────────
+    # ──────────────────────────────────────────────────────────────────────────
+    # Temporal filtering / confidence gating
+    # ──────────────────────────────────────────────────────────────────────────
 
-    def _draw_debug(
-        self,
-        bgr: np.ndarray,
-        detections: List[Dict],
-        parking_found: bool,
-        required: int,
-    ) -> None:
-        """Draw bounding boxes and status on debug image."""
-        debug = bgr.copy()
+    def update_detection_states(self, boxes: np.ndarray, class_ids: np.ndarray) -> None:
+        """Applies hysteresis / temporal filtering on current detections."""
+        
+        # 1. Hill sign (Class 0)
+        saw_hill = 0 in class_ids
+        if saw_hill:
+            self.detected_hill_consecutive = min(10, self.detected_hill_consecutive + 1)
+            if self.detected_hill_consecutive >= 3:
+                self.hill_sign_active = True
+        else:
+            self.detected_hill_consecutive = max(0, self.detected_hill_consecutive - 1)
+            if self.detected_hill_consecutive == 0:
+                self.hill_sign_active = False
 
-        COLOR_MAP = {
-            'parking_sign': (0, 255, 0),         # green
-            'traffic_light_red': (0, 0, 255),     # red
-            'traffic_light_yellow': (0, 255, 255), # yellow
-            'traffic_light_green': (0, 255, 0),   # green
-            'stop_sign': (0, 0, 255),             # red
-        }
-        DEFAULT_COLOR = (255, 255, 0)  # cyan
+        # 2. Parking sign (Class 1)
+        # Optional: check if the bounding box meets minimum width constraints
+        saw_parking = False
+        min_width = int(self._param_cache['min_parking_sign_width'])
+        
+        for idx, cid in enumerate(class_ids):
+            if cid == 1:
+                if min_width > 0:
+                    box = boxes[idx]
+                    box_w = box[2] - box[0]
+                    if box_w >= min_width:
+                        saw_parking = True
+                        break
+                else:
+                    saw_parking = True
+                    break
 
-        for det in detections:
-            x1, y1, x2, y2 = det['bbox']
-            class_name = det['class']
-            conf = det['confidence']
-            color = COLOR_MAP.get(class_name, DEFAULT_COLOR)
+        if saw_parking:
+            self.detected_parking_consecutive = min(10, self.detected_parking_consecutive + 1)
+            if self.detected_parking_consecutive >= 3:
+                self.parking_sign_active = True
+        else:
+            self.detected_parking_consecutive = max(0, self.detected_parking_consecutive - 1)
+            if self.detected_parking_consecutive == 0:
+                self.parking_sign_active = False
 
-            cv2.rectangle(debug, (x1, y1), (x2, y2), color, 2)
-            label = f'{class_name} {conf:.2f}'
-            (tw, th), _ = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-            )
-            cv2.rectangle(
-                debug, (x1, y1 - th - 6), (x1 + tw + 4, y1), color, -1
-            )
+        # 3. Traffic light states
+        # Classes: 2: traffic_light, 3: traffic_light_green, 4: traffic_light_red, 5: traffic_light_yellow
+        saw_red = (2 in class_ids) or (4 in class_ids)
+        saw_green = 3 in class_ids
+        saw_yellow = 5 in class_ids
+
+        if saw_red:
+            self.detected_tl_red_consecutive = min(10, self.detected_tl_red_consecutive + 1)
+            self.detected_tl_green_consecutive = 0
+            self.detected_tl_yellow_consecutive = 0
+            if self.detected_tl_red_consecutive >= 3:
+                self.traffic_light_active = 'red'
+        elif saw_green:
+            self.detected_tl_green_consecutive = min(10, self.detected_tl_green_consecutive + 1)
+            self.detected_tl_red_consecutive = 0
+            self.detected_tl_yellow_consecutive = 0
+            if self.detected_tl_green_consecutive >= 3:
+                self.traffic_light_active = 'green'
+        elif saw_yellow:
+            self.detected_tl_yellow_consecutive = min(10, self.detected_tl_yellow_consecutive + 1)
+            self.detected_tl_red_consecutive = 0
+            self.detected_tl_green_consecutive = 0
+            if self.detected_tl_yellow_consecutive >= 3:
+                self.traffic_light_active = 'yellow'
+        else:
+            # Decay all states
+            self.detected_tl_red_consecutive = max(0, self.detected_tl_red_consecutive - 1)
+            self.detected_tl_green_consecutive = max(0, self.detected_tl_green_consecutive - 1)
+            self.detected_tl_yellow_consecutive = max(0, self.detected_tl_yellow_consecutive - 1)
+            
+            if (self.detected_tl_red_consecutive == 0 and 
+                    self.detected_tl_green_consecutive == 0 and 
+                    self.detected_tl_yellow_consecutive == 0):
+                self.traffic_light_active = 'unknown'
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Debug visualization publisher
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def draw_debug(self, bgr: np.ndarray, boxes: np.ndarray, scores: np.ndarray, class_ids: np.ndarray) -> None:
+        """Resize original frame to 640x640, overlay boxes/labels and publish debug stream."""
+        debug_img = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
+        
+        CLASS_NAMES = [
+            'hill_sign',             # Class 0
+            'parking_sign',          # Class 1
+            'traffic_light',         # Class 2
+            'traffic_light_green',   # Class 3
+            'traffic_light_red',     # Class 4
+            'traffic_light_yellow'   # Class 5
+        ]
+        
+        COLOR_MAP = [
+            (255, 0, 0),     # Hill sign (Blue)
+            (0, 255, 0),     # Parking sign (Green)
+            (0, 0, 255),     # Traffic light generic (Red)
+            (0, 255, 0),     # Traffic light green (Green)
+            (0, 0, 255),     # Traffic light red (Red)
+            (0, 255, 255),   # Traffic light yellow (Yellow)
+        ]
+
+        for i, box in enumerate(boxes):
+            x1, y1, x2, y2 = map(int, box)
+            score = scores[i]
+            cid = class_ids[i]
+            
+            name = CLASS_NAMES[cid] if cid < len(CLASS_NAMES) else f'class_{cid}'
+            color = COLOR_MAP[cid] if cid < len(COLOR_MAP) else (255, 255, 255)
+            
+            # Draw bbox
+            cv2.rectangle(debug_img, (x1, y1), (x2, y2), color, 2)
+            
+            # Label background & text
+            label = f'{name}: {score:.2f}'
+            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)[0]
+            cv2.rectangle(debug_img, (x1, y1 - text_size[1] - 8), (x1 + text_size[0], y1), color, -1)
             cv2.putText(
-                debug, label, (x1 + 2, y1 - 4),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1,
+                debug_img,
+                label,
+                (x1, y1 - 4),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (255, 255, 255) if color != (0, 255, 255) else (0, 0, 0),
+                1,
+                lineType=cv2.LINE_AA
             )
-
-        # Status bar
-        status_text = (
-            f'PARK: {self.parking_confidence_count}/{required} '
-            f'| {"TRIGGERED" if self.parking_detected else "waiting"}'
+            
+        # Draw status summaries on top left
+        summary_text = (
+            f"HILL: {'ACTIVE' if self.hill_sign_active else 'OFF'} "
+            f"| PARK: {'ACTIVE' if self.parking_sign_active else 'OFF'} "
+            f"| TL: {self.traffic_light_active.upper()}"
         )
-        status_color = (0, 255, 0) if self.parking_detected else (200, 200, 200)
         cv2.putText(
-            debug, status_text, (5, 20),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.55, status_color, 2,
+            debug_img,
+            summary_text,
+            (10, 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 255, 0) if self.parking_sign_active or self.hill_sign_active else (255, 255, 255),
+            2,
+            lineType=cv2.LINE_AA
         )
 
-        self.debug_pub.publish(
-            self.bridge.cv2_to_imgmsg(debug, encoding='bgr8')
-        )
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Heartbeat
-    # ──────────────────────────────────────────────────────────────────────
-
-    def _heartbeat_publish(self) -> None:
-        """Re-publish current detection state on a timer."""
-        sign_msg = Bool()
-        sign_msg.data = self.parking_detected
-        self.signboard_pub.publish(sign_msg)
+        try:
+            debug_msg = self.bridge.cv2_to_imgmsg(debug_img, encoding='bgr8')
+            self.debug_pub.publish(debug_msg)
+        except Exception as e:
+            self.get_logger().error(f'Failed to publish debug image: {e}')
 
 
 def main(args=None) -> None:

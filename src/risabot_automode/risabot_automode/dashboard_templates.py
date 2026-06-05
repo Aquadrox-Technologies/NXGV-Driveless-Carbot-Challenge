@@ -1032,7 +1032,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <div class="cam-tab" onclick="setCamView('line_follower', this)">Lane Lines</div>
         <div class="cam-tab" onclick="setCamView('traffic_light', this)">Traffic Light</div>
         <div class="cam-tab" onclick="setCamView('obstacle', this)">Obstacle</div>
-        <div class="cam-tab" onclick="setCamView('signage', this)">Signage</div>
       </div>
       <div class="cam-container" id="camContainer">
         <div class="cam-off" id="camOff">
@@ -1066,7 +1065,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="s-row"><span class="s-label">Tunnel</span><span class="s-val"><span class="dot dot-gray" id="dotTunnel"></span><span id="valTunnel">—</span></span></div>
       <div class="s-row"><span class="s-label">Obstruction</span><span class="s-val"><span class="dot dot-gray" id="dotObst"></span><span id="valObst">—</span></span></div>
       <div class="s-row"><span class="s-label">Parking</span><span class="s-val"><span class="dot dot-gray" id="dotPark"></span><span id="valPark">—</span></span></div>
-      <div class="s-row"><span class="s-label">Signage</span><span class="s-val"><span class="dot dot-gray" id="dotSignage"></span><span id="valSignage">—</span></span></div>
       <div class="s-row"><span class="s-label">Health</span><span class="s-val"><span class="dot dot-gray" id="dotHealth"></span><span id="valHealth">—</span></span></div>
       <div class="s-row"><span class="s-label">Stale Streams</span><span class="s-val" id="valStale">—</span></div>
     </div>
@@ -1369,7 +1367,6 @@ function update() {
       ss('dotTunnel','valTunnel',d.tunnel_detected,'IN TUNNEL','NO');
       ss('dotObst','valObst',d.obstruction_active,'DODGING','NO');
       ss('dotPark','valPark',d.parking_complete,'DONE','NO');
-      ss('dotSignage','valSignage',d.parking_sign_detected,'DETECTED','CLEAR');
       if (d.health_ok === null || d.health_ok === undefined) {
         document.getElementById('dotHealth').className = 'dot dot-gray';
         document.getElementById('valHealth').textContent = '—';
@@ -1473,10 +1470,6 @@ function update() {
 }
 // ===== PARAMETER TUNING (curated) =====
 const PARAM_TIPS = {
-  // Signage Detector
-  model_path:'Path to YOLO model file (.pt or .onnx)', confidence_threshold:'Detection confidence threshold (0.0-1.0)',
-  min_bbox_area:'Minimum bounding box area to trigger (px²)', process_every_n:'Process every N frames (1=every frame)',
-  parking_class_name:'Class name to treat as parking sign',
   // Traffic light
   red_h_low1:'Red hue range 1 lower bound (HSV)', red_h_high1:'Red hue range 1 upper bound',
   red_h_low2:'Red hue range 2 lower bound (wrap)', red_h_high2:'Red hue range 2 upper bound',
@@ -1589,11 +1582,6 @@ const PARAM_TIPS = {
   show_debug:'Publish annotated debug frame', print_debug:'Enable console debug printing'
 };
 const PARAM_GROUPS = [
-  { node: 'signage_detector', label: 'Signage Detector', params: [
-    'model_path','confidence_threshold','min_bbox_area',
-    'required_confidence','process_every_n','resize_width',
-    'parking_class_name','show_debug','print_debug','debug_print_rate','heartbeat_sec'
-  ]},
   { node: 'traffic_light_detector', label: 'Traffic Light', params: [
     'red_h_low1','red_h_high1','red_h_low2','red_h_high2',
     'yellow_h_low','yellow_h_high','green_h_low','green_h_high',

@@ -160,15 +160,6 @@ def generate_launch_description():
             parameters=[params_file]
         ),
 
-        # K2. Signage detector — YOLO-based sign detection (NEW)
-        Node(
-            package='risabot_automode',
-            executable='signage_detector',
-            name='signage_detector',
-            output='screen',
-            parameters=[params_file]
-        ),
-
         # ==================== CONTROL ====================
 
         # L. Auto Driver (brain — delayed start to let sensors initialize)
