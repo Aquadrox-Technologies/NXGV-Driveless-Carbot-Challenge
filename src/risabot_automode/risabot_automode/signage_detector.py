@@ -272,6 +272,17 @@ class SignageDetector(Node):
                 final_scores = np.array([])
                 final_class_ids = np.array([])
 
+            # Rate-limited status print (once per second) for diagnostics
+            now = time.time()
+            if not hasattr(self, '_last_log_time'):
+                self._last_log_time = 0.0
+            if now - self._last_log_time > 1.0:
+                self.get_logger().info(
+                    f"BPU Inference: received frame | raw_det={len(filtered_boxes)} | post_nms={len(final_boxes)} | "
+                    f"classes={list(final_class_ids)} | scores={[round(float(s), 2) for s in final_scores]}"
+                )
+                self._last_log_time = now
+
             # Update detection states and publish updates
             self.update_detection_states(final_boxes, final_class_ids)
             self.publish_states()
