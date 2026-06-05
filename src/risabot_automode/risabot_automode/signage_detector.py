@@ -230,8 +230,8 @@ class SignageDetector(Node):
             pred = outputs[0].buffer
             
             # Reshape/squeeze predictions to 2D
-            if len(pred.shape) == 3:
-                pred = pred[0] # Shape is now (25200, nc + 5)
+            if len(pred.shape) > 2:
+                pred = np.squeeze(pred)
                 
             conf_threshold = float(self._param_cache['conf_threshold'])
             iou_threshold = float(self._param_cache['iou_threshold'])
