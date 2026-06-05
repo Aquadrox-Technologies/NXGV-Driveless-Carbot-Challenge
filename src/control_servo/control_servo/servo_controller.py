@@ -474,7 +474,15 @@ class ServoControllerV9(Node):
             if abs(steer_raw) < 0.1: steer_raw = 0.0
 
             # Drive (PWM)
-            motor_pwm = int(throttle_raw * self.current_speed_limit * 2.55)
+            if self.rp_state == 'RECORDING':
+                if throttle_raw > 0.0:
+                    motor_pwm = int(self.current_speed_limit * 2.55)
+                elif throttle_raw < 0.0:
+                    motor_pwm = -int(self.current_speed_limit * 2.55)
+                else:
+                    motor_pwm = 0
+            else:
+                motor_pwm = int(throttle_raw * self.current_speed_limit * 2.55)
             
             # Steer (Servo 4) — asymmetric left/right ranges
             # steer_raw > 0 (joystick left) → servo angle decreases → uses range_left
