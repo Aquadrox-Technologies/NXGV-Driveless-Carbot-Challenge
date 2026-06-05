@@ -487,13 +487,21 @@ class ServoControllerV9(Node):
             # Steer (Servo 4) — asymmetric left/right ranges
             # steer_raw > 0 (joystick left) → servo angle decreases → uses range_left
             # steer_raw < 0 (joystick right) → servo angle increases → uses range_right
-            if steer_raw >= 0:
-                steer_angle = int(self.servo_center - (steer_raw * self.servo_range_left))
+            if self.rp_state == 'RECORDING':
+                if steer_raw > 0.0:
+                    steer_angle = self.servo_center - self.servo_range_left
+                elif steer_raw < 0.0:
+                    steer_angle = self.servo_center + self.servo_range_right
+                else:
+                    steer_angle = self.servo_center
             else:
-                steer_angle = int(self.servo_center - (steer_raw * self.servo_range_right))
-            min_angle = self.servo_center - self.servo_range_left
-            max_angle = self.servo_center + self.servo_range_right
-            steer_angle = max(min_angle, min(max_angle, steer_angle))
+                if steer_raw >= 0:
+                    steer_angle = int(self.servo_center - (steer_raw * self.servo_range_left))
+                else:
+                    steer_angle = int(self.servo_center - (steer_raw * self.servo_range_right))
+                min_angle = self.servo_center - self.servo_range_left
+                max_angle = self.servo_center + self.servo_range_right
+                steer_angle = max(min_angle, min(max_angle, steer_angle))
 
             self.apply_hardware(motor_pwm, steer_angle)
 
