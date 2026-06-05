@@ -277,9 +277,10 @@ class SignageDetector(Node):
             if not hasattr(self, '_last_log_time'):
                 self._last_log_time = 0.0
             if now - self._last_log_time > 1.0:
+                max_score_val = float(np.max(max_scores)) if len(max_scores) > 0 else 0.0
                 self.get_logger().info(
-                    f"BPU Inference: received frame | raw_det={len(filtered_boxes)} | post_nms={len(final_boxes)} | "
-                    f"classes={list(final_class_ids)} | scores={[round(float(s), 2) for s in final_scores]}"
+                    f"BPU Inference: received frame | max_score={max_score_val:.4f} | raw_det={len(filtered_boxes)} | post_nms={len(final_boxes)} | "
+                    f"classes={list(final_class_ids)}"
                 )
                 self._last_log_time = now
 
