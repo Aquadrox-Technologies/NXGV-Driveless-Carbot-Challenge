@@ -418,6 +418,11 @@ class ServoControllerV9(Node):
             elif self.rp_state == 'PLAYBACK':
                 self._stop_playback()
 
+        # Save movement (Button B = index 1)
+        if rose(1):
+            if self.rp_state == 'IDLE' and len(self.record_buffer) > 0:
+                self._save_recording()
+
         # 1. Toggle Mode (Start=11, Y=4)
         if rose(11) or rose(4): 
             # Abort any active record/playback when switching modes

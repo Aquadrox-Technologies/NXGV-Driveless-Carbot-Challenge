@@ -2586,6 +2586,7 @@ TEACH_HTML = """<!DOCTYPE html>
       <h2>🎮 Controller Mapping</h2>
       <div class="controller-hint">
         <div class="hint-row"><span class="hint-key">A</span> Record / Stop Recording</div>
+        <div class="hint-row"><span class="hint-key">B</span> Save Movement</div>
         <div class="hint-row"><span class="hint-key">X</span> Play / Stop Playback</div>
         <div class="hint-row"><span class="hint-key">Y</span> Auto/Manual Mode</div>
         <div class="hint-row"><span class="hint-key">LB/RB</span> Cycle Challenge State</div>
