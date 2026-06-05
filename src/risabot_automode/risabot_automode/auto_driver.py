@@ -128,6 +128,7 @@ class AutoDriver(Node):
         self.declare_parameter('min_state_dwell_sec', 0.25)
         self.declare_parameter('publish_loop_stats', True)
         self.declare_parameter('parking_idle_duration', 2.0)
+        self.declare_parameter('current_lap', 1)
 
         # PID gains for steering angular.z
         self.declare_parameter('pid_kp', 1.2)   # Proportional — how hard to steer for a given error
@@ -287,6 +288,7 @@ class AutoDriver(Node):
             'min_state_dwell_sec': float(self.get_parameter('min_state_dwell_sec').value),
             'publish_loop_stats': bool(self.get_parameter('publish_loop_stats').value),
             'parking_idle_duration': float(self.get_parameter('parking_idle_duration').value),
+            'current_lap': int(self.get_parameter('current_lap').value),
             # PID
             'pid_kp':            float(self.get_parameter('pid_kp').value),
             'pid_ki':            float(self.get_parameter('pid_ki').value),
@@ -504,6 +506,7 @@ class AutoDriver(Node):
     def publish_cmd_vel(self) -> None:
         """Main control loop: selects behavior and publishes cmd_vel."""
         self.loop_monitor.tick()
+        self.current_lap = int(self._param_cache.get('current_lap', self.current_lap))
         cmd = Twist()
         self.stop_reason = ''
         target_state = ChallengeState.LANE_FOLLOW
@@ -538,6 +541,7 @@ class AutoDriver(Node):
             if self.current_lap == 1:
                 self.get_logger().info('Lap 1 complete -> starting Lap 2')
                 self.current_lap = 2
+                self.set_parameters([rclpy.Parameter('current_lap', rclpy.Parameter.Type.INTEGER, 2)])
                 self.lap_1_complete = False
                 self._parking_parallel_sent = False
                 self._parking_perp_sent = False
