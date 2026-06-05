@@ -54,6 +54,8 @@ from .topics import (
     TRAFFIC_LIGHT_TOPIC,
     TUNNEL_CMD_TOPIC,
     TUNNEL_DETECTED_TOPIC,
+    RECORD_PLAYBACK_STATE_TOPIC,
+    RECORD_PLAYBACK_CMD_TOPIC,
 )
 
 
@@ -72,6 +74,8 @@ class ChallengeState(Enum):
     ROUNDABOUT = 11          # Traversing roundabout (lane follow on Lap 1)
     LANE_RECOVERY = 12       # Reversing after losing the lane
     HILL = 13                # Hill climbing mode
+    PARKING_IDLE = 14        # Idling before executing preset movement
+    PARKING_PLAYBACK = 15    # Executing preset movement playback
 
 
 class AutoDriver(Node):
@@ -86,6 +90,7 @@ class AutoDriver(Node):
         self.parking_cmd_pub = self.create_publisher(String, PARKING_CMD_TOPIC, 10)
         self.dash_state_pub = self.create_publisher(String, DASH_STATE_TOPIC, 10)
         self.loop_stats_pub = self.create_publisher(String, LOOP_STATS_TOPIC, 10)
+        self.rp_cmd_pub = self.create_publisher(String, RECORD_PLAYBACK_CMD_TOPIC, 10)
 
         # Continuous cmd_vel publisher at 50 Hz
         self.cmd_vel_timer = self.create_timer(0.02, self.publish_cmd_vel)
@@ -122,6 +127,8 @@ class AutoDriver(Node):
         self.declare_parameter('max_odom_speed', 1.0)  # ignore odom speed spikes beyond this
         self.declare_parameter('min_state_dwell_sec', 0.25)
         self.declare_parameter('publish_loop_stats', True)
+        self.declare_parameter('parking_idle_duration', 2.0)
+        self.declare_parameter('current_lap', 1)
 
         # PID gains for steering angular.z
         self.declare_parameter('pid_kp', 1.2)   # Proportional — how hard to steer for a given error
@@ -245,6 +252,10 @@ class AutoDriver(Node):
         self.create_subscription(
             String, CMD_SAFETY_STATUS_TOPIC, self.cmd_safety_status_callback, 10
         )
+        self.rp_state = 'IDLE'
+        self.create_subscription(
+            String, RECORD_PLAYBACK_STATE_TOPIC, self.record_playback_state_callback, 10
+        )
         
         # Subscribe to Odometry (from servo_controller)
         self.odom_sub = self.create_subscription(
@@ -276,6 +287,8 @@ class AutoDriver(Node):
             'max_odom_speed': float(self.get_parameter('max_odom_speed').value),
             'min_state_dwell_sec': float(self.get_parameter('min_state_dwell_sec').value),
             'publish_loop_stats': bool(self.get_parameter('publish_loop_stats').value),
+            'parking_idle_duration': float(self.get_parameter('parking_idle_duration').value),
+            'current_lap': int(self.get_parameter('current_lap').value),
             # PID
             'pid_kp':            float(self.get_parameter('pid_kp').value),
             'pid_ki':            float(self.get_parameter('pid_ki').value),
@@ -389,6 +402,14 @@ class AutoDriver(Node):
         except Exception:
             pass
 
+    def record_playback_state_callback(self, msg: String) -> None:
+        """Track record/playback state from servo_controller."""
+        try:
+            payload = json.loads(msg.data)
+            self.rp_state = payload.get('state', 'IDLE')
+        except Exception:
+            pass
+
     def _publish_loop_stats(self) -> None:
         """Publish loop timing stats for diagnostics."""
         if not self._param_cache['publish_loop_stats']:
@@ -485,6 +506,7 @@ class AutoDriver(Node):
     def publish_cmd_vel(self) -> None:
         """Main control loop: selects behavior and publishes cmd_vel."""
         self.loop_monitor.tick()
+        self.current_lap = int(self._param_cache.get('current_lap', self.current_lap))
         cmd = Twist()
         self.stop_reason = ''
         target_state = ChallengeState.LANE_FOLLOW
@@ -519,6 +541,7 @@ class AutoDriver(Node):
             if self.current_lap == 1:
                 self.get_logger().info('Lap 1 complete -> starting Lap 2')
                 self.current_lap = 2
+                self.set_parameters([rclpy.Parameter('current_lap', rclpy.Parameter.Type.INTEGER, 2)])
                 self.lap_1_complete = False
                 self._parking_parallel_sent = False
                 self._parking_perp_sent = False
@@ -591,17 +614,31 @@ class AutoDriver(Node):
         # Priority 5: Parking (Lap 2 only)
         elif self.current_lap == 2 and not self.perpendicular_done and (self.parking_sequence_active or self.signboard_detected):
             self.parking_sequence_active = True
-            cmd = self.parking_cmd
-            if not self.parallel_done:
-                target_state = ChallengeState.PARALLEL_PARK
-                if not self._parking_parallel_sent:
-                    self.parking_cmd_pub.publish(String(data='parallel'))
-                    self._parking_parallel_sent = True
-            else:
-                target_state = ChallengeState.PERPENDICULAR_PARK
-                if not self._parking_perp_sent:
-                    self.parking_cmd_pub.publish(String(data='perpendicular'))
-                    self._parking_perp_sent = True
+            if self.state not in (ChallengeState.PARKING_IDLE, ChallengeState.PARKING_PLAYBACK):
+                target_state = ChallengeState.PARKING_IDLE
+                cmd = Twist()  # stop
+            elif self.state == ChallengeState.PARKING_IDLE:
+                target_state = ChallengeState.PARKING_IDLE
+                cmd = Twist()  # stop
+                # Check if we should transition to playback
+                idle_dur = float(self._param_cache.get('parking_idle_duration', 2.0))
+                if (time.monotonic() - self.state_entry_time) >= idle_dur:
+                    # Trigger playback in servo_controller
+                    self.get_logger().info('Parking idle complete. Triggering preset playback!')
+                    rp_cmd = String()
+                    rp_cmd.data = 'playback'
+                    self.rp_cmd_pub.publish(rp_cmd)
+                    target_state = ChallengeState.PARKING_PLAYBACK
+            else:  # ChallengeState.PARKING_PLAYBACK
+                target_state = ChallengeState.PARKING_PLAYBACK
+                cmd = Twist()  # keep commanding 0 so servo_controller can override with playback values
+                # Check if playback is finished
+                dwell = time.monotonic() - self.state_entry_time
+                if dwell > 0.5 and self.rp_state == 'IDLE':
+                    self.get_logger().info('Preset parking playback complete!')
+                    self.perpendicular_done = True
+                    self.parking_sequence_active = False
+                    target_state = ChallengeState.FINISHED
 
         # Priority 6: Tunnel — Challenge 3 (reactive)
         elif self.tunnel_detected:
@@ -664,6 +701,8 @@ class AutoDriver(Node):
                 ChallengeState.REVERSE_ADJUST,
                 ChallengeState.EMERGENCY_STOP,
                 ChallengeState.HILL,
+                ChallengeState.PARKING_IDLE,
+                ChallengeState.PARKING_PLAYBACK,
             }
             allow_switch = (
                 target_state in immediate_states

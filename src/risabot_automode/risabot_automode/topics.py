@@ -54,6 +54,10 @@ CAMERA_DEBUG_TL_TOPIC = '/camera/debug/traffic_light'
 CAMERA_DEBUG_OBS_TOPIC = '/camera/debug/obstacle'
 SIGNAGE_DEBUG_TOPIC = '/camera/debug/signage'
 
+# Record & Playback
+RECORD_PLAYBACK_STATE_TOPIC = '/record_playback_state'
+RECORD_PLAYBACK_CMD_TOPIC = '/record_playback_cmd'
+
 # Frames
 ODOM_FRAME = 'odom'
 BASE_FRAME = 'base_link'

@@ -201,6 +201,49 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .mode-AUTO { background: #4caf50; color: #fff; box-shadow: 0 0 8px rgba(76,175,80,0.3); }
   .mode-MANUAL { background: #d32f2f; color: #fff; box-shadow: 0 0 8px rgba(211,47,47,0.3); }
 
+  /* ===== RECORD & PLAYBACK ===== */
+  .rp-state-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.9em;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    transition: all 0.4s;
+  }
+  .rp-state-badge.idle {
+    background: rgba(108,112,134,0.15);
+    color: var(--text);
+    border: 1px solid rgba(108,112,134,0.3);
+  }
+  .rp-state-badge.recording {
+    background: rgba(255,82,82,0.15);
+    color: var(--danger);
+    border: 1px solid rgba(255,82,82,0.4);
+    animation: recPulse 1.5s ease infinite;
+  }
+  .rp-state-badge.playback {
+    background: rgba(105,240,174,0.15);
+    color: var(--success);
+    border: 1px solid rgba(105,240,174,0.4);
+    animation: playPulse 1.5s ease infinite;
+  }
+  @keyframes recPulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,82,82,0.3)} 50%{box-shadow:0 0 20px 4px rgba(255,82,82,0.2)} }
+  @keyframes playPulse { 0%,100%{box-shadow:0 0 0 0 rgba(105,240,174,0.3)} 50%{box-shadow:0 0 20px 4px rgba(105,240,174,0.2)} }
+
+  .rp-btn.record.active {
+    background: var(--danger) !important;
+    color: #fff !important;
+    border-color: var(--danger) !important;
+    box-shadow: 0 0 16px rgba(210,15,57,0.4);
+  }
+  .rp-btn.play.active {
+    background: var(--success) !important;
+    color: #fff !important;
+    border-color: var(--success) !important;
+    box-shadow: 0 0 16px rgba(64,160,43,0.4);
+  }
+
   .lap-badge {
     padding: 4px 10px;
     border-radius: 6px;
@@ -522,7 +565,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     color: #81c784;
   }
   .flow-node.done::after {
-    content: '✓';
+    content: 'âœ“';
     position: absolute;
     top: -4px; right: -4px;
     width: 14px; height: 14px;
@@ -958,9 +1001,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <span class="lap-badge" id="lapBadge">Lap —</span>
       </div>
       <div class="info-row">
-        <span>⏱ <span id="stateTime">0</span>s</span>
-        <span>📏 <span id="stateDist">0.00</span>m</span>
-        <span>🏁 <span id="lapTimer" style="font-variant-numeric:tabular-nums;">00:00</span></span>
+        <span>⏱️ <span id="stateTime">0</span>s</span>
+        <span>📝 <span id="stateDist">0.00</span>m</span>
+        <span>⏱️ <span id="lapTimer" style="font-variant-numeric:tabular-nums;">00:00</span></span>
       </div>
       <div id="stopReasonRow" style="margin-top:6px;">
         <span id="stopBadge" style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:0.75em;font-weight:700;letter-spacing:0.5px;background:rgba(166,227,161,0.15);color:#a6e3a1;">DRIVING</span>
@@ -1002,6 +1045,48 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- Record & Playback -->
+    <div class="card">
+      <h3 style="display:flex;align-items:center;justify-content:space-between;">🎬 Record &amp; Playback <span class="rp-state-badge idle" id="rpStateBadge">IDLE</span></h3>
+      
+      <!-- Control Buttons -->
+      <div class="rp-buttons" style="display:flex; gap:8px; margin-top:10px;">
+        <button class="rp-btn record" id="rpBtnRecord" onclick="rpCmd('record')" style="flex:1; padding:8px 4px; border-radius:8px; border:1px solid rgba(255,82,82,0.3); font-size:0.8em; font-weight:700; cursor:pointer; background:rgba(255,82,82,0.1); color:#d20f39; display:flex; flex-direction:column; align-items:center; gap:4px; font-family:inherit;">
+          <span class="icon">🔴</span>
+          <span class="label" style="font-size:0.7em; letter-spacing:0.5px; text-transform:uppercase;">Record</span>
+        </button>
+        <button class="rp-btn stop" id="rpBtnStop" onclick="rpCmd('stop')" style="flex:1; padding:8px 4px; border-radius:8px; border:1px solid rgba(255,215,64,0.3); font-size:0.8em; font-weight:700; cursor:pointer; background:rgba(255,215,64,0.1); color:#df8e1d; display:flex; flex-direction:column; align-items:center; gap:4px; font-family:inherit;">
+          <span class="icon">⏹</span>
+          <span class="label" style="font-size:0.7em; letter-spacing:0.5px; text-transform:uppercase;">Stop</span>
+        </button>
+        <button class="rp-btn play" id="rpBtnPlay" onclick="rpCmd('playback')" style="flex:1; padding:8px 4px; border-radius:8px; border:1px solid rgba(105,240,174,0.3); font-size:0.8em; font-weight:700; cursor:pointer; background:rgba(105,240,174,0.1); color:#40a02b; display:flex; flex-direction:column; align-items:center; gap:4px; font-family:inherit;">
+          <span class="icon">▶</span>
+          <span class="label" style="font-size:0.7em; letter-spacing:0.5px; text-transform:uppercase;">Play</span>
+        </button>
+        <button class="rp-btn save" id="rpBtnSave" onclick="rpCmd('save')" style="flex:1; padding:8px 4px; border-radius:8px; border:1px solid rgba(30,144,255,0.3); font-size:0.8em; font-weight:700; cursor:pointer; background:rgba(30,144,255,0.1); color:#1e90ff; display:flex; flex-direction:column; align-items:center; gap:4px; font-family:inherit;">
+          <span class="icon">💾</span>
+          <span class="label" style="font-size:0.7em; letter-spacing:0.5px; text-transform:uppercase;">Save</span>
+        </button>
+      </div>
+
+      <!-- Progress Bar (visible during playback) -->
+      <div class="progress-track" id="rpProgress" style="display:none; height:6px; background:var(--surface2); border-radius:3px; overflow:hidden; margin-top:10px; margin-bottom:10px;">
+        <div class="progress-fill" id="rpProgressFill" style="width:0%; height:100%; border-radius:3px; background:linear-gradient(90deg, var(--accent), #40a02b); transition:width 0.15s ease;"></div>
+      </div>
+
+      <!-- Buffer / Progress Info -->
+      <div class="rp-info" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;">
+        <div class="rp-info-item" style="background:var(--surface2); border-radius:8px; padding:8px; text-align:center;">
+          <div class="value" id="rpBufferSize" style="font-family:'JetBrains Mono',monospace; font-size:1.4em; font-weight:800; color:var(--accent); line-height:1.2;">0</div>
+          <div class="label" style="font-size:0.65em; color:#666; text-transform:uppercase; letter-spacing:1px; margin-top:2px;">Samples</div>
+        </div>
+        <div class="rp-info-item" style="background:var(--surface2); border-radius:8px; padding:8px; text-align:center;">
+          <div class="value" id="rpDuration" style="font-family:'JetBrains Mono',monospace; font-size:1.4em; font-weight:800; color:var(--accent); line-height:1.2;">0.0</div>
+          <div class="label" style="font-size:0.65em; color:#666; text-transform:uppercase; letter-spacing:1px; margin-top:2px;">Duration (s)</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Lane Following -->
     <div class="card">
       <h3>Lane Following</h3>
@@ -1022,7 +1107,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
   </div>
 
-  <!-- ===== CENTER COLUMN — CAMERA ===== -->
+  <!-- ===== CENTER COLUMN â€” CAMERA ===== -->
   <div class="col">
     <div class="card cam-card">
       <h3>Camera Feed</h3>
@@ -1137,7 +1222,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <!-- ===== EVENT LOG ===== -->
 <div class="log-section">
   <div class="log-card">
-    <h3><span style="opacity:0.6">📝</span> Event Log</h3>
+    <h3><span style="opacity:0.6">📝 </span> Event Log</h3>
     <div class="log-scroll" id="logScroll">
       <div class="log-entry"><span class="log-time">--:--:--</span><span class="log-event">Dashboard started</span></div>
     </div>
@@ -1171,6 +1256,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="ctrl-section-label">Challenge</div>
   <div class="ctrl-map-row"><span class="ctrl-key">RB</span><span class="ctrl-desc">Next challenge state</span></div>
   <div class="ctrl-map-row"><span class="ctrl-key">LB</span><span class="ctrl-desc">Previous challenge state</span></div>
+  <div class="ctrl-section-label">Record & Playback</div>
+  <div class="ctrl-map-row"><span class="ctrl-key">A</span><span class="ctrl-desc">Record / Stop Recording</span></div>
+  <div class="ctrl-map-row"><span class="ctrl-key">X</span><span class="ctrl-desc">Play / Stop Playback</span></div>
   <div class="ctrl-section-label">Camera</div>
   <div class="ctrl-map-row"><span class="ctrl-key">R Stick Y</span><span class="ctrl-desc">Camera tilt (if enabled)</span></div>
 </div>
@@ -1252,7 +1340,7 @@ function toggleCam() {
   const img = document.getElementById('camImg');
   if(b.classList.contains('active')) {
     b.classList.remove('active');
-    b.textContent = '📷 Enable Camera';
+    b.textContent = 'ðŸ“· Enable Camera';
     d.classList.remove('active');
     t.style.display = 'none';
     off.style.display = 'flex';
@@ -1260,7 +1348,7 @@ function toggleCam() {
     img.src = '';
   } else {
     b.classList.add('active');
-    b.textContent = '⏹ Disable Camera';
+    b.textContent = 'â¹ Disable Camera';
     d.classList.add('active');
     t.style.display = 'flex';
     off.style.display = 'none';
@@ -1281,6 +1369,14 @@ function setCamView(view, btn) {
       img.src = '/camera_feed?' + Date.now();
     }
   });
+}
+
+function rpCmd(action) {
+  fetch('/api/record_playback', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action})
+  }).catch(() => {});
 }
 
 let last_data_time = 0;
@@ -1305,7 +1401,7 @@ function update() {
 
       // Log state changes
       if (currentState !== lastState && lastState !== '') {
-        addLogEntry(`State: <span class="log-val">${lastState}</span> → <span class="log-val">${currentState}</span>`);
+        addLogEntry(`State: <span class="log-val">${lastState}</span> ➔ <span class="log-val">${currentState}</span>`);
       }
       lastState = currentState;
 
@@ -1396,7 +1492,7 @@ function update() {
       }
 
       const gD=document.getElementById('dotGate'),gV=document.getElementById('valGate');
-      if(d.boom_gate===null){gD.className='dot dot-gray';gV.textContent='—';}
+      if(d.boom_gate===null){gD.className='dot dot-gray';gV.textContent='â€”';}
       else{gD.className=d.boom_gate?'dot dot-green':'dot dot-red';gV.textContent=d.boom_gate?'OPEN':'CLOSED';}
 
       // Lane
@@ -1423,7 +1519,7 @@ function update() {
       });
       document.getElementById('ctrlState').textContent = d.ctrl_state_name;
 
-      // Controller buttons — Updated to match user's specific mapping:
+      // Controller buttons â€” Updated to match user's specific mapping:
       // A=0, B=1, X=3, Y=4, LB=6, RB=7, Start=11
       const bm={0:'btnA',1:'btnB',3:'btnX',4:'btnY',6:'btnLB',7:'btnRB',8:'btnLT',9:'btnRT',11:'btnStart'};
       Object.values(bm).forEach(id=>document.getElementById(id).classList.remove('active'));
@@ -1461,6 +1557,56 @@ function update() {
         dr.style.left = rx + '%';
         dr.style.top = ry + '%';
         dr.classList.toggle('active', Math.abs(d.axes[2]) > 0.05 || Math.abs(d.axes[3]) > 0.05);
+      }
+
+      // ── Record & Playback State ──
+      const rpState = d.rp_state || 'IDLE';
+      const bufSize = d.rp_buffer_size || 0;
+      const pbIdx = d.rp_playback_index || 0;
+
+      const badge = document.getElementById('rpStateBadge');
+      if (badge) {
+        badge.textContent = rpState;
+        badge.className = 'rp-state-badge ' + rpState.toLowerCase();
+      }
+
+      const bufSizeEl = document.getElementById('rpBufferSize');
+      if (bufSizeEl) bufSizeEl.textContent = bufSize;
+      
+      const durEl = document.getElementById('rpDuration');
+      if (durEl) durEl.textContent = (bufSize * 0.05).toFixed(1);
+
+      const btnRec = document.getElementById('rpBtnRecord');
+      const btnStop = document.getElementById('rpBtnStop');
+      const btnPlay = document.getElementById('rpBtnPlay');
+      const btnSave = document.getElementById('rpBtnSave');
+
+      if (btnRec) {
+        btnRec.classList.toggle('active', rpState === 'RECORDING');
+        btnRec.disabled = (rpState === 'PLAYBACK');
+      }
+      if (btnPlay) {
+        btnPlay.classList.toggle('active', rpState === 'PLAYBACK');
+        btnPlay.disabled = (rpState === 'RECORDING' || bufSize === 0);
+      }
+      if (btnStop) {
+        btnStop.disabled = (rpState === 'IDLE');
+      }
+      if (btnSave) {
+        btnSave.disabled = (rpState !== 'IDLE' || bufSize === 0);
+      }
+
+      const progressTrack = document.getElementById('rpProgress');
+      const progressFill = document.getElementById('rpProgressFill');
+      if (progressTrack && progressFill) {
+        if (rpState === 'PLAYBACK' && bufSize > 0) {
+          progressTrack.style.display = 'block';
+          const pct = Math.min(100, (pbIdx / bufSize) * 100);
+          progressFill.style.width = pct + '%';
+        } else {
+          progressTrack.style.display = 'none';
+          progressFill.style.width = '0%';
+        }
       }
     })
     .catch(()=>{
@@ -1662,7 +1808,7 @@ function buildParamUI() {
       const tip = PARAM_TIPS[p] || '';
       return `<div class="param-row">
         <span class="param-name" ${tip ? 'title="'+tip+'"' : ''}>${p}</span>
-        <input class="param-val" id="pv_${g.node}_${p}" placeholder="—" />
+        <input class="param-val" id="pv_${g.node}_${p}" placeholder="â€”" />
         <button class="param-get-btn" onclick="getParam('${g.node}','${p}')">Get</button>
         <button class="param-set-btn" onclick="setParam('${g.node}','${p}')">Set</button>
         <span class="param-status" id="ps_${g.node}_${p}"></span>
@@ -1697,7 +1843,7 @@ async function getParam(node, param, isInitialLoad=false) {
           }
         }
       }
-      if (status && !isInitialLoad) { status.className = 'param-status ok'; status.textContent = '✓'; }
+      if (status && !isInitialLoad) { status.className = 'param-status ok'; status.textContent = 'âœ“'; }
     } else {
       if (status && !isInitialLoad) { status.className = 'param-status err'; status.textContent = d.error || 'Not found'; }
     }
@@ -1722,7 +1868,7 @@ async function setParam(node, param) {
     });
     const d = await r.json();
     if (d.ok) {
-      if (status) { status.className = 'param-status ok'; status.textContent = '✓ Set'; }
+      if (status) { status.className = 'param-status ok'; status.textContent = 'âœ“ Set'; }
     } else {
       if (status) { status.className = 'param-status err'; status.textContent = d.error || 'Failed'; }
     }
@@ -1739,31 +1885,31 @@ async function saveDefaults() {
   const btn = document.getElementById('saveDefaultsBtn');
   const status = document.getElementById('saveDefaultsStatus');
   btn.className = 'param-save-defaults-btn saving';
-  btn.textContent = '⏳ Saving...';
+  btn.textContent = 'â³ Saving...';
   status.textContent = '';
   try {
     const r = await fetch('/api/save_defaults', { method: 'POST' });
     const d = await r.json();
     if (d.ok) {
       btn.className = 'param-save-defaults-btn success';
-      btn.textContent = '✓ Saved!';
+      btn.textContent = 'âœ“ Saved!';
       status.style.color = 'var(--success)';
       status.textContent = d.msg || `${d.updated} params updated`;
     } else {
       btn.className = 'param-save-defaults-btn error';
-      btn.textContent = '✗ Failed';
+      btn.textContent = 'âœ— Failed';
       status.style.color = 'var(--danger)';
       status.textContent = d.error || 'Unknown error';
     }
   } catch(e) {
     btn.className = 'param-save-defaults-btn error';
-    btn.textContent = '✗ Error';
+    btn.textContent = 'âœ— Error';
     status.style.color = 'var(--danger)';
     status.textContent = 'Network error';
   }
   setTimeout(() => {
     btn.className = 'param-save-defaults-btn';
-    btn.textContent = '💾 Save Current as Default';
+    btn.textContent = 'ðŸ’¾ Save Current as Default';
     status.textContent = '';
   }, 5000);
 }
@@ -1782,7 +1928,7 @@ setTimeout(async () => {
 setInterval(update, 200);
 update();
 
-// ── LiDAR 2D Visualization ──
+// â”€â”€ LiDAR 2D Visualization â”€â”€
 (function(){
   const canvas = document.getElementById('lidarCanvas');
   if(!canvas) return;
@@ -1866,9 +2012,9 @@ update();
     ctx.fillText('R', W-12, CY+4);
     // Status
     var el = document.getElementById('lidarStatus');
-    if(tunnelDetected) el.innerHTML = '<span style="color:#40a02b;">● TUNNEL</span>';
-    else if(points && points.length > 0) el.innerHTML = '<span style="color:#1e66f5;">● ' + points.length + ' pts</span>';
-    else el.innerHTML = '<span style="color:#888;">● No data</span>';
+    if(tunnelDetected) el.innerHTML = '<span style="color:#40a02b;">â— TUNNEL</span>';
+    else if(points && points.length > 0) el.innerHTML = '<span style="color:#1e66f5;">â— ' + points.length + ' pts</span>';
+    else el.innerHTML = '<span style="color:#888;">â— No data</span>';
   }
   function fetchLidar(){
     fetch('/lidar_data').then(function(r){return r.json();}).then(function(d){
@@ -1885,9 +2031,9 @@ update();
         canvas.parentElement.appendChild(el);
       }
       if(d.tunnel && d.angular_z !== undefined){
-        var dir = d.angular_z > 0.01 ? '← LEFT' : (d.angular_z < -0.01 ? 'RIGHT →' : '↑ STRAIGHT');
+        var dir = d.angular_z > 0.01 ? 'â† LEFT' : (d.angular_z < -0.01 ? 'RIGHT â†’' : 'â†‘ STRAIGHT');
         var color = Math.abs(d.angular_z) > 0.3 ? '#ff5252' : '#69f0ae';
-        el.innerHTML = 'L:' + (d.left_dist||0).toFixed(2) + 'm  R:' + (d.right_dist||0).toFixed(2) + 'm  lat:' + (d.dist_error||0).toFixed(3) + '  <span style="color:'+color+'">ω:' + (d.angular_z||0).toFixed(2) + ' ' + dir + '</span>';
+        el.innerHTML = 'L:' + (d.left_dist||0).toFixed(2) + 'm  R:' + (d.right_dist||0).toFixed(2) + 'm  lat:' + (d.dist_error||0).toFixed(3) + '  <span style="color:'+color+'">Ï‰:' + (d.angular_z||0).toFixed(2) + ' ' + dir + '</span>';
         el.style.display = 'block';
       } else {
         el.style.display = 'none';
@@ -1908,369 +2054,651 @@ TEACH_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RISA-Bot Odometry &amp; Line Following</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
+<title>RISA-Bot â€” Record &amp; Playback</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0f0f13;
-    --surface: #1e1e24;
+    --surface: #1a1a22;
+    --surface2: #252530;
     --text: #e6e9ef;
     --accent: #42a5f5;
     --success: #69f0ae;
     --danger: #ff5252;
     --warning: #ffd740;
+    --recording: #ff5252;
+    --playback: #69f0ae;
+    --idle: #6c7086;
+    --radius: 16px;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
     font-family: 'Inter', sans-serif;
     background: var(--bg);
     color: var(--text);
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
+    min-height: 100vh;
+    overflow-x: hidden;
   }
+
+  /* ===== HEADER ===== */
   header {
-    padding: 20px 40px;
+    padding: 16px 32px;
     background: var(--surface);
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 2px solid rgba(255,255,255,0.05);
+    position: sticky;
+    top: 0;
+    z-index: 100;
   }
-  header h1 { font-size: 2.2em; font-weight: 800; letter-spacing: -1px; }
-  .badge { padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 1.2em; }
-  .badge.auto { background: rgba(105, 240, 174, 0.2); color: var(--success); }
-  .badge.manual { background: rgba(255, 82, 82, 0.2); color: var(--danger); }
-  
-  main {
-    flex: 1;
-    display: flex;
-    padding: 40px;
-    gap: 40px;
+  header h1 {
+    font-size: 1.6em;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--accent), var(--danger), var(--success));
+    background-size: 200% 200%;
+    animation: gradShift 4s ease infinite;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
-  .cam-panel {
-    flex: 2;
-    background: #000;
+  @keyframes gradShift { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
+  .nav-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.85em;
+    font-weight: 600;
+    padding: 6px 16px;
+    border: 1px solid rgba(66,165,245,0.3);
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+  .nav-link:hover { background: rgba(66,165,245,0.1); border-color: var(--accent); }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .mode-pill {
+    padding: 6px 14px;
     border-radius: 20px;
-    border: 2px solid rgba(255,255,255,0.1);
-    overflow: hidden;
-    position: relative;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    font-weight: 700;
+    font-size: 0.85em;
+    letter-spacing: 0.5px;
+    transition: all 0.3s;
+  }
+  .mode-pill.auto { background: rgba(105,240,174,0.2); color: var(--success); }
+  .mode-pill.manual { background: rgba(255,82,82,0.2); color: var(--danger); }
+
+  /* ===== LAYOUT ===== */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    padding: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+
+  /* ===== CARDS ===== */
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 24px;
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .card:hover {
+    border-color: rgba(66,165,245,0.2);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+  .card h2 {
+    font-size: 0.7em;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: #666;
+    margin-bottom: 16px;
+    font-weight: 700;
+  }
+  .left-col { display: flex; flex-direction: column; gap: 20px; }
+  .right-col { display: flex; flex-direction: column; gap: 20px; }
+
+  /* ===== RECORD & PLAYBACK PANEL ===== */
+  .rp-state-display {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .rp-state-badge {
+    display: inline-block;
+    padding: 10px 28px;
+    border-radius: 12px;
+    font-size: 1.3em;
+    font-weight: 800;
+    letter-spacing: 2px;
+    transition: all 0.4s;
+  }
+  .rp-state-badge.idle {
+    background: rgba(108,112,134,0.15);
+    color: var(--idle);
+    border: 1px solid rgba(108,112,134,0.3);
+  }
+  .rp-state-badge.recording {
+    background: rgba(255,82,82,0.15);
+    color: var(--recording);
+    border: 1px solid rgba(255,82,82,0.4);
+    animation: recPulse 1.5s ease infinite;
+  }
+  @keyframes recPulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,82,82,0.3)} 50%{box-shadow:0 0 20px 4px rgba(255,82,82,0.2)} }
+  .rp-state-badge.playback {
+    background: rgba(105,240,174,0.15);
+    color: var(--playback);
+    border: 1px solid rgba(105,240,174,0.4);
+    animation: playPulse 1.5s ease infinite;
+  }
+  @keyframes playPulse { 0%,100%{box-shadow:0 0 0 0 rgba(105,240,174,0.3)} 50%{box-shadow:0 0 20px 4px rgba(105,240,174,0.2)} }
+
+  /* Control Buttons */
+  .rp-buttons {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .rp-btn {
+    flex: 1;
+    padding: 14px 8px;
+    border-radius: 12px;
+    border: 2px solid transparent;
+    font-size: 1em;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    font-family: inherit;
     display: flex;
     flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .rp-btn .icon { font-size: 1.6em; }
+  .rp-btn .label { font-size: 0.75em; letter-spacing: 1px; text-transform: uppercase; }
+
+  .rp-btn.record {
+    background: rgba(255,82,82,0.1);
+    color: var(--recording);
+    border-color: rgba(255,82,82,0.3);
+  }
+  .rp-btn.record:hover { background: rgba(255,82,82,0.2); border-color: var(--recording); transform: translateY(-2px); }
+  .rp-btn.record:active { transform: scale(0.96); }
+  .rp-btn.record.active {
+    background: var(--recording);
+    color: #fff;
+    border-color: var(--recording);
+    box-shadow: 0 0 24px rgba(255,82,82,0.4);
+  }
+
+  .rp-btn.stop {
+    background: rgba(255,215,64,0.1);
+    color: var(--warning);
+    border-color: rgba(255,215,64,0.3);
+  }
+  .rp-btn.stop:hover { background: rgba(255,215,64,0.2); border-color: var(--warning); transform: translateY(-2px); }
+  .rp-btn.stop:active { transform: scale(0.96); }
+
+  .rp-btn.play {
+    background: rgba(105,240,174,0.1);
+    color: var(--playback);
+    border-color: rgba(105,240,174,0.3);
+  }
+  .rp-btn.play:hover { background: rgba(105,240,174,0.2); border-color: var(--playback); transform: translateY(-2px); }
+  .rp-btn.play:active { transform: scale(0.96); }
+  .rp-btn.play.active {
+    background: var(--playback);
+    color: #111;
+    border-color: var(--playback);
+    box-shadow: 0 0 24px rgba(105,240,174,0.4);
+  }
+
+  .rp-btn.save {
+    background: rgba(30,144,255,0.1);
+    color: #1e90ff;
+    border-color: rgba(30,144,255,0.3);
+  }
+  .rp-btn.save:hover { background: rgba(30,144,255,0.2); border-color: #1e90ff; transform: translateY(-2px); }
+  .rp-btn.save:active { transform: scale(0.96); }
+
+  .rp-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  /* Buffer / Progress Info */
+  .rp-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .rp-info-item {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+  }
+  .rp-info-item .value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2em;
+    font-weight: 800;
+    color: var(--accent);
+    line-height: 1.2;
+  }
+  .rp-info-item .label {
+    font-size: 0.7em;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-top: 4px;
+  }
+
+  /* Progress Bar */
+  .progress-track {
+    height: 8px;
+    background: var(--surface2);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--accent), var(--playback));
+    transition: width 0.15s ease;
+    position: relative;
+  }
+  .progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%);
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+
+  /* Controller Hint */
+  .controller-hint {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 0.8em;
+    color: #888;
+    border: 1px dashed rgba(255,255,255,0.08);
+  }
+  .controller-hint strong { color: var(--accent); }
+  .hint-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+  }
+  .hint-key {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 6px;
+    background: rgba(66,165,245,0.15);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 0.9em;
+    min-width: 50px;
+    text-align: center;
+  }
+
+  /* ===== CAMERA ===== */
+  .cam-panel {
+    background: #000;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.4);
   }
   .cam-container {
-    flex: 1;
     display: flex;
     justify-content: center;
     align-items: center;
     background: #050508;
+    min-height: 240px;
   }
   .cam-container img {
     width: 100%;
     height: 100%;
     object-fit: contain;
   }
-  
-  .data-panel {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 30px;
-  }
-  .data-card {
-    background: var(--surface);
-    border-radius: 20px;
-    padding: 30px;
-    border: 1px solid rgba(255,255,255,0.05);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-  }
-  .data-card h2 {
-    font-size: 1.2em;
-    text-transform: uppercase;
-    letter-spacing: 3px;
-    color: #888;
-    margin-bottom: 10px;
-  }
-  .data-value {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 4.5em;
-    font-weight: 800;
-    line-height: 1.1;
-  }
-  .data-unit {
-    font-size: 0.3em;
-    color: #aaa;
-    font-weight: 400;
-    margin-left: 10px;
-  }
-  .odom-logs {
-    margin-top: auto;
-    background: rgba(0,0,0,0.3);
-    padding: 15px;
-    border-radius: 10px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.9em;
-    color: #aaa;
-    border: 1px dashed rgba(255,255,255,0.1);
-  }
-  .odom-logs strong { color: #fff; margin-right: 10px; }
-  .val-blue { color: var(--accent); }
-  .val-green { color: var(--success); }
-  .val-yellow { color: var(--warning); }
-  .val-red { color: var(--danger); }
-  
-  /* Selectors */
   .cam-controls {
-    display: flex; gap: 10px; padding: 15px; background: rgba(255,255,255,0.05);
+    display: flex; gap: 6px; padding: 10px; background: rgba(255,255,255,0.03);
   }
   .cam-btn {
-    flex: 1; padding: 12px; border-radius: 10px; font-size: 1.1em; font-weight: 700;
-    background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #aaa;
-    cursor: pointer; transition: all 0.2s;
+    flex: 1; padding: 10px; border-radius: 8px; font-size: 0.85em; font-weight: 700;
+    background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); color: #666;
+    cursor: pointer; transition: all 0.2s; font-family: inherit;
   }
-  .cam-btn.active {
-    background: var(--accent); color: #fff; border-color: var(--accent);
+  .cam-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .cam-btn:hover:not(.active) { background: rgba(255,255,255,0.05); color: #aaa; }
+
+  /* ===== DATA CARDS (Odometry) ===== */
+  .data-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
   }
+  .data-card {
+    background: var(--surface2);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+  .data-card h3 {
+    font-size: 0.6em;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #555;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .data-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.8em;
+    font-weight: 800;
+    color: var(--accent);
+    line-height: 1.2;
+  }
+  .data-val.green { color: var(--success); }
+  .data-val.yellow { color: var(--warning); }
+  .data-unit { font-size: 0.35em; color: #555; margin-left: 4px; }
+
+  /* ===== STATUS DOT ===== */
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .status-dot.live { background: var(--success); animation: pulse 2s infinite; }
+  .status-dot.stale { background: var(--warning); }
+  .status-dot.offline { background: #555; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* Reset button */
+  .reset-btn {
+    margin-top: 10px;
+    padding: 8px 24px;
+    background: var(--surface2);
+    color: #aaa;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.8em;
+    font-weight: 600;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+  .reset-btn:hover { background: rgba(255,255,255,0.08); color: #fff; border-color: rgba(255,255,255,0.2); }
 </style>
 </head>
 <body>
 
+<!-- HEADER -->
 <header>
-  <h1>RISA-Bot / Odometry &amp; Line Following</h1>
-  <div id="modeBadge" class="badge">WAITING</div>
+  <h1>ðŸ¤– RISA-Bot / Record &amp; Playback</h1>
+  <div class="header-right">
+    <span class="mode-pill" id="modeBadge">WAITING</span>
+    <a href="/" class="nav-link">â† Dashboard</a>
+  </div>
 </header>
 
-<main>
-  <div class="cam-panel">
-    <div class="cam-container">
-      <img id="camStream" src="/camera_feed?v=line_follower" alt="Camera Feed Offline" onerror="this.style.display='none'; document.getElementById('camOff').style.display='flex';" onload="this.style.display='block'; document.getElementById('camOff').style.display='none';"/>
-      <div id="camOff" style="display:none; color:#555; width:100%; height:100%; align-items:center; justify-content:center; flex-direction:column; font-size:1.5em; font-weight:700;">
-        <div>∅ NO SIGNAL</div>
+<!-- MAIN LAYOUT -->
+<div class="main-grid">
+
+  <!-- LEFT COLUMN: Camera + Odometry -->
+  <div class="left-col">
+
+    <!-- Camera Feed -->
+    <div class="cam-panel">
+      <div class="cam-container">
+        <img id="camStream" src="/camera_feed?v=raw" alt="Camera Feed Offline"
+             onerror="this.style.display='none'; document.getElementById('camOff').style.display='flex';"
+             onload="this.style.display='block'; document.getElementById('camOff').style.display='none';"/>
+        <div id="camOff" style="display:none; color:#555; width:100%; height:100%; align-items:center; justify-content:center; flex-direction:column; font-size:1.2em; font-weight:700; min-height:240px;">
+          <div style="font-size:2em; margin-bottom:8px; opacity:0.4;">âˆ…</div>
+          <div>NO SIGNAL</div>
+        </div>
+      </div>
+      <div class="cam-controls">
+        <button class="cam-btn active" onclick="setCam('raw')" id="btn-raw">Raw</button>
+        <button class="cam-btn" onclick="setCam('line_follower')" id="btn-line_follower">Lane</button>
+        <button class="cam-btn" onclick="setCam('obstacle')" id="btn-obstacle">Obstacle</button>
+        <button class="cam-btn" onclick="setCam('signage')" id="btn-signage">Signage</button>
       </div>
     </div>
-    <div class="cam-controls">
-      <button class="cam-btn" onclick="setCam('raw')" id="btn-raw">Raw Feed</button>
-      <button class="cam-btn active" onclick="setCam('line_follower')" id="btn-line_follower">Curve Tracking</button>
-      <button class="cam-btn" onclick="setCam('obstacle')" id="btn-obstacle">Obstacle Edge</button>
-    </div>
-  </div>
 
-  <!-- LiDAR 2D Top-Down View -->
-  <div class="cam-panel" style="margin-top:12px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:0 4px 8px;">
-      <h2 style="margin:0; font-size:1.1em; color:var(--text); font-weight:700;">LiDAR Top View</h2>
-      <div id="lidarStatus" style="font-size:0.85em; font-weight:600; color:var(--muted);">● Waiting</div>
-    </div>
-    <canvas id="lidarCanvas" width="320" height="320" style="width:100%; border-radius:12px; background:#0a0a0f; border:1px solid rgba(255,255,255,0.08);"></canvas>
-  </div>
-
-  <script>
-  // ── LiDAR 2D Visualization ──
-  (function(){
-    const canvas = document.getElementById('lidarCanvas');
-    const ctx = canvas.getContext('2d');
-    const W = canvas.width, H = canvas.height;
-    const CX = W/2, CY = H/2;
-    const SCALE = 200; // pixels per meter (0.8m range fills canvas)
-    let lastState = '';
-
-    function drawLidar(points, state, tunnelDetected){
-      ctx.clearRect(0,0,W,H);
-
-      // Background grid circles (0.2m, 0.4m, 0.6m)
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 1;
-      [0.2, 0.4, 0.6].forEach(r => {
-        ctx.beginPath();
-        ctx.arc(CX, CY, r*SCALE, 0, Math.PI*2);
-        ctx.stroke();
-      });
-
-      // Distance labels
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
-      ctx.font = '10px Inter, sans-serif';
-      ctx.textAlign = 'left';
-      [0.2, 0.4, 0.6].forEach(r => {
-        ctx.fillText(r.toFixed(1)+'m', CX+r*SCALE+2, CY-2);
-      });
-
-      // Tunnel detection windows (left: +30° to +90°, right: -30° to -90°)
-      // In canvas: 0° = right, angles go CW. Robot forward = up = -90° canvas.
-      // Robot frame: 0° = forward (up on screen), positive = left
-      ctx.globalAlpha = 0.08;
-      // Left window (blue)
-      ctx.fillStyle = '#4fc3f7';
-      ctx.beginPath();
-      ctx.moveTo(CX, CY);
-      // Robot 30° left = canvas -90°-30° = -120° = 240°
-      // Robot 90° left = canvas -90°-90° = -180° = 180°
-      ctx.arc(CX, CY, 0.6*SCALE, (-90-90)*Math.PI/180, (-90-30)*Math.PI/180);
-      ctx.closePath();
-      ctx.fill();
-      // Right window (red)
-      ctx.fillStyle = '#ef5350';
-      ctx.beginPath();
-      ctx.moveTo(CX, CY);
-      ctx.arc(CX, CY, 0.6*SCALE, (-90+30)*Math.PI/180, (-90+90)*Math.PI/180);
-      ctx.closePath();
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
-
-      // Forward direction indicator
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-      ctx.setLineDash([4,4]);
-      ctx.beginPath();
-      ctx.moveTo(CX, CY);
-      ctx.lineTo(CX, CY - 0.7*SCALE);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Draw LiDAR points
-      if(points && points.length > 0){
-        points.forEach(p => {
-          // Robot frame: x=forward, y=left
-          // Canvas: up=forward, left=left
-          let px = CX - p.y * SCALE;  // y-left maps to screen-left
-          let py = CY - p.x * SCALE;  // x-forward maps to screen-up
-
-          // Color by distance
-          let dist = Math.sqrt(p.x*p.x + p.y*p.y);
-          if(dist < 0.3) ctx.fillStyle = '#ff5252';       // red = close
-          else if(dist < 0.5) ctx.fillStyle = '#ffd740';  // yellow = medium
-          else ctx.fillStyle = '#69f0ae';                  // green = far
-
-          ctx.beginPath();
-          ctx.arc(px, py, 2.5, 0, Math.PI*2);
-          ctx.fill();
-        });
-      }
-
-      // Robot icon (center)
-      ctx.fillStyle = '#1e88e5';
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1.5;
-      // Robot body
-      ctx.beginPath();
-      ctx.moveTo(CX, CY - 10);     // nose (forward)
-      ctx.lineTo(CX - 7, CY + 6);  // left rear
-      ctx.lineTo(CX + 7, CY + 6);  // right rear
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // Labels
-      ctx.fillStyle = 'rgba(255,255,255,0.3)';
-      ctx.font = '9px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('FRONT', CX, 14);
-      ctx.fillText('L', 12, CY+4);
-      ctx.fillText('R', W-12, CY+4);
-
-      // Tunnel status indicator
-      let statusEl = document.getElementById('lidarStatus');
-      if(tunnelDetected){
-        statusEl.innerHTML = '<span style="color:#69f0ae;">● TUNNEL DETECTED</span>';
-      } else if(points && points.length > 0){
-        statusEl.innerHTML = '<span style="color:#4fc3f7;">● ' + points.length + ' pts</span>';
-      } else {
-        statusEl.innerHTML = '<span style="color:var(--muted);">● No data</span>';
-      }
-    }
-
-    // Poll LiDAR data (single request, tunnel state included)
-    function fetchLidar(){
-      fetch('/lidar_data').then(r=>r.json()).then(d => {
-        drawLidar(d.points || [], '', d.tunnel || false);
-      }).catch(()=>{});
-    }
-    setInterval(fetchLidar, 200);
-    fetchLidar();
-  })();
-  </script>
-
-  <div class="data-panel">
-    <div class="data-card">
-      <h2>Distance Travelled</h2>
-      <div class="data-value val-blue"><span id="odomDist">0.00</span><span class="data-unit">meters</span></div>
-      <button onclick="fetch('/api/reset_odom',{method:'POST'}).then(()=>{document.getElementById('odomDist').textContent='0.00';document.getElementById('posX').textContent='0.00';document.getElementById('posY').textContent='0.00';})" style="margin-top:8px;padding:6px 20px;background:#333;color:#fff;border:1px solid #555;border-radius:20px;cursor:pointer;font-size:0.85em;font-weight:600;letter-spacing:0.5px;">⟲ RESET</button>
-    </div>
-    <div class="data-card">
-      <h2>Current Speed</h2>
-      <div class="data-value val-green"><span id="odomSpeed">0.000</span><span class="data-unit">m/s</span></div>
-    </div>
-    <div class="data-card">
-      <h2>Steering Correction</h2>
-      <div class="data-value val-yellow" id="steerValBlock"><span id="steerErr">0.000</span><span class="data-unit">ratio</span></div>
-    </div>
-    <div class="data-card" style="flex-direction:row; gap:30px; align-items:center;">
-      <div style="flex:1; text-align:center;">
-        <h2 style="margin-bottom:4px;">X Position</h2>
-        <div style="font-family:'JetBrains Mono',monospace; font-size:2.5em; font-weight:800; color:var(--accent);"><span id="posX">0.00</span><span style="font-size:0.35em; color:#aaa; margin-left:5px;">m</span></div>
+    <!-- Odometry Data -->
+    <div class="card">
+      <h2><span class="status-dot" id="odomDot"></span> Odometry</h2>
+      <div class="data-row">
+        <div class="data-card">
+          <h3>Distance</h3>
+          <div class="data-val"><span id="odomDist">0.00</span><span class="data-unit">m</span></div>
+        </div>
+        <div class="data-card">
+          <h3>Speed</h3>
+          <div class="data-val green"><span id="odomSpeed">0.000</span><span class="data-unit">m/s</span></div>
+        </div>
+        <div class="data-card">
+          <h3>X Position</h3>
+          <div class="data-val"><span id="posX">0.00</span><span class="data-unit">m</span></div>
+        </div>
+        <div class="data-card">
+          <h3>Y Position</h3>
+          <div class="data-val"><span id="posY">0.00</span><span class="data-unit">m</span></div>
+        </div>
       </div>
-      <div style="flex:1; text-align:center;">
-        <h2 style="margin-bottom:4px;">Y Position</h2>
-        <div style="font-family:'JetBrains Mono',monospace; font-size:2.5em; font-weight:800; color:var(--accent);"><span id="posY">0.00</span><span style="font-size:0.35em; color:#aaa; margin-left:5px;">m</span></div>
+      <div style="text-align:center;">
+        <button class="reset-btn" onclick="resetOdom()">⟲ Reset Odometry</button>
       </div>
     </div>
-    
-    <div class="odom-logs">
-      <div style="text-align:center; margin-bottom:10px; color:#555; font-size: 0.8em; font-weight:700;">RAW ODOMETRY</div>
-      <div><strong>Yaw:</strong> <span id="logYaw">0.000</span> rad</div>
-    </div>
+
   </div>
-</main>
+
+  <!-- RIGHT COLUMN: Record & Playback Controls -->
+  <div class="right-col">
+
+    <!-- Record & Playback Card -->
+    <div class="card">
+      <h2>🎬 Record &amp; Playback</h2>
+
+      <!-- State Display -->
+      <div class="rp-state-display">
+        <div class="rp-state-badge idle" id="rpStateBadge">IDLE</div>
+      </div>
+
+      <!-- Control Buttons -->
+      <div class="rp-buttons">
+        <button class="rp-btn record" id="rpBtnRecord" onclick="rpCmd('record')">
+          <span class="icon">🔴</span>
+          <span class="label">Record</span>
+        </button>
+        <button class="rp-btn stop" id="rpBtnStop" onclick="rpCmd('stop')">
+          <span class="icon">⏹</span>
+          <span class="label">Stop</span>
+        </button>
+        <button class="rp-btn play" id="rpBtnPlay" onclick="rpCmd('playback')">
+          <span class="icon">▶</span>
+          <span class="label">Play</span>
+        </button>
+        <button class="rp-btn save" id="rpBtnSave" onclick="rpCmd('save')">
+          <span class="icon">💾</span>
+          <span class="label">Save</span>
+        </button>
+      </div>
+
+      <!-- Progress Bar (visible during playback) -->
+      <div class="progress-track" id="rpProgress" style="display:none;">
+        <div class="progress-fill" id="rpProgressFill" style="width:0%"></div>
+      </div>
+
+      <!-- Buffer / Progress Info -->
+      <div class="rp-info">
+        <div class="rp-info-item">
+          <div class="value" id="rpBufferSize">0</div>
+          <div class="label">Samples</div>
+        </div>
+        <div class="rp-info-item">
+          <div class="value" id="rpDuration">0.0</div>
+          <div class="label">Est. Duration (s)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Steering Info -->
+    <div class="card">
+      <h2>Steering</h2>
+      <div class="data-row">
+        <div class="data-card">
+          <h3>Lane Error</h3>
+          <div class="data-val yellow" id="steerValBlock"><span id="steerErr">0.000</span></div>
+        </div>
+        <div class="data-card">
+          <h3>Yaw</h3>
+          <div class="data-val"><span id="logYaw">0.000</span><span class="data-unit">rad</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controller Mapping -->
+    <div class="card">
+      <h2>🎮 Controller Mapping</h2>
+      <div class="controller-hint">
+        <div class="hint-row"><span class="hint-key">A</span> Record / Stop Recording</div>
+        <div class="hint-row"><span class="hint-key">B</span> Save Movement</div>
+        <div class="hint-row"><span class="hint-key">X</span> Play / Stop Playback</div>
+        <div class="hint-row"><span class="hint-key">Y</span> Auto/Manual Mode</div>
+        <div class="hint-row"><span class="hint-key">LB/RB</span> Cycle Challenge State</div>
+        <div class="hint-row"><span class="hint-key">D-Pad</span> Speed ▲/▼</div>
+      </div>
+    </div>
+
+  </div>
+</div>
 
 <script>
+// â”€â”€ Camera View Switching â”€â”€
 function setCam(viewName) {
   fetch('/api/set_cam_view?view=' + viewName);
   document.getElementById('camStream').src = '/camera_feed?v=' + viewName + '&t=' + Date.now();
-  ['raw', 'line_follower', 'obstacle'].forEach(v => {
-    document.getElementById('btn-' + v).classList.toggle('active', v === viewName);
+  ['raw', 'line_follower', 'obstacle', 'signage'].forEach(v => {
+    const el = document.getElementById('btn-' + v);
+    if (el) el.classList.toggle('active', v === viewName);
   });
 }
 
-// Default to line follower debug on page load
-setCam('line_follower');
+// â”€â”€ Reset Odometry â”€â”€
+function resetOdom() {
+  fetch('/api/reset_odom', {method:'POST'}).then(() => {
+    document.getElementById('odomDist').textContent = '0.00';
+    document.getElementById('posX').textContent = '0.00';
+    document.getElementById('posY').textContent = '0.00';
+  });
+}
+
+// â”€â”€ Record/Playback Commands â”€â”€
+function rpCmd(action) {
+  fetch('/api/record_playback', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action})
+  }).catch(() => {});
+}
+
+// â”€â”€ Main Data Update Loop â”€â”€
+let lastRpState = 'IDLE';
 
 function update() {
+  const t0 = performance.now();
   fetch('/data')
     .then(r => r.json())
     .then(d => {
       // Mode
       const mb = document.getElementById('modeBadge');
-      mb.textContent = d.auto_mode ? 'AUTO MODE' : 'MANUAL MODE';
-      mb.className = 'badge ' + (d.auto_mode ? 'auto' : 'manual');
-      
+      mb.textContent = d.auto_mode ? 'AUTO' : 'MANUAL';
+      mb.className = 'mode-pill ' + (d.auto_mode ? 'auto' : 'manual');
+
       // Odom
-      document.getElementById('odomDist').textContent = d.distance.toFixed(2);
-      document.getElementById('odomSpeed').textContent = d.speed.toFixed(3);
-      
-      // Steering
-      const err = d.lane_error;
-      document.getElementById('steerErr').textContent = err > 0 ? '+' + err.toFixed(3) : err.toFixed(3);
-      
-      const sb = document.getElementById('steerValBlock');
-      if (Math.abs(err) > 0.3) {
-        sb.className = 'data-value val-red';
-      } else if (Math.abs(err) > 0.1) {
-        sb.className = 'data-value val-yellow';
-      } else {
-        sb.className = 'data-value val-green';
-      }
-      
-      // Raw Logs
+      document.getElementById('odomDist').textContent = (d.distance || 0).toFixed(2);
+      document.getElementById('odomSpeed').textContent = (d.speed || 0).toFixed(3);
       document.getElementById('posX').textContent = (d.odom_x || 0).toFixed(2);
       document.getElementById('posY').textContent = (d.odom_y || 0).toFixed(2);
       document.getElementById('logYaw').textContent = (d.odom_yaw || 0).toFixed(3);
+
+      // Steering
+      const err = d.lane_error || 0;
+      document.getElementById('steerErr').textContent = err > 0 ? '+' + err.toFixed(3) : err.toFixed(3);
+      const sb = document.getElementById('steerValBlock');
+      if (Math.abs(err) > 0.3) sb.className = 'data-val';
+      else if (Math.abs(err) > 0.1) sb.className = 'data-val yellow';
+      else sb.className = 'data-val green';
+
+      // Odom status dot
+      const dot = document.getElementById('odomDot');
+      const odomAge = d.freshness_sec ? (d.freshness_sec.odom || d.freshness_sec.odom_sim || 999) : 999;
+      if (odomAge < 2) { dot.className = 'status-dot live'; }
+      else if (odomAge < 5) { dot.className = 'status-dot stale'; }
+      else { dot.className = 'status-dot offline'; }
+
+      // â”€â”€ Record & Playback State â”€â”€
+      const rpState = d.rp_state || 'IDLE';
+      const bufSize = d.rp_buffer_size || 0;
+      const pbIdx = d.rp_playback_index || 0;
+
+      // State badge
+      const badge = document.getElementById('rpStateBadge');
+      badge.textContent = rpState;
+      badge.className = 'rp-state-badge ' + rpState.toLowerCase();
+
+      // Buffer info
+      document.getElementById('rpBufferSize').textContent = bufSize;
+      // Estimate duration: bufSize samples * ~50ms avg
+      const estDuration = (bufSize * 0.05).toFixed(1);
+      document.getElementById('rpDuration').textContent = estDuration;
+
+      // Button states
+      const btnRec = document.getElementById('rpBtnRecord');
+      const btnStop = document.getElementById('rpBtnStop');
+      const btnPlay = document.getElementById('rpBtnPlay');
+      const btnSave = document.getElementById('rpBtnSave');
+
+      btnRec.classList.toggle('active', rpState === 'RECORDING');
+      btnPlay.classList.toggle('active', rpState === 'PLAYBACK');
+
+      btnRec.disabled = (rpState === 'PLAYBACK');
+      btnPlay.disabled = (rpState === 'RECORDING' || bufSize === 0);
+      btnStop.disabled = (rpState === 'IDLE');
+      if (btnSave) {
+        btnSave.disabled = (rpState !== 'IDLE' || bufSize === 0);
+      }
+
+      // Progress bar
+      const progressTrack = document.getElementById('rpProgress');
+      const progressFill = document.getElementById('rpProgressFill');
+      if (rpState === 'PLAYBACK' && bufSize > 0) {
+        progressTrack.style.display = 'block';
+        const pct = Math.min(100, (pbIdx / bufSize) * 100);
+        progressFill.style.width = pct + '%';
+      } else {
+        progressTrack.style.display = 'none';
+        progressFill.style.width = '0%';
+      }
+
+      lastRpState = rpState;
     })
-    .catch(()=>{});
+    .catch(() => {});
 }
 
-setInterval(update, 100);
+setInterval(update, 150);
 update();
 </script>
 </body>

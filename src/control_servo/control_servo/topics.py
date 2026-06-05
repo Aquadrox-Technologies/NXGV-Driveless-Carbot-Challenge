@@ -10,6 +10,10 @@ DASH_CTRL_TOPIC = '/dashboard_ctrl'
 LOOP_STATS_TOPIC = '/loop_stats'
 IMU_PITCH_TOPIC = '/imu/pitch'
 
+# Record & Playback
+RECORD_PLAYBACK_STATE_TOPIC = '/record_playback_state'
+RECORD_PLAYBACK_CMD_TOPIC = '/record_playback_cmd'
+
 ODOM_FRAME = 'odom'
 BASE_FRAME = 'base_link'
 
