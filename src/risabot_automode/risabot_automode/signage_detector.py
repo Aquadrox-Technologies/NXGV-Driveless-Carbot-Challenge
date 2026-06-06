@@ -399,17 +399,23 @@ class SignageDetector(Node):
         if crop is None or crop.size == 0:
             return 2
 
+        # Crop only the center column (middle 40% of width) of the bounding box
+        # to filter out left/right background noise (like cardboard boxes/floors)
+        h_crop, w_crop = crop.shape[:2]
+        if w_crop > 5:
+            crop = crop[:, int(w_crop * 0.3):int(w_crop * 0.7)]
+
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
         
         # Define color thresholds (HSV)
-        # Red wraps around 0 and 180 in Hue (reverted to high-saturation setting)
+        # Red wraps around 0 and 180 in Hue (high-saturation setting)
         lower_red1 = np.array([0, 70, 70])
         upper_red1 = np.array([10, 255, 255])
         lower_red2 = np.array([160, 70, 70])
         upper_red2 = np.array([180, 255, 255])
         
-        # Yellow/Orange: lower saturation/value slightly to make it more sensitive, and broaden Hue slightly
-        lower_yellow = np.array([11, 50, 50])
+        # Yellow/Orange: set saturation/value back to 70 to reject floor/box background, keep wide Hue range
+        lower_yellow = np.array([11, 70, 70])
         upper_yellow = np.array([38, 255, 255])
         
         # Green: lower saturation requirement to 40 (for white-ish core) and require brightness Value >= 100 to avoid unlit lens
