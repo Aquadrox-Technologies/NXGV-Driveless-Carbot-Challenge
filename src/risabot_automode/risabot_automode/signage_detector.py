@@ -412,8 +412,8 @@ class SignageDetector(Node):
         lower_yellow = np.array([11, 50, 50])
         upper_yellow = np.array([38, 255, 255])
         
-        # Green: require higher brightness (Value >= 140) to avoid triggering on unlit green plastic lens
-        lower_green = np.array([40, 70, 140])
+        # Green: lower saturation requirement to 40 (for white-ish core) and require brightness Value >= 100 to avoid unlit lens
+        lower_green = np.array([40, 40, 100])
         upper_green = np.array([90, 255, 255])
         
         # Generate masks and count active pixels
