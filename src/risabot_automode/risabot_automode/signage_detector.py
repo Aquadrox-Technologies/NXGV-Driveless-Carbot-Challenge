@@ -267,6 +267,22 @@ class SignageDetector(Node):
                 final_boxes = boxes_x1y1x2y2[keep]
                 final_scores = filtered_scores[keep]
                 final_class_ids = filtered_class_ids[keep]
+
+                # Perform Hybrid CV classification for traffic light color (Option 1)
+                resized = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
+                h_img, w_img = resized.shape[:2]
+                for idx, cid in enumerate(final_class_ids):
+                    if cid == 2:  # traffic_light (generic)
+                        box = final_boxes[idx]
+                        x1_c = max(0, int(box[0]))
+                        y1_c = max(0, int(box[1]))
+                        x2_c = min(w_img, int(box[2]))
+                        y2_c = min(h_img, int(box[3]))
+                        
+                        if x2_c > x1_c and y2_c > y1_c:
+                            crop = resized[y1_c:y2_c, x1_c:x2_c]
+                            new_cid = self.classify_traffic_light_color(crop)
+                            final_class_ids[idx] = new_cid
             else:
                 final_boxes = np.empty((0, 4))
                 final_scores = np.array([])
@@ -374,6 +390,55 @@ class SignageDetector(Node):
                     self.detected_tl_yellow_consecutive == 0):
                 self.traffic_light_active = 'unknown'
 
+    def classify_traffic_light_color(self, crop: np.ndarray) -> int:
+        """Analyze cropped traffic light region in HSV to identify the active state.
+        
+        Returns:
+            3 for green, 4 for red, 5 for yellow, or 2 for generic/unknown.
+        """
+        if crop is None or crop.size == 0:
+            return 2
+
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        
+        # Define color thresholds (HSV)
+        # Red wraps around 0 and 180 in Hue
+        lower_red1 = np.array([0, 70, 70])
+        upper_red1 = np.array([10, 255, 255])
+        lower_red2 = np.array([160, 70, 70])
+        upper_red2 = np.array([180, 255, 255])
+        
+        # Yellow/Orange
+        lower_yellow = np.array([15, 70, 70])
+        upper_yellow = np.array([35, 255, 255])
+        
+        # Green
+        lower_green = np.array([40, 70, 70])
+        upper_green = np.array([90, 255, 255])
+        
+        # Generate masks and count active pixels
+        mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        red_count = cv2.countNonZero(mask_red1) + cv2.countNonZero(mask_red2)
+        
+        mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+        yellow_count = cv2.countNonZero(mask_yellow)
+        
+        mask_green = cv2.inRange(hsv, lower_green, upper_green)
+        green_count = cv2.countNonZero(mask_green)
+        
+        # Determine dominant color
+        counts = {3: green_count, 4: red_count, 5: yellow_count}
+        best_cls, max_pixels = max(counts.items(), key=lambda x: x[1])
+        
+        # Require a minimum count of pixels to prevent noise trigger (e.g. 2% of area, min 10 pixels)
+        total_pixels = crop.shape[0] * crop.shape[1]
+        min_required = max(10, int(total_pixels * 0.02))
+        if max_pixels >= min_required:
+            return best_cls
+            
+        return 2
+
     # ──────────────────────────────────────────────────────────────────────────
     # Debug visualization publisher
     # ──────────────────────────────────────────────────────────────────────────
@@ -392,9 +457,9 @@ class SignageDetector(Node):
         ]
         
         COLOR_MAP = [
-            (255, 0, 0),     # Hill sign (Blue)
-            (0, 255, 0),     # Parking sign (Green)
-            (0, 0, 255),     # Traffic light generic (Red)
+            (128, 0, 128),   # Hill sign (Purple)
+            (255, 0, 0),     # Parking sign (Blue)
+            (255, 255, 0),   # Traffic light generic (Cyan)
             (0, 255, 0),     # Traffic light green (Green)
             (0, 0, 255),     # Traffic light red (Red)
             (0, 255, 255),   # Traffic light yellow (Yellow)
