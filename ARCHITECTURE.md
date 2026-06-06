@@ -39,43 +39,71 @@ graph TD
     CAM -->|"/camera/color/image_raw"| OA_CAM
     CAM -->|"/camera/color/image_raw"| TL
     CAM -->|"/camera/color/image_raw"| SIG
+    CAM -->|"/camera/color/image_raw"| DASH
 
     LIDAR -->|"/scan"| OA_LID
     LIDAR -->|"/scan"| BG
     LIDAR -->|"/scan"| TUN
     LIDAR -->|"/scan"| OBS
+    LIDAR -->|"/scan"| DASH
 
     LF -->|"/lane_error + /lane_lost"| AD
+    LF -->|"/camera/debug/line_follower"| DASH
+    
     OA_LID -->|"/obstacle_front"| AD
+    OA_LID -->|"/obstacle_front"| DASH
+    
     OA_CAM -->|"/obstacle_detected_camera"| AD
+    OA_CAM -->|"/obstacle_detected_camera + /camera/debug/obstacle"| DASH
+    
     TL -->|"/traffic_light_state"| AD
-    TL -->|"/traffic_light_state"| DASH
+    TL -->|"/traffic_light_state + /camera/debug/traffic_light"| DASH
+    
     BG -->|"/boom_gate_open"| AD
+    BG -->|"/boom_gate_open"| DASH
+    
     TUN -->|"/tunnel_detected + /tunnel_cmd_vel"| AD
+    TUN -->|"/tunnel_detected"| DASH
+    
     OBS -->|"/obstruction_active + /obstruction_cmd_vel"| AD
+    OBS -->|"/obstruction_active"| DASH
+    
     PARK -->|"/parking_cmd_vel + /parking_complete + /parking_status"| AD
+    PARK -->|"/parking_complete"| DASH
+    
     SIG -->|"/parking_signboard_detected + /hill_sign_detected + /traffic_light_state"| AD
     SIG -->|"/parking_signboard_detected + /traffic_light_state + /camera/debug/signage"| DASH
 
     AD -->|"/cmd_vel_auto_raw"| CSC
-    CSC -->|"/cmd_vel_auto"| SC
     AD -->|"/parking_command"| PARK
     AD -->|"/obstacle_detected_fused"| DASH
+    AD -->|"/dashboard_state"| DASH
+    AD -->|"/loop_stats"| DASH
+    AD -->|"/record_playback_cmd"| SC
+    
+    CSC -->|"/cmd_vel_auto"| SC
+    CSC -->|"/cmd_safety_status + /loop_stats"| DASH
+    
     JOY -->|"/joy"| SC
     JOY -->|"/joy"| DASH
+    
     SC -->|"Rosmaster_Lib (serial)"| HW["Motor Board"]
     SC -->|"/cmd_vel"| DASH
     SC -->|"/auto_mode"| AD
+    SC -->|"/auto_mode"| DASH
+    SC -->|"/set_challenge"| AD
+    SC -->|"/set_challenge"| DASH
     SC -->|"/odom"| DASH
     SC -->|"/odom"| AD
-    SC -->|"/imu/pitch + /record_playback_state"| AD
-    AD -->|"/record_playback_cmd"| SC
-    DASH -->|"/record_playback_cmd"| SC
-
-    AD -->|"/dashboard_state"| DASH
+    SC -->|"/odom"| PARK
+    SC -->|"/imu/pitch + /record_playback_state + /loop_stats"| AD
+    SC -->|"/record_playback_state"| DASH
     SC -->|"/dashboard_ctrl"| DASH
+    SC -->|"/loop_stats"| DASH
+    
+    DASH -->|"/record_playback_cmd"| SC
+    
     HM -->|"/health_status"| DASH
-    CSC -->|"/cmd_safety_status + /loop_stats"| DASH
 ```
 
 ## AI / BPU Model Architecture
