@@ -1,4 +1,4 @@
-# Module 6: Putting It Together
+# Module 3: Putting It Together
 
 ## Learning Objectives
 
@@ -22,7 +22,6 @@ Over the previous modules, you ran nodes one at a time across multiple terminals
 | 2 | `ros2 launch astra_camera astra_mini.launch.py` | Terminal 3 |
 | 2 | `ros2 run ydlidar_ros2_driver ydlidar_ros2_driver_node ...` | Terminal 4 |
 | 2 | `ros2 run risabot_automode dashboard` | Terminal 5 |
-| 3 | `ros2 launch risabot_automode lane_test.launch.py` | Terminal 6 |
 
 Every piece of the robot needs its own terminal. On competition day with 10+ nodes, this becomes completely unmanageable — opening terminals, sourcing workspaces, remembering the right commands...
 
@@ -47,7 +46,7 @@ Terminal 7: ros2 run control_servo servo_controller
 ...
 ```
 
-You actually already used a launch file in Module 3 when you ran `ros2 launch risabot_automode lane_test.launch.py`. That single command started the camera, the line follower, the auto driver, the joystick, and the dashboard — all at once!
+You will use launch files in Module 4 to start the camera, the line follower, the auto driver, the joystick, and the dashboard all at once!
 
 ---
 
@@ -124,7 +123,7 @@ Node(
 ```
 
 > [!NOTE]
-> Remember from Module 3, the line follower camera has many parameters like `white_threshold`, `n_scanlines`, and `kalman_enabled`. Instead of typing all of those inline, we point to the `params.yaml` file — much cleaner!
+> As you will see in Module 4, the line follower camera has many parameters like `white_threshold`, `n_scanlines`, and `kalman_enabled`. Instead of typing all of those inline, we point to the `params.yaml` file — much cleaner!
 
 ### 3.4. Including Another Launch File
 
@@ -142,7 +141,7 @@ This is like saying "run their launch file as part of mine." Remember in Module 
 
 ### 3.5. Delaying Node Startup with `TimerAction`
 
-Some nodes depend on others being ready first. For example, the `line_follower_camera` from Module 3 needs the camera to be publishing frames before it can start processing images. Without a delay, it would start, see no camera data, and produce errors.
+Some nodes depend on others being ready first. For example, the `line_follower_camera` from Module 4 needs the camera to be publishing frames before it can start processing images. Without a delay, it would start, see no camera data, and produce errors.
 
 ```python
 # Wait 3 seconds for the camera to initialize, then start the line follower
@@ -157,7 +156,7 @@ TimerAction(period=3.0, actions=[
 ]),
 ```
 
-The `auto_driver` (the brain from Module 3) waits even longer — 5 seconds — because it needs ALL sensors and perception nodes ready before it starts making decisions:
+The `auto_driver` (the brain from Module 4) waits even longer — 5 seconds — because it needs ALL sensors and perception nodes ready before it starts making decisions:
 
 ```python
 # Wait 5 seconds so all perception nodes are publishing
@@ -184,7 +183,7 @@ TIME   NODE                      PURPOSE
 0s     Astra Camera              Camera driver (Module 2)
 0s     YDLiDAR driver            LiDAR driver (Module 2)
 0s     TF publisher              Coordinate frame link
-0s     cmd_safety_controller     Speed limits & emergency stop (Module 3)
+0s     cmd_safety_controller     Speed limits & emergency stop (Module 4)
 0s     joy_node                  Joystick input (Module 1)
 0s     servo_controller          Motor & steering hardware (Module 1)
 0s     health_monitor            System health watchdog
@@ -192,11 +191,11 @@ TIME   NODE                      PURPOSE
 ─────────────────────────────────────────────────────────────────
 3s     obstacle_avoidance        LiDAR obstacle detection
 3s     obstacle_avoidance_camera Camera obstacle detection
-3s     line_follower_camera      Lane detection (Module 3)
+3s     line_follower_camera      Lane detection (Module 4)
 3s     traffic_light_detector    Traffic light detection
-3s     tunnel_wall_follower      LiDAR tunnel navigation
+3s     tunnel_wall_follower      LiDAR tunnel navigation (Module 5)
 ─────────────────────────────────────────────────────────────────
-5s     auto_driver               The brain — decides what to do (Module 3)
+5s     auto_driver               The brain — decides what to do (Module 4)
 ```
 
 **Notice the three startup groups:**
@@ -340,7 +339,7 @@ You should see all nodes start up — camera, LiDAR, joystick, dashboard, and yo
 
 ## 6. Adding Delays for Dependent Nodes
 
-Right now, all nodes start at the same time. But what if you want to add the line follower from Module 3? It needs the camera to be publishing first. Let's add it with a delay:
+Right now, all nodes start at the same time. But what if you want to add the line follower from Module 4? It needs the camera to be publishing first. Let's add it with a delay:
 
 ```python
         # ==================== PERCEPTION (3s) ====================
@@ -368,7 +367,7 @@ Now the line follower waits 3 seconds for the camera to start. Your launch file 
 
 ## 7. Using a Shared Parameter File
 
-In Module 3, you saw that the RISA-bot has many tunable parameters (PID gains, thresholds, speeds). Typing them all inline in the launch file would be messy. Instead, the RISA-bot uses a single `config/params.yaml` file:
+In Module 4, you will see that the RISA-bot has many tunable parameters (PID gains, thresholds, speeds). Typing them all inline in the launch file would be messy. Instead, the RISA-bot uses a single `config/params.yaml` file:
 
 ```yaml
 # config/params.yaml — one file for all nodes
@@ -402,7 +401,7 @@ Node(
 ```
 
 > [!TIP]
-> This is why you could tune parameters using `ros2 param set` in Module 3 and then click **💾 Save Current as Default** on the dashboard — it writes back to this single `params.yaml` file!
+> This is why you can tune parameters using `ros2 param set` in Module 4 and then click **💾 Save Current as Default** on the dashboard — it writes back to this single `params.yaml` file!
 
 ---
 
@@ -465,14 +464,14 @@ Rebuild and launch. Does the startup feel smoother?
 
 ### Exercise 2: Add the Line Follower and Auto Driver
 
-Expand your launch file to include the full lane-following pipeline from Module 3:
+Expand your launch file to include the full lane-following pipeline from Module 4:
 
 1. Add `line_follower_camera` with a 3-second delay
 2. Add `cmd_safety_controller` at 0 seconds
 3. Add `servo_controller` at 0 seconds
 4. Add `auto_driver` with a 5-second delay
 
-Your launch file should now start the complete lane-following system in one command — just like `lane_test.launch.py` from Module 3!
+Your launch file should now start the complete lane-following system in one command — just like `lane_test.launch.py` from Module 4!
 
 ### Exercise 3: Create Your Own Parameter File
 
@@ -533,6 +532,5 @@ You learned that:
 
 ---
 
-**Previous:** [Module 5 — Tunnel Navigation](05-tunnel-navigation.md)
-
-🎉 **Congratulations!** You've completed all 6 modules of the RISA-bot Workshop!
+**Previous:** [Module 2 — Dashboard & Sensors](02-dashboard-and-sensors.md)
+**Next:** [Module 4 — Lane Following](04-lane-follower.md)

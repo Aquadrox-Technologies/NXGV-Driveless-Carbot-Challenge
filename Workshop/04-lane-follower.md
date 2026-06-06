@@ -1,4 +1,4 @@
-# Module 3: Lane Following
+# Module 4: Lane Following
 
 ## Learning Objectives
 
@@ -479,5 +479,5 @@ You learned that:
 
 ---
 
-**Previous:** [Module 2 — Dashboard & Sensors](02-dashboard-and-sensors.md)
-**Next:** [Module 4 — Obstacle Detection](05-obstacle-detection.md)
+**Previous:** [Module 3 — Putting It Together](03-putting-it-together.md)
+**Next:** [Module 5 — Tunnel Navigation](05-tunnel-navigation.md)

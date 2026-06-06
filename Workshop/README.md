@@ -16,10 +16,10 @@ Hands-on workshop modules for learning ROS 2 using the RISA-bot platform.
 | 0   | [Linux Basics](00-linux-basics.md)                           | 30 min   | Terminal commands, SSH, file navigation             |
 | 1   | [Introduction to ROS 2](01-introduction-to-ros.md)           | 120 min  | Setup, Nodes, Topics, & Joystick                   |
 | 2   | [Dashboard & Sensors](02-dashboard-and-sensors.md)           | 60 min   | Headless robot monitor, Camera & LiDAR data        |
-| 3   | [Lane Following](03-lane-follower.md)                        | 60 min   | Image pipeline, PID control, launch & tuning       |
-| 4   | [Obstacle Detection](05-obstacle-detection.md)               | 45 min   | LiDAR processing, obstacle avoidance               |
+| 3   | [Putting It Together](03-putting-it-together.md)             | 60 min   | Combining nodes, launch files & shared params      |
+| 4   | [Lane Following](04-lane-follower.md)                        | 60 min   | Image pipeline, PID control, launch & tuning       |
 | 5   | [Tunnel Navigation](05-tunnel-navigation.md)                 | 60 min   | LiDAR wall following, RANSAC, PD control           |
-| 6   | [Putting It Together](06-putting-it-together.md)             | 60 min   | Combining modules into a full system               |
+| 6   | [Autonomous Parking](06-autonomous-parking.md)               | 60 min   | Recorded trajectories, signage triggers, playback  |
 
 ## How to Use
 

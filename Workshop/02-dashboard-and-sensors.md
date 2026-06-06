@@ -279,4 +279,5 @@ Now that everything is running, let's verify the sensors are working accurately!
 ---
 
 **Previous:** [Module 1 — Introduction to ROS 2](01-introduction-to-ros.md)
-**Next:** [Module 3 — Lane Following](03-lane-follower.md)
+**Next:** [Module 3 — Putting It Together](03-putting-it-together.md)
+

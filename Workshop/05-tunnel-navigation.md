@@ -15,7 +15,7 @@ By the end of this module, you will:
 
 In Module 4, you learned how the camera detects lane markings to steer. But what happens when the robot enters a tunnel or a dark corridor?
 
-**The camera fails** — it relies on visible lane lines, and those disappear in darkness. This is where the **LiDAR** takes over. Remember from Module 3, the LiDAR fires laser beams in all directions and measures the distance to whatever they hit. Lasers work perfectly in the dark — they don't need ambient light.
+**The camera fails** — it relies on visible lane lines, and those disappear in darkness. This is where the **LiDAR** takes over. Remember from Module 2, the LiDAR fires laser beams in all directions and measures the distance to whatever they hit. Lasers work perfectly in the dark — they don't need ambient light.
 
 ```text
 Camera lane following:              LiDAR wall following:
@@ -483,5 +483,5 @@ You learned that:
 
 ---
 
-**Previous:** [Module 4 — Obstacle Detection](05-obstacle-detection.md)
-**Next:** [Module 6 — Putting It Together](06-putting-it-together.md)
+**Previous:** [Module 4 — Lane Following](04-lane-follower.md)
+**Next:** [Module 6 — Autonomous Parking](06-autonomous-parking.md)
