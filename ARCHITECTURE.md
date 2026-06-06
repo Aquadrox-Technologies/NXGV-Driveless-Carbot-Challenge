@@ -45,16 +45,17 @@ graph TD
     LIDAR -->|"/scan"| TUN
     LIDAR -->|"/scan"| OBS
 
-    LF -->|"/lane_error"| AD
+    LF -->|"/lane_error + /lane_lost"| AD
     OA_LID -->|"/obstacle_front"| AD
     OA_CAM -->|"/obstacle_detected_camera"| AD
     TL -->|"/traffic_light_state"| AD
+    TL -->|"/traffic_light_state"| DASH
     BG -->|"/boom_gate_open"| AD
     TUN -->|"/tunnel_detected + /tunnel_cmd_vel"| AD
     OBS -->|"/obstruction_active + /obstruction_cmd_vel"| AD
     PARK -->|"/parking_cmd_vel + /parking_complete + /parking_status"| AD
-    SIG -->|"/parking_signboard_detected"| AD
-    SIG -->|"/signage_detections"| DASH
+    SIG -->|"/parking_signboard_detected + /hill_sign_detected + /traffic_light_state"| AD
+    SIG -->|"/parking_signboard_detected + /traffic_light_state + /camera/debug/signage"| DASH
 
     AD -->|"/cmd_vel_auto_raw"| CSC
     CSC -->|"/cmd_vel_auto"| SC
@@ -67,6 +68,9 @@ graph TD
     SC -->|"/auto_mode"| AD
     SC -->|"/odom"| DASH
     SC -->|"/odom"| AD
+    SC -->|"/imu/pitch + /record_playback_state"| AD
+    AD -->|"/record_playback_cmd"| SC
+    DASH -->|"/record_playback_cmd"| SC
 
     AD -->|"/dashboard_state"| DASH
     SC -->|"/dashboard_ctrl"| DASH
@@ -76,19 +80,22 @@ graph TD
 
 ## State Machine (auto_driver)
 
-| Priority | State          | Trigger               | Action                      |
-| -------- | -------------- | --------------------- | --------------------------- |
-| 1        | MANUAL         | `auto_mode=false`     | No cmd_vel published        |
-| 2        | FINISHED       | Lap 2 + perpendicular done | Full stop              |
-| 3        | TRAFFIC_LIGHT  | Red/yellow detected   | Full stop                   |
-| 4        | BOOM_GATE      | Gate closed           | Full stop                   |
-| 4.2      | EMERGENCY_STOP | `/cmd_safety_status` estop true | Full stop        |
-| 5        | OBSTRUCTION    | LiDAR lateral avoid   | Use `/obstruction_cmd_vel`  |
-| 5.5      | REVERSE_ADJUST | Too close to obstacle | Reverse slowly              |
-| 6        | PARALLEL_PARK  | Lap 2 + signboard (latched) | Use `/parking_cmd_vel` |
-| 6        | PERPENDICULAR_PARK | Parallel complete  | Use `/parking_cmd_vel`      |
-| 6        | TUNNEL         | Walls on both sides   | Use `/tunnel_cmd_vel`       |
-| 7        | LANE_FOLLOW    | Default               | Steering from `/lane_error` |
+| Priority | State            | Trigger                                         | Action                                        |
+| -------- | ---------------- | ----------------------------------------------- | --------------------------------------------- |
+| 1        | MANUAL           | `auto_mode=false`                               | No cmd_vel published                          |
+| 2        | FINISHED         | Lap 2 + perpendicular park done                 | Full stop                                     |
+| 3        | EMERGENCY_STOP   | `/cmd_safety_status` estop active               | Full stop                                     |
+| 4        | OBSTRUCTION      | LiDAR lateral avoid active                      | Use `/obstruction_cmd_vel`                    |
+| 4.5      | REVERSE_ADJUST   | Too close to front obstacle                     | Reverse slowly                                |
+| 5        | ROUNDABOUT       | Lap 1 + after obstruction clears                | Lane follow for `t_roundabout_sec`            |
+| 6        | PARKING_IDLE     | Lap 2 + signboard detected                     | Full stop for `parking_idle_duration`         |
+| 6.5      | PARKING_PLAYBACK | Parking idle complete                          | Trigger preset movement playback              |
+| 7        | TUNNEL           | Walls on both sides detected                    | Use `/tunnel_cmd_vel`                         |
+| 8        | BOOM_GATE        | Gate closed (armed after roundabout)            | Full stop (disabled/commented out for test)   |
+| 9        | TRAFFIC_LIGHT    | Red/yellow detected (armed after tunnel)       | Full stop (disabled/commented out for test)   |
+| 9.5      | HILL             | IMU pitch exceeds threshold                     | Drive up slowly, scaled steering              |
+| 10       | LANE_RECOVERY    | Lane lost                                       | Stop in place                                 |
+| 11       | LANE_FOLLOW      | Default                                         | Steering from `/lane_error`                   |
 
 ## Competition Flow
 
@@ -116,5 +123,7 @@ Lap 2: Lane Follow → Obstruction → Roundabout →
 | `boom_gate_detector.py`     | LiDAR gate barrier detection            |
 | `parking_controller.py`     | Odometry-based parking maneuvers        |
 | `signage_detector.py`       | YOLO-based signage detection (parking)  |
+| `cmd_safety_controller.py`  | Safety limits and e-stop enforcement    |
 | `health_monitor.py`         | Topic freshness and runtime health      |
 | `config/params.yaml`        | Centralized tunable parameters          |
+| `verify_live.py`            | Live diagnostic tool for YOLO BPU verification |
