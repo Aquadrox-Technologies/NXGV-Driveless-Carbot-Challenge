@@ -399,47 +399,69 @@ class SignageDetector(Node):
         if crop is None or crop.size == 0:
             return 2
 
-        # Crop only the center column (middle 40% of width) of the bounding box
+        # 1. Crop only the center column (middle 40% of width) of the bounding box
         # to filter out left/right background noise (like cardboard boxes/floors)
         h_crop, w_crop = crop.shape[:2]
         if w_crop > 5:
             crop = crop[:, int(w_crop * 0.3):int(w_crop * 0.7)]
 
-        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        h_crop, w_crop = crop.shape[:2]
+        if h_crop < 10:
+            return 2
+
+        # 2. Divide vertically: Red (top 35%), Yellow (middle 32%), Green (bottom 35%)
+        # This matches the physical traffic light layout and isolates background elements.
+        crop_red = crop[0:int(h_crop * 0.35), :]
+        crop_yellow = crop[int(h_crop * 0.33):int(h_crop * 0.67), :]
+        crop_green = crop[int(h_crop * 0.65):, :]
+
+        # 3. Convert sub-regions to HSV
+        hsv_red = cv2.cvtColor(crop_red, cv2.COLOR_BGR2HSV) if crop_red.size > 0 else None
+        hsv_yellow = cv2.cvtColor(crop_yellow, cv2.COLOR_BGR2HSV) if crop_yellow.size > 0 else None
+        hsv_green = cv2.cvtColor(crop_green, cv2.COLOR_BGR2HSV) if crop_green.size > 0 else None
         
-        # Define color thresholds (HSV)
+        # 4. Define color thresholds (HSV)
         # Red wraps around 0 and 180 in Hue (high-saturation setting)
         lower_red1 = np.array([0, 70, 70])
         upper_red1 = np.array([10, 255, 255])
         lower_red2 = np.array([160, 70, 70])
         upper_red2 = np.array([180, 255, 255])
         
-        # Yellow/Orange: set saturation/value back to 70 to reject floor/box background, keep wide Hue range
+        # Yellow/Orange: high-saturation setting, keep wide Hue range
         lower_yellow = np.array([11, 70, 70])
         upper_yellow = np.array([38, 255, 255])
         
-        # Green: lower saturation requirement to 40 (for white-ish core) and require brightness Value >= 100 to avoid unlit lens
-        lower_green = np.array([40, 40, 100])
+        # Green: lower saturation requirement to 30 (to capture white-ish core)
+        # but require high brightness Value >= 150 to reject green background metal legs
+        lower_green = np.array([40, 30, 150])
         upper_green = np.array([90, 255, 255])
         
-        # Generate masks and count active pixels
-        mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
-        mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
-        red_count = cv2.countNonZero(mask_red1) + cv2.countNonZero(mask_red2)
+        # 5. Generate masks and count active pixels in respective regions
+        red_count = 0
+        if hsv_red is not None:
+            mask_red1 = cv2.inRange(hsv_red, lower_red1, upper_red1)
+            mask_red2 = cv2.inRange(hsv_red, lower_red2, upper_red2)
+            red_count = cv2.countNonZero(mask_red1) + cv2.countNonZero(mask_red2)
         
-        mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
-        yellow_count = cv2.countNonZero(mask_yellow)
+        yellow_count = 0
+        if hsv_yellow is not None:
+            mask_yellow = cv2.inRange(hsv_yellow, lower_yellow, upper_yellow)
+            yellow_count = cv2.countNonZero(mask_yellow)
         
-        mask_green = cv2.inRange(hsv, lower_green, upper_green)
-        green_count = cv2.countNonZero(mask_green)
+        green_count = 0
+        if hsv_green is not None:
+            mask_green = cv2.inRange(hsv_green, lower_green, upper_green)
+            green_count = cv2.countNonZero(mask_green)
         
-        # Determine dominant color
+        # 6. Determine dominant color
         counts = {3: green_count, 4: red_count, 5: yellow_count}
         best_cls, max_pixels = max(counts.items(), key=lambda x: x[1])
         
-        # Require a minimum count of pixels to prevent noise trigger (e.g. 2% of area, min 10 pixels)
-        total_pixels = crop.shape[0] * crop.shape[1]
-        min_required = max(10, int(total_pixels * 0.02))
+        # Require a minimum count of pixels in the target sub-region to prevent noise trigger (4% of sub-region area, min 6 pixels)
+        active_region_size = crop_red.shape[0] * crop_red.shape[1] if best_cls == 4 else (
+            crop_yellow.shape[0] * crop_yellow.shape[1] if best_cls == 5 else crop_green.shape[0] * crop_green.shape[1]
+        )
+        min_required = max(6, int(active_region_size * 0.04))
         if max_pixels >= min_required:
             return best_cls
             
