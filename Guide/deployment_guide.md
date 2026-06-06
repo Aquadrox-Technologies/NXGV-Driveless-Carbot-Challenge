@@ -103,8 +103,10 @@ Or open a fresh SSH session (recommended — all env vars will be clean).
 
 ## Step 5 — Launch the Stack
 
+For the full autonomous stack, launch the competition stack:
+
 ```bash
-ros2 launch risabot_automode bringup.launch.py
+ros2 launch risabot_automode competition.launch.py
 ```
 
 Wait ~10s for all nodes to appear. Verify with:
@@ -124,7 +126,40 @@ Expected nodes:
 /joy_node
 /servo_controller
 /ydlidar_ros2_driver_node
+/obstacle_avoidance_node
+/obstacle_avoidance_camera
+/line_follower_camera
+/traffic_light_detector
+/boom_gate_detector
+/tunnel_wall_follower
+/obstruction_avoidance
+/parking_controller
+/signage_detector
+/dashboard
 ```
+
+---
+
+## Step 5.5 — Copy and Verify the YOLOv5 BPU Model
+
+Since the RISA-bot now uses BPU-accelerated signage, hill, and traffic light detection, you must deploy the compiled model file to the robot.
+
+1. **Copy the compiled BPU model file from your local developer PC to the robot:**
+   ```bash
+   scp tools/bpu_model/model_output/risabot_signs_640x640_nv12.bin sunrise@<ROBOT_IP>:/home/sunrise/
+   ```
+2. **On the Robot (via SSH), verify BPU hardware execution and model load:**
+   ```bash
+   cd ~/risabotcar_ws
+   python3 tools/bpu_model/verify_bpu.py
+   ```
+   *Expected output:* `SUCCESS: BPU model loaded successfully.` and `Verification Successful! BPU model is fully functional.`
+
+3. **Verify live camera detection processing (with the robot stationary):**
+   ```bash
+   python3 tools/bpu_model/verify_live.py
+   ```
+   *Expected output:* Successfully receives frames and processes BPU inference, outputting diagnostic detection scores for parking signs, hill signs, and traffic lights.
 
 ---
 

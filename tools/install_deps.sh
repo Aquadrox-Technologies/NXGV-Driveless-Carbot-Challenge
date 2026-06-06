@@ -49,8 +49,12 @@ sudo apt install -y \
     build-essential \
     git-lfs \
     ros-humble-joy \
+    ros-humble-cv-bridge \
+    ros-humble-tf2-ros \
+    ros-humble-tf2-geometry-msgs \
     python3-numpy \
     python3-opencv \
+    python3-yaml \
     nlohmann-json3-dev \
     libgflags-dev \
     libgoogle-glog-dev
