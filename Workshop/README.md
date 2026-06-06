@@ -20,6 +20,7 @@ Hands-on workshop modules for learning ROS 2 using the RISA-bot platform.
 | 4   | [Lane Following](04-lane-follower.md)                        | 60 min   | Image pipeline, PID control, launch & tuning       |
 | 5   | [Tunnel Navigation](05-tunnel-navigation.md)                 | 60 min   | LiDAR wall following, RANSAC, PD control           |
 | 6   | [Autonomous Parking](06-autonomous-parking.md)               | 60 min   | Recorded trajectories, signage triggers, playback  |
+| 7   | [Computer Vision](07-computer-vision.md)                     | 60 min   | HSV thresholding, BPU inference, CV boom gate      |
 
 ## How to Use
 

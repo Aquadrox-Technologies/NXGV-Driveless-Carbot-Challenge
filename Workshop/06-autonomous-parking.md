@@ -181,8 +181,6 @@ ros2 param set /signage_detector min_parking_sign_width 80
 | **Playback starts while robot is moving** | `parking_idle_duration` is too low | Increase the duration to `2.5` or `3.0` seconds to let the robot fully settle. |
 | **No recording loaded on reboot** | Recording wasn't saved | You must press **Button B** (or publish `save`) to write `~/recorded_movement.json` to disk, otherwise the buffer is lost when the node restarts. |
 
----
-
 **Previous:** [Module 5 — Tunnel Navigation](05-tunnel-navigation.md)
+**Next:** [Module 7 — Computer Vision & Hardware-Accelerated AI (BPU)](07-computer-vision.md)
 
-🎉 **Congratulations!** You have completed all 7 modules of the RISA-bot Workshop!
