@@ -914,14 +914,17 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             
             # Auto-toggle show_debug for performance 
             def auto_toggle_debug(selected_view):
-                mapping = {
-                    'line_follower': 'line_follower_camera',
-                    'traffic_light': 'signage_detector',
-                    'obstacle': 'obstacle_avoidance_camera',
-                    'signage': 'signage_detector'
-                }
-                for v, node_name in mapping.items():
-                    val_str = 'true' if v == selected_view else 'false'
+                nodes_to_enable = set()
+                if selected_view == 'line_follower':
+                    nodes_to_enable.add('line_follower_camera')
+                elif selected_view == 'obstacle':
+                    nodes_to_enable.add('obstacle_avoidance_camera')
+                elif selected_view in ('traffic_light', 'signage'):
+                    nodes_to_enable.add('signage_detector')
+                
+                all_nodes = {'line_follower_camera', 'obstacle_avoidance_camera', 'signage_detector'}
+                for node_name in all_nodes:
+                    val_str = 'true' if node_name in nodes_to_enable else 'false'
                     _ros_set_param(node_name, 'show_debug', val_str)
                     
             threading.Thread(target=auto_toggle_debug, args=(view,), daemon=True).start()

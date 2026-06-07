@@ -1780,12 +1780,6 @@ const PARAM_TIPS = {
   min_parking_sign_width:'Min pixel width for parking sign trigger (0 = disabled)'
 };
 const PARAM_GROUPS = [
-  { node: 'traffic_light_detector', label: 'Traffic Light', params: [
-    'red_h_low1','red_h_high1','red_h_low2','red_h_high2',
-    'yellow_h_low','yellow_h_high','green_h_low','green_h_high',
-    'sat_min','val_min','min_circle_radius','max_circle_radius',
-    'min_pixel_count','required_confidence','resize_width','heartbeat_sec','show_debug'
-  ]},
   { node: 'line_follower_camera', label: 'Line Follower', params: [
     'n_scanlines','min_valid_scanlines','min_line_width_px',
     'crop_ratio_base','search_radius_px',
