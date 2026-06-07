@@ -115,14 +115,6 @@ def generate_launch_description():
             parameters=[params_file]
         ),
 
-        # G. Traffic light detector (NEW)
-        Node(
-            package='risabot_automode',
-            executable='traffic_light_detector',
-            name='traffic_light_detector',
-            output='screen',
-            parameters=[params_file]
-        ),
 
         # H. Boom gate detector (NEW)
         Node(

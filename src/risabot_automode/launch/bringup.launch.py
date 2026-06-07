@@ -112,16 +112,6 @@ def generate_launch_description():
             ),
         ]),
 
-        # G. Traffic light detector
-        TimerAction(period=3.0, actions=[
-            Node(
-                package='risabot_automode',
-                executable='traffic_light_detector',
-                name='traffic_light_detector',
-                output='screen',
-                parameters=[params_file]
-            ),
-        ]),
 
         # G2. Tunnel wall follower
         TimerAction(period=3.0, actions=[

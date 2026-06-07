@@ -23,6 +23,7 @@ Controls:
 
 import json
 import math
+import os
 import time
 from typing import Dict
 
@@ -241,13 +242,24 @@ class ServoControllerV9(Node):
 
         # --- Record & Playback state ---
         self.rp_state = 'IDLE'       # 'IDLE', 'RECORDING', 'PLAYBACK'
-        self.record_buffer = []       # list of {dt, motor_pwm, servo_angle}
+        self.record_buffer = []       # list of {motor_pwm, servo_angle}
         self.record_last_sample_time = 0.0
         self.playback_index = 0
         self.playback_timer = None    # one-shot timer handle
 
-        # Load preset movement if available
-        self._load_recording()
+        # Multi-slot recording management
+        self.recordings_dir = os.path.expanduser('~/risabot_recordings')
+        os.makedirs(self.recordings_dir, exist_ok=True)
+        self.saved_recordings = {}     # {name: {name, sample_count, duration_sec, created_at}}
+        self.current_recording_name = ''  # name of recording loaded in buffer
+        self.active_parking_recording = ''  # recording used for parking sign trigger
+        self._recording_names_sorted = []  # sorted list for joystick cycling
+        self._cycling_index = -1  # current index when cycling with D-Pad
+
+        # Migrate old single-file recording & scan saved recordings
+        self._migrate_old_recording()
+        self._scan_saved_recordings()
+        self._load_active_parking_recording()
 
         self.get_logger().info("🎮 V9 Ready: Right Stick X = Steer | LB/RB = Challenges | A = Record/Stop | X = Play/Stop Playback")
         self._update_dash()
@@ -418,10 +430,21 @@ class ServoControllerV9(Node):
             elif self.rp_state == 'PLAYBACK':
                 self._stop_playback()
 
-        # Save movement (Button B = index 1)
+        # Save movement with auto-generated name (Button B = index 1)
         if rose(1):
             if self.rp_state == 'IDLE' and len(self.record_buffer) > 0:
-                self._save_recording()
+                import datetime
+                auto_name = datetime.datetime.now().strftime('rec_%Y%m%d_%H%M%S')
+                self._save_recording(auto_name)
+
+        # D-Pad Left/Right to cycle through saved recordings (only in IDLE + manual)
+        dpad_x = axis(6)
+        prev_dpad_x = self.prev_axes[6] if 6 < len(self.prev_axes) else 0.0
+        if self.rp_state == 'IDLE' and self.manual_mode and len(self._recording_names_sorted) > 0:
+            if dpad_x > 0.5 and prev_dpad_x <= 0.5:  # D-Pad Right
+                self._cycle_recording(1)
+            elif dpad_x < -0.5 and prev_dpad_x >= -0.5:  # D-Pad Left
+                self._cycle_recording(-1)
 
         # 1. Toggle Mode (Start=11, Y=4)
         if rose(11) or rose(4): 
@@ -765,59 +788,217 @@ class ServoControllerV9(Node):
 
     # ─────────── Record & Playback methods ───────────
 
-    def _load_recording(self) -> None:
-        """Load persistent movement recording from disk."""
-        import os
-        filepath = os.path.expanduser('~/recorded_movement.json')
-        if os.path.exists(filepath):
+    def _migrate_old_recording(self) -> None:
+        """Migrate legacy ~/recorded_movement.json to ~/risabot_recordings/default.json."""
+        old_path = os.path.expanduser('~/recorded_movement.json')
+        new_path = os.path.join(self.recordings_dir, 'default.json')
+        if os.path.exists(old_path) and not os.path.exists(new_path):
             try:
-                with open(filepath, 'r') as f:
-                    self.record_buffer = json.load(f)
-                self.get_logger().info(f"Loaded {len(self.record_buffer)} recorded movement samples from {filepath}")
+                with open(old_path, 'r') as f:
+                    samples = json.load(f)
+                recording_data = {
+                    'name': 'default',
+                    'sample_count': len(samples),
+                    'duration_sec': round(len(samples) * 0.05, 2),
+                    'created_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'samples': samples,
+                }
+                with open(new_path, 'w') as f:
+                    json.dump(recording_data, f)
+                self.get_logger().info(f'Migrated old recording ({len(samples)} samples) to {new_path}')
             except Exception as e:
-                self.get_logger().error(f"Failed to load recorded movement: {e}")
+                self.get_logger().error(f'Failed to migrate old recording: {e}')
 
-    def _save_recording(self) -> None:
-        """Save current record buffer persistently to disk."""
-        import os
-        filepath = os.path.expanduser('~/recorded_movement.json')
+    def _scan_saved_recordings(self) -> None:
+        """Scan ~/risabot_recordings/ and build metadata index."""
+        self.saved_recordings = {}
         try:
-            with open(filepath, 'w') as f:
-                json.dump(self.record_buffer, f)
-            self.get_logger().info(f"Saved {len(self.record_buffer)} movement samples to {filepath}")
+            for fname in os.listdir(self.recordings_dir):
+                if not fname.endswith('.json'):
+                    continue
+                fpath = os.path.join(self.recordings_dir, fname)
+                try:
+                    with open(fpath, 'r') as f:
+                        data = json.load(f)
+                    name = data.get('name', fname.replace('.json', ''))
+                    self.saved_recordings[name] = {
+                        'name': name,
+                        'sample_count': data.get('sample_count', len(data.get('samples', []))),
+                        'duration_sec': data.get('duration_sec', 0),
+                        'created_at': data.get('created_at', ''),
+                    }
+                except Exception:
+                    pass
         except Exception as e:
-            self.get_logger().error(f"Failed to save recorded movement: {e}")
+            self.get_logger().error(f'Failed to scan recordings: {e}')
+        self._recording_names_sorted = sorted(self.saved_recordings.keys())
+        self.get_logger().info(f'Found {len(self.saved_recordings)} saved recordings: {self._recording_names_sorted}')
+
+    def _load_active_parking_recording(self) -> None:
+        """Load the active parking recording into the playback buffer."""
+        # Check for a saved preference
+        pref_path = os.path.join(self.recordings_dir, '.active_parking')
+        if os.path.exists(pref_path):
+            try:
+                with open(pref_path, 'r') as f:
+                    name = f.read().strip()
+                if name and name in self.saved_recordings:
+                    self.active_parking_recording = name
+                    self._load_recording_by_name(name)
+                    return
+            except Exception:
+                pass
+        # Fallback: load the first available recording
+        if self._recording_names_sorted:
+            name = self._recording_names_sorted[0]
+            self.active_parking_recording = name
+            self._load_recording_by_name(name)
+
+    def _load_recording_by_name(self, name: str) -> bool:
+        """Load a named recording from disk into the playback buffer."""
+        fpath = os.path.join(self.recordings_dir, f'{name}.json')
+        if not os.path.exists(fpath):
+            self.get_logger().warn(f'Recording not found: {name}')
+            return False
+        try:
+            with open(fpath, 'r') as f:
+                data = json.load(f)
+            self.record_buffer = data.get('samples', [])
+            self.current_recording_name = name
+            self._cycling_index = self._recording_names_sorted.index(name) if name in self._recording_names_sorted else -1
+            self.get_logger().info(f'Loaded recording "{name}" ({len(self.record_buffer)} samples)')
+            self._publish_rp_state()
+            return True
+        except Exception as e:
+            self.get_logger().error(f'Failed to load recording "{name}": {e}')
+            return False
+
+    def _save_recording(self, name: str = '') -> None:
+        """Save current record buffer as a named recording to disk."""
+        if not name:
+            name = time.strftime('rec_%Y%m%d_%H%M%S')
+        # Sanitize name (alphanumeric, underscore, dash only)
+        safe_name = ''.join(c for c in name if c.isalnum() or c in ('_', '-'))
+        if not safe_name:
+            safe_name = 'unnamed'
+        fpath = os.path.join(self.recordings_dir, f'{safe_name}.json')
+        try:
+            recording_data = {
+                'name': safe_name,
+                'sample_count': len(self.record_buffer),
+                'duration_sec': round(len(self.record_buffer) * 0.05, 2),
+                'created_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'samples': self.record_buffer,
+            }
+            with open(fpath, 'w') as f:
+                json.dump(recording_data, f)
+            self.current_recording_name = safe_name
+            self.get_logger().info(f'💾 Saved recording "{safe_name}" ({len(self.record_buffer)} samples) to {fpath}')
+            self._scan_saved_recordings()  # refresh index
+            self._publish_rp_state()
+        except Exception as e:
+            self.get_logger().error(f'Failed to save recording "{safe_name}": {e}')
+
+    def _delete_recording(self, name: str) -> None:
+        """Delete a named recording from disk."""
+        fpath = os.path.join(self.recordings_dir, f'{name}.json')
+        if os.path.exists(fpath):
+            try:
+                os.remove(fpath)
+                self.get_logger().info(f'🗑 Deleted recording "{name}"')
+                if self.current_recording_name == name:
+                    self.record_buffer = []
+                    self.current_recording_name = ''
+                if self.active_parking_recording == name:
+                    self.active_parking_recording = ''
+                self._scan_saved_recordings()
+                self._publish_rp_state()
+            except Exception as e:
+                self.get_logger().error(f'Failed to delete recording "{name}": {e}')
+        else:
+            self.get_logger().warn(f'Recording not found for delete: {name}')
+
+    def _set_active_parking(self, name: str) -> None:
+        """Set a recording as the active parking recording."""
+        if name not in self.saved_recordings:
+            self.get_logger().warn(f'Cannot set active parking: "{name}" not found')
+            return
+        self.active_parking_recording = name
+        # Persist the preference
+        pref_path = os.path.join(self.recordings_dir, '.active_parking')
+        try:
+            with open(pref_path, 'w') as f:
+                f.write(name)
+        except Exception:
+            pass
+        # Also load it into the buffer so it's ready for playback
+        self._load_recording_by_name(name)
+        self.get_logger().info(f'🅿 Active parking recording set to "{name}"')
+        self._publish_rp_state()
+
+    def _cycle_recording(self, direction: int) -> None:
+        """Cycle through saved recordings with D-Pad Left/Right."""
+        if not self._recording_names_sorted:
+            return
+        self._cycling_index = (self._cycling_index + direction) % len(self._recording_names_sorted)
+        name = self._recording_names_sorted[self._cycling_index]
+        self._load_recording_by_name(name)
+        self.get_logger().info(f'📂 Cycling: [{self._cycling_index + 1}/{len(self._recording_names_sorted)}] "{name}"')
 
     def _publish_rp_state(self) -> None:
-        """Publish current record/playback state and buffer size."""
+        """Publish current record/playback state with recording metadata."""
         payload = json.dumps({
             'state': self.rp_state,
             'buffer_size': len(self.record_buffer),
             'playback_index': self.playback_index,
+            'recording_name': self.current_recording_name,
+            'active_parking_recording': self.active_parking_recording,
+            'saved_recordings': list(self.saved_recordings.values()),
         }, separators=(',', ':'))
         self.rp_state_pub.publish(String(data=payload))
 
     def _record_playback_cmd_cb(self, msg: String) -> None:
         """Handle record/playback commands from the dashboard."""
-        cmd = msg.data.strip().lower()
-        if cmd == 'record':
+        cmd = msg.data.strip()
+        cmd_lower = cmd.lower()
+
+        if cmd_lower == 'record':
             if self.rp_state == 'IDLE':
                 self._start_recording()
-        elif cmd == 'stop':
+        elif cmd_lower == 'stop':
             if self.rp_state == 'RECORDING':
                 self._stop_recording()
             elif self.rp_state == 'PLAYBACK':
                 self._stop_playback()
-        elif cmd == 'playback':
+        elif cmd_lower == 'playback':
             if self.rp_state == 'IDLE' and len(self.record_buffer) > 0:
                 self._start_playback()
-        elif cmd == 'save':
-            self._save_recording()
+        elif cmd_lower == 'list':
+            self._scan_saved_recordings()
+        elif cmd_lower.startswith('save:'):
+            name = cmd[5:].strip()
+            if self.rp_state == 'IDLE' and len(self.record_buffer) > 0:
+                self._save_recording(name)
+        elif cmd_lower == 'save':
+            if self.rp_state == 'IDLE' and len(self.record_buffer) > 0:
+                self._save_recording()
+        elif cmd_lower.startswith('load:'):
+            name = cmd[5:].strip()
+            if self.rp_state == 'IDLE':
+                self._load_recording_by_name(name)
+        elif cmd_lower.startswith('delete:'):
+            name = cmd[7:].strip()
+            if self.rp_state == 'IDLE':
+                self._delete_recording(name)
+        elif cmd_lower.startswith('set_active:'):
+            name = cmd[11:].strip()
+            self._set_active_parking(name)
         self._publish_rp_state()
 
     def _start_recording(self) -> None:
         """Enter RECORDING state: clear buffer, begin sampling."""
         self.record_buffer = []
+        self.current_recording_name = ''
         self.rp_state = 'RECORDING'
         self.get_logger().info(f'🔴 RECORDING started (buffer cleared)')
         self._publish_rp_state()
@@ -825,7 +1006,7 @@ class ServoControllerV9(Node):
     def _stop_recording(self) -> None:
         """Exit RECORDING state: keep buffer, return to IDLE."""
         self.rp_state = 'IDLE'
-        self.get_logger().info(f'⏹ RECORDING stopped ({len(self.record_buffer)} samples saved)')
+        self.get_logger().info(f'⏹ RECORDING stopped ({len(self.record_buffer)} samples)')
         self._publish_rp_state()
 
     def _start_playback(self) -> None:
@@ -835,7 +1016,7 @@ class ServoControllerV9(Node):
             return
         self.rp_state = 'PLAYBACK'
         self.playback_index = 0
-        self.get_logger().info(f'▶ PLAYBACK started ({len(self.record_buffer)} samples)')
+        self.get_logger().info(f'▶ PLAYBACK started "{self.current_recording_name}" ({len(self.record_buffer)} samples)')
         self._publish_rp_state()
         # Start the periodic playback timer at 20Hz (0.05 seconds)
         self.playback_timer = self.create_timer(0.05, self._playback_timer_cb)
