@@ -11,3 +11,4 @@ dist/
 FYP2_README.md
 /src/ros2_astra_camera/COLCON_IGNORE
 /src/ydlidar_ros2_driver/COLCON_IGNORE
+tools/deploy_to_robots.py

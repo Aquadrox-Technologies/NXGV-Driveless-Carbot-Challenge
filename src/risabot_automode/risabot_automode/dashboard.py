@@ -181,6 +181,9 @@ class DashboardNode(Node):
             'rp_state': 'IDLE',
             'rp_buffer_size': 0,
             'rp_playback_index': 0,
+            'rp_recording_name': '',
+            'rp_active_parking': '',
+            'rp_saved_recordings': [],
             'parking_sign_detected': None,
         }
         self.topic_last_update = {
@@ -211,6 +214,7 @@ class DashboardNode(Node):
 
         # Record & Playback command publisher
         self.rp_cmd_pub = self.create_publisher(String, RECORD_PLAYBACK_CMD_TOPIC, 10)
+        self.challenge_pub = self.create_publisher(String, SET_CHALLENGE_TOPIC, 10)
 
         # State tracking
         self._state_entry_time = time.time()
@@ -243,7 +247,7 @@ class DashboardNode(Node):
         # Camera subscriptions (SENSOR_DATA QoS to match camera publisher)
         self.create_subscription(Image, CAMERA_IMAGE_TOPIC, lambda msg: self._image_cb(msg, 'raw'), qos)
         self.create_subscription(Image, CAMERA_DEBUG_LINE_TOPIC, lambda msg: self._image_cb(msg, 'line_follower'), qos)
-        self.create_subscription(Image, CAMERA_DEBUG_TL_TOPIC, lambda msg: self._image_cb(msg, 'traffic_light'), qos)
+        self.create_subscription(Image, SIGNAGE_DEBUG_TOPIC, lambda msg: self._image_cb(msg, 'traffic_light'), qos)
         self.create_subscription(Image, CAMERA_DEBUG_OBS_TOPIC, lambda msg: self._image_cb(msg, 'obstacle'), qos)
         self.create_subscription(Image, SIGNAGE_DEBUG_TOPIC, lambda msg: self._image_cb(msg, 'signage'), qos)
 
@@ -536,6 +540,9 @@ class DashboardNode(Node):
                 self.data['rp_state'] = str(payload.get('state', 'IDLE'))
                 self.data['rp_buffer_size'] = int(payload.get('buffer_size', 0))
                 self.data['rp_playback_index'] = int(payload.get('playback_index', 0))
+                self.data['rp_recording_name'] = str(payload.get('recording_name', ''))
+                self.data['rp_active_parking'] = str(payload.get('active_parking_recording', ''))
+                self.data['rp_saved_recordings'] = list(payload.get('saved_recordings', []))
                 self.topic_last_update['record_playback_state'] = time.monotonic()
         except Exception:
             pass
@@ -907,14 +914,17 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             
             # Auto-toggle show_debug for performance 
             def auto_toggle_debug(selected_view):
-                mapping = {
-                    'line_follower': 'line_follower_camera',
-                    'traffic_light': 'traffic_light_detector',
-                    'obstacle': 'obstacle_avoidance_camera',
-                    'signage': 'signage_detector'
-                }
-                for v, node_name in mapping.items():
-                    val_str = 'true' if v == selected_view else 'false'
+                nodes_to_enable = set()
+                if selected_view == 'line_follower':
+                    nodes_to_enable.add('line_follower_camera')
+                elif selected_view == 'obstacle':
+                    nodes_to_enable.add('obstacle_avoidance_camera')
+                elif selected_view in ('traffic_light', 'signage'):
+                    nodes_to_enable.add('signage_detector')
+                
+                all_nodes = {'line_follower_camera', 'obstacle_avoidance_camera', 'signage_detector'}
+                for node_name in all_nodes:
+                    val_str = 'true' if node_name in nodes_to_enable else 'false'
                     _ros_set_param(node_name, 'show_debug', val_str)
                     
             threading.Thread(target=auto_toggle_debug, args=(view,), daemon=True).start()
@@ -937,6 +947,28 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                         result['default'] = _DEFAULT_PARAMS[node][param]
                 else:
                     result = {'ok': False, 'error': err}
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode())
+        elif self.path.startswith('/api/recording_data'):
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            name = qs.get('name', [''])[0]
+            result = {'ok': False, 'error': 'No name specified'}
+            if name:
+                recordings_dir = os.path.expanduser('~/risabot_recordings')
+                fpath = os.path.join(recordings_dir, f'{name}.json')
+                if os.path.exists(fpath):
+                    try:
+                        with open(fpath, 'r') as f:
+                            data = json.load(f)
+                        result = {'ok': True, 'data': data}
+                    except Exception as e:
+                        result = {'ok': False, 'error': str(e)}
+                else:
+                    result = {'ok': False, 'error': 'Recording not found'}
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
@@ -1007,11 +1039,41 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 action = data.get('action', '')
-                if action in ('record', 'stop', 'playback', 'save') and _node_ref:
-                    _node_ref.rp_cmd_pub.publish(String(data=action))
-                    resp = {'ok': True, 'msg': f'Sent: {action}'}
+                name = data.get('name', '')
+                # Build the command string for servo_controller
+                valid_simple = ('record', 'stop', 'playback', 'save', 'list')
+                valid_named = ('save', 'load', 'delete', 'set_active')
+                if action in valid_simple and not name:
+                    cmd_str = action
+                elif action in valid_named and name:
+                    cmd_str = f'{action}:{name}'
+                else:
+                    cmd_str = ''
+                if cmd_str and _node_ref:
+                    _node_ref.rp_cmd_pub.publish(String(data=cmd_str))
+                    resp = {'ok': True, 'msg': f'Sent: {cmd_str}'}
                 else:
                     resp = {'ok': False, 'error': f'Invalid action: {action}'}
+            except Exception as e:
+                resp = {'ok': False, 'error': str(e)}
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode())
+        elif self.path == '/api/reset_competition':
+            content_len = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_len) if content_len > 0 else b'{}'
+            try:
+                data = json.loads(body) if body else {}
+                cmd = data.get('command', 'reset').upper()
+                if cmd in ('RESET', 'LAP1', 'LAP2') and _node_ref:
+                    msg = String()
+                    msg.data = cmd
+                    _node_ref.challenge_pub.publish(msg)
+                    resp = {'ok': True, 'msg': f'Sent competition command: {cmd}'}
+                else:
+                    resp = {'ok': False, 'error': f'Invalid command: {cmd}'}
             except Exception as e:
                 resp = {'ok': False, 'error': str(e)}
             self.send_response(200)

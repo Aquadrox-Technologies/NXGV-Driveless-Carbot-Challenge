@@ -201,6 +201,17 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .mode-AUTO { background: #4caf50; color: #fff; box-shadow: 0 0 8px rgba(76,175,80,0.3); }
   .mode-MANUAL { background: #d32f2f; color: #fff; box-shadow: 0 0 8px rgba(211,47,47,0.3); }
 
+  .state-action-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  .state-action-btn:active {
+    transform: translateY(0);
+  }
+  .state-action-btn.reset:hover { background: rgba(223, 142, 29, 0.18) !important; border-color: var(--warning) !important; }
+  .state-action-btn.lap1:hover { background: rgba(30, 102, 245, 0.18) !important; border-color: var(--accent) !important; }
+  .state-action-btn.lap2:hover { background: rgba(66, 165, 245, 0.18) !important; border-color: #42a5f5 !important; }
+
   /* ===== RECORD & PLAYBACK ===== */
   .rp-state-badge {
     display: inline-block;
@@ -1008,6 +1019,19 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div id="stopReasonRow" style="margin-top:6px;">
         <span id="stopBadge" style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:0.75em;font-weight:700;letter-spacing:0.5px;background:rgba(166,227,161,0.15);color:#a6e3a1;">DRIVING</span>
       </div>
+
+      <!-- Reset & Lap Override Buttons -->
+      <div style="margin-top:14px; display:flex; gap:6px;">
+        <button class="state-action-btn reset" onclick="sendCompCmd('RESET')" style="flex:1; padding:6px 4px; border-radius:6px; border:1px solid rgba(223,142,29,0.3); font-size:0.7em; font-weight:700; cursor:pointer; background:rgba(223,142,29,0.08); color:var(--warning); font-family:inherit; text-transform:uppercase; letter-spacing:0.5px; transition:all 0.2s;">
+          Reset
+        </button>
+        <button class="state-action-btn lap1" onclick="sendCompCmd('LAP1')" style="flex:1; padding:6px 4px; border-radius:6px; border:1px solid rgba(30,102,245,0.3); font-size:0.7em; font-weight:700; cursor:pointer; background:rgba(30,102,245,0.08); color:var(--accent); font-family:inherit; text-transform:uppercase; letter-spacing:0.5px; transition:all 0.2s;">
+          Lap 1
+        </button>
+        <button class="state-action-btn lap2" onclick="sendCompCmd('LAP2')" style="flex:1; padding:6px 4px; border-radius:6px; border:1px solid rgba(66,165,245,0.3); font-size:0.7em; font-weight:700; cursor:pointer; background:rgba(66,165,245,0.08); color:#42a5f5; font-family:inherit; text-transform:uppercase; letter-spacing:0.5px; transition:all 0.2s;">
+          Lap 2
+        </button>
+      </div>
     </div>
 
     <!-- Traffic Light -->
@@ -1381,6 +1405,26 @@ function rpCmd(action) {
   }).catch(() => {});
 }
 
+function sendCompCmd(cmd) {
+  fetch('/api/reset_competition', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({command: cmd})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if(data.ok) {
+      addLogEntry(`Sent command: <span class="log-val">${cmd}</span>`);
+      update();
+    } else {
+      addLogEntry(`⚠️ Error: ${data.error}`);
+    }
+  })
+  .catch(err => {
+    addLogEntry(`⚠️ Fetch Error: ${err}`);
+  });
+}
+
 let last_data_time = 0;
 function update() {
   const fetchStart = performance.now();
@@ -1736,12 +1780,6 @@ const PARAM_TIPS = {
   min_parking_sign_width:'Min pixel width for parking sign trigger (0 = disabled)'
 };
 const PARAM_GROUPS = [
-  { node: 'traffic_light_detector', label: 'Traffic Light', params: [
-    'red_h_low1','red_h_high1','red_h_low2','red_h_high2',
-    'yellow_h_low','yellow_h_high','green_h_low','green_h_high',
-    'sat_min','val_min','min_circle_radius','max_circle_radius',
-    'min_pixel_count','required_confidence','resize_width','heartbeat_sec','show_debug'
-  ]},
   { node: 'line_follower_camera', label: 'Line Follower', params: [
     'n_scanlines','min_valid_scanlines','min_line_width_px',
     'crop_ratio_base','search_radius_px',
@@ -2041,9 +2079,8 @@ update();
         el.style.cssText = 'font:bold 11px JetBrains Mono,monospace; color:#fff; padding:6px 8px; position:absolute; bottom:8px; left:8px; right:8px; background:rgba(0,0,0,0.7); border-radius:8px; display:none;';
         canvas.parentElement.style.position = 'relative';
         canvas.parentElement.appendChild(el);
-      }
-      if(d.tunnel && d.angular_z !== undefined){
-        var dir = d.angular_z > 0.01 ? 'â† LEFT' : (d.angular_z < -0.01 ? 'RIGHT â†’' : 'â†‘ STRAIGHT');
+if(d.tunnel && d.angular_z !== undefined){
+        var dir = d.angular_z > 0.01 ? 'â†  LEFT' : (d.angular_z < -0.01 ? 'RIGHT â†’' : 'â†‘ STRAIGHT');
         var color = Math.abs(d.angular_z) > 0.3 ? '#ff5252' : '#69f0ae';
         el.innerHTML = 'L:' + (d.left_dist||0).toFixed(2) + 'm  R:' + (d.right_dist||0).toFixed(2) + 'm  lat:' + (d.dist_error||0).toFixed(3) + '  <span style="color:'+color+'">Ï‰:' + (d.angular_z||0).toFixed(2) + ' ' + dir + '</span>';
         el.style.display = 'block';
@@ -2059,28 +2096,30 @@ update();
 </body>
 </html>"""
 
-
 # ======================== TEACH HTML Dashboard ========================
 TEACH_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RISA-Bot â€” Record &amp; Playback</title>
+<title>RISA-Bot &mdash; Record &amp; Playback</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0f0f13;
-    --surface: #1a1a22;
-    --surface2: #252530;
-    --text: #e6e9ef;
-    --accent: #42a5f5;
-    --success: #69f0ae;
-    --danger: #ff5252;
-    --warning: #ffd740;
-    --recording: #ff5252;
-    --playback: #69f0ae;
-    --idle: #6c7086;
+    --bg: #090d16;
+    --surface: #111827;
+    --surface2: #1f2937;
+    --surface-hover: #2d3748;
+    --text: #f3f4f6;
+    --text-muted: #9ca3af;
+    --accent: #3b82f6; /* Blue */
+    --accent-hover: #2563eb;
+    --success: #10b981; /* Emerald */
+    --danger: #ef4444; /* Red */
+    --warning: #f59e0b; /* Amber */
+    --recording: #ef4444;
+    --playback: #10b981;
+    --idle: #6b7280;
     --radius: 16px;
   }
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -2105,27 +2144,22 @@ TEACH_HTML = """<!DOCTYPE html>
     z-index: 100;
   }
   header h1 {
-    font-size: 1.6em;
+    font-size: 1.4em;
     font-weight: 800;
     letter-spacing: -0.5px;
-    background: linear-gradient(135deg, var(--accent), var(--danger), var(--success));
-    background-size: 200% 200%;
-    animation: gradShift 4s ease infinite;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: #fff;
   }
-  @keyframes gradShift { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
   .nav-link {
     color: var(--accent);
     text-decoration: none;
     font-size: 0.85em;
     font-weight: 600;
     padding: 6px 16px;
-    border: 1px solid rgba(66,165,245,0.3);
+    border: 1px solid rgba(59,130,246,0.3);
     border-radius: 8px;
     transition: all 0.2s;
   }
-  .nav-link:hover { background: rgba(66,165,245,0.1); border-color: var(--accent); }
+  .nav-link:hover { background: rgba(59,130,246,0.1); border-color: var(--accent); }
   .header-right { display: flex; align-items: center; gap: 16px; }
   .mode-pill {
     padding: 6px 14px;
@@ -2135,19 +2169,28 @@ TEACH_HTML = """<!DOCTYPE html>
     letter-spacing: 0.5px;
     transition: all 0.3s;
   }
-  .mode-pill.auto { background: rgba(105,240,174,0.2); color: var(--success); }
-  .mode-pill.manual { background: rgba(255,82,82,0.2); color: var(--danger); }
+  .mode-pill.auto { background: rgba(16,185,129,0.2); color: var(--success); }
+  .mode-pill.manual { background: rgba(239,68,68,0.2); color: var(--danger); }
 
-  /* ===== LAYOUT ===== */
-  .main-grid {
+  /* ===== 3-COLUMN LAYOUT ===== */
+  .teach-grid {
     display: grid;
-    grid-template-columns: 1fr 380px;
+    grid-template-columns: 340px 1fr 380px;
     gap: 20px;
     padding: 20px;
-    max-width: 1400px;
+    max-width: 1600px;
     margin: 0 auto;
   }
-  @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 1200px) {
+    .teach-grid {
+      grid-template-columns: 340px 1fr;
+    }
+  }
+  @media (max-width: 900px) {
+    .teach-grid {
+      grid-template-columns: 1fr;
+    }
+  }
 
   /* ===== CARDS ===== */
   .card {
@@ -2162,14 +2205,18 @@ TEACH_HTML = """<!DOCTYPE html>
     box-shadow: 0 8px 32px rgba(0,0,0,0.3);
   }
   .card h2 {
-    font-size: 0.7em;
+    font-size: 0.75em;
     text-transform: uppercase;
     letter-spacing: 3px;
-    color: #666;
+    color: var(--text-muted);
     margin-bottom: 16px;
     font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   .left-col { display: flex; flex-direction: column; gap: 20px; }
+  .middle-col { display: flex; flex-direction: column; gap: 20px; }
   .right-col { display: flex; flex-direction: column; gap: 20px; }
 
   /* ===== RECORD & PLAYBACK PANEL ===== */
@@ -2187,24 +2234,24 @@ TEACH_HTML = """<!DOCTYPE html>
     transition: all 0.4s;
   }
   .rp-state-badge.idle {
-    background: rgba(108,112,134,0.15);
+    background: rgba(107,114,128,0.15);
     color: var(--idle);
-    border: 1px solid rgba(108,112,134,0.3);
+    border: 1px solid rgba(107,114,128,0.3);
   }
   .rp-state-badge.recording {
-    background: rgba(255,82,82,0.15);
+    background: rgba(239,68,68,0.15);
     color: var(--recording);
-    border: 1px solid rgba(255,82,82,0.4);
+    border: 1px solid rgba(239,68,68,0.4);
     animation: recPulse 1.5s ease infinite;
   }
-  @keyframes recPulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,82,82,0.3)} 50%{box-shadow:0 0 20px 4px rgba(255,82,82,0.2)} }
+  @keyframes recPulse { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0.3)} 50%{box-shadow:0 0 20px 4px rgba(239,68,68,0.2)} }
   .rp-state-badge.playback {
-    background: rgba(105,240,174,0.15);
+    background: rgba(16,185,129,0.15);
     color: var(--playback);
-    border: 1px solid rgba(105,240,174,0.4);
+    border: 1px solid rgba(16,185,129,0.4);
     animation: playPulse 1.5s ease infinite;
   }
-  @keyframes playPulse { 0%,100%{box-shadow:0 0 0 0 rgba(105,240,174,0.3)} 50%{box-shadow:0 0 20px 4px rgba(105,240,174,0.2)} }
+  @keyframes playPulse { 0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.3)} 50%{box-shadow:0 0 20px 4px rgba(16,185,129,0.2)} }
 
   /* Control Buttons */
   .rp-buttons {
@@ -2231,47 +2278,47 @@ TEACH_HTML = """<!DOCTYPE html>
   .rp-btn .label { font-size: 0.75em; letter-spacing: 1px; text-transform: uppercase; }
 
   .rp-btn.record {
-    background: rgba(255,82,82,0.1);
+    background: rgba(239,68,68,0.1);
     color: var(--recording);
-    border-color: rgba(255,82,82,0.3);
+    border-color: rgba(239,68,68,0.3);
   }
-  .rp-btn.record:hover { background: rgba(255,82,82,0.2); border-color: var(--recording); transform: translateY(-2px); }
+  .rp-btn.record:hover { background: rgba(239,68,68,0.2); border-color: var(--recording); transform: translateY(-2px); }
   .rp-btn.record:active { transform: scale(0.96); }
   .rp-btn.record.active {
     background: var(--recording);
     color: #fff;
     border-color: var(--recording);
-    box-shadow: 0 0 24px rgba(255,82,82,0.4);
+    box-shadow: 0 0 24px rgba(239,68,68,0.4);
   }
 
   .rp-btn.stop {
-    background: rgba(255,215,64,0.1);
+    background: rgba(245,158,11,0.1);
     color: var(--warning);
-    border-color: rgba(255,215,64,0.3);
+    border-color: rgba(245,158,11,0.3);
   }
-  .rp-btn.stop:hover { background: rgba(255,215,64,0.2); border-color: var(--warning); transform: translateY(-2px); }
+  .rp-btn.stop:hover { background: rgba(245,158,11,0.2); border-color: var(--warning); transform: translateY(-2px); }
   .rp-btn.stop:active { transform: scale(0.96); }
 
   .rp-btn.play {
-    background: rgba(105,240,174,0.1);
+    background: rgba(16,185,129,0.1);
     color: var(--playback);
-    border-color: rgba(105,240,174,0.3);
+    border-color: rgba(16,185,129,0.3);
   }
-  .rp-btn.play:hover { background: rgba(105,240,174,0.2); border-color: var(--playback); transform: translateY(-2px); }
+  .rp-btn.play:hover { background: rgba(16,185,129,0.2); border-color: var(--playback); transform: translateY(-2px); }
   .rp-btn.play:active { transform: scale(0.96); }
   .rp-btn.play.active {
     background: var(--playback);
     color: #111;
     border-color: var(--playback);
-    box-shadow: 0 0 24px rgba(105,240,174,0.4);
+    box-shadow: 0 0 24px rgba(16,185,129,0.4);
   }
 
   .rp-btn.save {
-    background: rgba(30,144,255,0.1);
-    color: #1e90ff;
-    border-color: rgba(30,144,255,0.3);
+    background: rgba(59,130,246,0.1);
+    color: var(--accent);
+    border-color: rgba(59,130,246,0.3);
   }
-  .rp-btn.save:hover { background: rgba(30,144,255,0.2); border-color: #1e90ff; transform: translateY(-2px); }
+  .rp-btn.save:hover { background: rgba(59,130,246,0.2); border-color: var(--accent); transform: translateY(-2px); }
   .rp-btn.save:active { transform: scale(0.96); }
 
   .rp-btn:disabled {
@@ -2302,7 +2349,7 @@ TEACH_HTML = """<!DOCTYPE html>
   }
   .rp-info-item .label {
     font-size: 0.7em;
-    color: #666;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 1.5px;
     margin-top: 4px;
@@ -2331,34 +2378,6 @@ TEACH_HTML = """<!DOCTYPE html>
     animation: shimmer 1.5s infinite;
   }
   @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
-
-  /* Controller Hint */
-  .controller-hint {
-    background: var(--surface2);
-    border-radius: 10px;
-    padding: 14px 16px;
-    font-size: 0.8em;
-    color: #888;
-    border: 1px dashed rgba(255,255,255,0.08);
-  }
-  .controller-hint strong { color: var(--accent); }
-  .hint-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 4px 0;
-  }
-  .hint-key {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 6px;
-    background: rgba(66,165,245,0.15);
-    color: var(--accent);
-    font-weight: 700;
-    font-size: 0.9em;
-    min-width: 50px;
-    text-align: center;
-  }
 
   /* ===== CAMERA ===== */
   .cam-panel {
@@ -2391,7 +2410,7 @@ TEACH_HTML = """<!DOCTYPE html>
   .cam-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
   .cam-btn:hover:not(.active) { background: rgba(255,255,255,0.05); color: #aaa; }
 
-  /* ===== DATA CARDS (Odometry) ===== */
+  /* ===== ODOMETRY / DATA CARDS ===== */
   .data-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -2407,7 +2426,7 @@ TEACH_HTML = """<!DOCTYPE html>
     font-size: 0.6em;
     text-transform: uppercase;
     letter-spacing: 2px;
-    color: #555;
+    color: var(--text-muted);
     margin-bottom: 6px;
     font-weight: 700;
   }
@@ -2420,7 +2439,7 @@ TEACH_HTML = """<!DOCTYPE html>
   }
   .data-val.green { color: var(--success); }
   .data-val.yellow { color: var(--warning); }
-  .data-unit { font-size: 0.35em; color: #555; margin-left: 4px; }
+  .data-unit { font-size: 0.35em; color: var(--text-muted); margin-left: 4px; }
 
   /* ===== STATUS DOT ===== */
   .status-dot {
@@ -2435,7 +2454,6 @@ TEACH_HTML = """<!DOCTYPE html>
   .status-dot.offline { background: #555; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-  /* Reset button */
   .reset-btn {
     margin-top: 10px;
     padding: 8px 24px;
@@ -2449,22 +2467,283 @@ TEACH_HTML = """<!DOCTYPE html>
     transition: all 0.2s;
     font-family: inherit;
   }
-  .reset-btn:hover { background: rgba(255,255,255,0.08); color: #fff; border-color: rgba(255,255,255,0.2); }
+  .reset-btn:hover { background: var(--surface-hover); color: #fff; border-color: rgba(255,255,255,0.2); }
+
+  /* ===== RECORDING MANAGER ===== */
+  .active-parking-info {
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 0.85em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .active-parking-info .badge {
+    background: var(--success);
+    color: #111;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.85em;
+  }
+  .recordings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 340px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .recordings-list::-webkit-scrollbar {
+    width: 6px;
+  }
+  .recordings-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .recordings-list::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+  }
+  .recordings-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.2);
+  }
+  .no-recordings {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.9em;
+    text-align: center;
+    padding: 20px 0;
+  }
+  .recording-item {
+    background: var(--surface2);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .recording-item:hover {
+    border-color: rgba(66, 165, 245, 0.3);
+    background: var(--surface-hover);
+    transform: translateY(-1px);
+  }
+  .recording-item.selected {
+    border-color: var(--accent);
+    background: rgba(59, 130, 246, 0.08);
+  }
+  .recording-item.active-parking {
+    border-left: 4px solid var(--success);
+  }
+  .recording-item.current {
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.15);
+  }
+  .rec-name-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .rec-name {
+    font-weight: 700;
+    font-size: 0.9em;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .star-badge {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success);
+    font-size: 0.7em;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+  .load-badge {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--accent);
+    font-size: 0.7em;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+  }
+  .rec-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 0.75em;
+    color: var(--text-muted);
+  }
+  .rec-date {
+    width: 100%;
+    margin-top: 2px;
+    color: #666;
+  }
+  .rec-actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+  .action-btn {
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.75em;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+    background: rgba(255,255,255,0.05);
+    color: var(--text);
+  }
+  .action-btn:hover { background: rgba(255,255,255,0.1); }
+  .action-btn.load:hover { border-color: var(--accent); color: var(--accent); background: rgba(59, 130, 246, 0.05); }
+  .action-btn.play:hover { border-color: var(--success); color: var(--success); background: rgba(16, 185, 129, 0.05); }
+  .action-btn.set-active:hover { border-color: var(--warning); color: var(--warning); background: rgba(245, 158, 11, 0.05); }
+  .action-btn.delete:hover { border-color: var(--danger); color: var(--danger); background: rgba(239, 68, 68, 0.05); }
+
+  /* ===== TIMELINE VIEWER ===== */
+  .timeline-card {
+    display: flex;
+    flex-direction: column;
+  }
+  .canvas-container {
+    width: 100%;
+    background: #070a13;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.04);
+    padding: 10px;
+  }
+  .timeline-hint {
+    text-align: center;
+    font-size: 0.8em;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+
+  /* ===== CONTROLLER HINTS ===== */
+  .controller-hint {
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 0.8em;
+    color: var(--text-muted);
+    border: 1px dashed rgba(255,255,255,0.08);
+  }
+  .hint-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+  }
+  .hint-key {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 6px;
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 0.9em;
+    min-width: 50px;
+    text-align: center;
+  }
+
+  /* ===== SAVE DIALOG MODAL ===== */
+  .modal-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .modal-content {
+    background: var(--surface);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: var(--radius);
+    padding: 30px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
+  }
+  .modal-overlay.active .modal-content {
+    transform: scale(1);
+  }
+  .modal-content h3 {
+    margin-bottom: 15px;
+    font-size: 1.3em;
+    font-weight: 700;
+  }
+  .modal-content input {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 1em;
+    margin-bottom: 20px;
+  }
+  .modal-content input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+  }
+  .modal-btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    font-family: inherit;
+  }
+  .modal-btn.cancel {
+    background: var(--surface2);
+    color: var(--text);
+  }
+  .modal-btn.cancel:hover { background: var(--surface-hover); }
+  .modal-btn.confirm {
+    background: var(--accent);
+    color: #fff;
+  }
+  .modal-btn.confirm:hover { background: var(--accent-hover); }
 </style>
 </head>
 <body>
 
 <!-- HEADER -->
 <header>
-  <h1>ðŸ¤– RISA-Bot / Record &amp; Playback</h1>
+  <h1>🤖 RISA-Bot / Record &amp; Playback</h1>
   <div class="header-right">
     <span class="mode-pill" id="modeBadge">WAITING</span>
-    <a href="/" class="nav-link">â† Dashboard</a>
+    <a href="/" class="nav-link">← Dashboard</a>
   </div>
 </header>
 
-<!-- MAIN LAYOUT -->
-<div class="main-grid">
+<!-- MAIN 3-COLUMN GRID -->
+<div class="teach-grid">
 
   <!-- LEFT COLUMN: Camera + Odometry -->
   <div class="left-col">
@@ -2476,7 +2755,7 @@ TEACH_HTML = """<!DOCTYPE html>
              onerror="this.style.display='none'; document.getElementById('camOff').style.display='flex';"
              onload="this.style.display='block'; document.getElementById('camOff').style.display='none';"/>
         <div id="camOff" style="display:none; color:#555; width:100%; height:100%; align-items:center; justify-content:center; flex-direction:column; font-size:1.2em; font-weight:700; min-height:240px;">
-          <div style="font-size:2em; margin-bottom:8px; opacity:0.4;">âˆ…</div>
+          <div style="font-size:2em; margin-bottom:8px; opacity:0.4;">∅</div>
           <div>NO SIGNAL</div>
         </div>
       </div>
@@ -2488,47 +2767,19 @@ TEACH_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Odometry Data -->
-    <div class="card">
-      <h2><span class="status-dot" id="odomDot"></span> Odometry</h2>
-      <div class="data-row">
-        <div class="data-card">
-          <h3>Distance</h3>
-          <div class="data-val"><span id="odomDist">0.00</span><span class="data-unit">m</span></div>
-        </div>
-        <div class="data-card">
-          <h3>Speed</h3>
-          <div class="data-val green"><span id="odomSpeed">0.000</span><span class="data-unit">m/s</span></div>
-        </div>
-        <div class="data-card">
-          <h3>X Position</h3>
-          <div class="data-val"><span id="posX">0.00</span><span class="data-unit">m</span></div>
-        </div>
-        <div class="data-card">
-          <h3>Y Position</h3>
-          <div class="data-val"><span id="posY">0.00</span><span class="data-unit">m</span></div>
-        </div>
-      </div>
-      <div style="text-align:center;">
-        <button class="reset-btn" onclick="resetOdom()">⟲ Reset Odometry</button>
-      </div>
-    </div>
-
   </div>
 
-  <!-- RIGHT COLUMN: Record & Playback Controls -->
-  <div class="right-col">
+  <!-- MIDDLE COLUMN: Live Controls + Visual Timeline -->
+  <div class="middle-col">
 
-    <!-- Record & Playback Card -->
+    <!-- Record & Playback Controls -->
     <div class="card">
-      <h2>🎬 Record &amp; Playback</h2>
+      <h2>🎬 Recording Interface</h2>
 
-      <!-- State Display -->
       <div class="rp-state-display">
         <div class="rp-state-badge idle" id="rpStateBadge">IDLE</div>
       </div>
 
-      <!-- Control Buttons -->
       <div class="rp-buttons">
         <button class="rp-btn record" id="rpBtnRecord" onclick="rpCmd('record')">
           <span class="icon">🔴</span>
@@ -2542,18 +2793,16 @@ TEACH_HTML = """<!DOCTYPE html>
           <span class="icon">▶</span>
           <span class="label">Play</span>
         </button>
-        <button class="rp-btn save" id="rpBtnSave" onclick="rpCmd('save')">
+        <button class="rp-btn save" id="rpBtnSave" onclick="showSaveModal()">
           <span class="icon">💾</span>
           <span class="label">Save</span>
         </button>
       </div>
 
-      <!-- Progress Bar (visible during playback) -->
       <div class="progress-track" id="rpProgress" style="display:none;">
         <div class="progress-fill" id="rpProgressFill" style="width:0%"></div>
       </div>
 
-      <!-- Buffer / Progress Info -->
       <div class="rp-info">
         <div class="rp-info-item">
           <div class="value" id="rpBufferSize">0</div>
@@ -2566,9 +2815,37 @@ TEACH_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- Timeline Viewer -->
+    <div class="card timeline-card">
+      <h2>📈 Recording Timeline</h2>
+      <div class="canvas-container">
+        <canvas id="timelineCanvas" style="width: 100%; height: 250px; display: block;"></canvas>
+      </div>
+      <div class="timeline-hint">
+        <span style="color: #3b82f6;">■ Motor PWM (±255)</span> | <span style="color: #f97316;">■ Servo Angle (40–140)</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT COLUMN: Saved Recordings + Steering + Controller Mapping -->
+  <div class="right-col">
+
+    <!-- Recording Manager Card -->
+    <div class="card">
+      <h2>📂 Saved Recordings</h2>
+      <div class="active-parking-info">
+        <span>Active Parking:</span>
+        <span class="badge" id="activeParkingBadge">None</span>
+      </div>
+      <div class="recordings-list" id="recordingsList">
+        <div class="no-recordings">Loading recordings...</div>
+      </div>
+    </div>
+
     <!-- Steering Info -->
     <div class="card">
-      <h2>Steering</h2>
+      <h2>Steering Status</h2>
       <div class="data-row">
         <div class="data-card">
           <h3>Lane Error</h3>
@@ -2586,19 +2863,31 @@ TEACH_HTML = """<!DOCTYPE html>
       <h2>🎮 Controller Mapping</h2>
       <div class="controller-hint">
         <div class="hint-row"><span class="hint-key">A</span> Record / Stop Recording</div>
-        <div class="hint-row"><span class="hint-key">B</span> Save Movement</div>
+        <div class="hint-row"><span class="hint-key">B</span> Save Recording (Quick)</div>
         <div class="hint-row"><span class="hint-key">X</span> Play / Stop Playback</div>
         <div class="hint-row"><span class="hint-key">Y</span> Auto/Manual Mode</div>
-        <div class="hint-row"><span class="hint-key">LB/RB</span> Cycle Challenge State</div>
-        <div class="hint-row"><span class="hint-key">D-Pad</span> Speed ▲/▼</div>
+        <div class="hint-row"><span class="hint-key">D-Pad L/R</span> Cycle Recordings</div>
+        <div class="hint-row"><span class="hint-key">D-Pad U/D</span> Speed ▲/▼</div>
       </div>
     </div>
 
   </div>
 </div>
 
+<!-- SAVE MODAL -->
+<div class="modal-overlay" id="saveModal">
+  <div class="modal-content">
+    <h3>Save Recording</h3>
+    <input type="text" id="saveNameInput" placeholder="Enter recording name" maxlength="32">
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeSaveModal()">Cancel</button>
+      <button class="modal-btn confirm" onclick="confirmSave()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
-// â”€â”€ Camera View Switching â”€â”€
+// ── Camera View Switching ──
 function setCam(viewName) {
   fetch('/api/set_cam_view?view=' + viewName);
   document.getElementById('camStream').src = '/camera_feed?v=' + viewName + '&t=' + Date.now();
@@ -2608,7 +2897,7 @@ function setCam(viewName) {
   });
 }
 
-// â”€â”€ Reset Odometry â”€â”€
+// ── Reset Odometry ──
 function resetOdom() {
   fetch('/api/reset_odom', {method:'POST'}).then(() => {
     document.getElementById('odomDist').textContent = '0.00';
@@ -2617,20 +2906,237 @@ function resetOdom() {
   });
 }
 
-// â”€â”€ Record/Playback Commands â”€â”€
-function rpCmd(action) {
+// ── Record/Playback Commands ──
+function rpCmd(action, name = '') {
   fetch('/api/record_playback', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({action: action})
+    body: JSON.stringify({action: action, name: name})
   }).catch(() => {});
 }
 
-// â”€â”€ Main Data Update Loop â”€â”€
+// ── Save Modal Management ──
+function showSaveModal() {
+  const modal = document.getElementById('saveModal');
+  const input = document.getElementById('saveNameInput');
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const timestamp = `rec_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+  input.value = timestamp;
+  modal.classList.add('active');
+  input.focus();
+  input.select();
+}
+
+function closeSaveModal() {
+  document.getElementById('saveModal').classList.remove('active');
+}
+
+function confirmSave() {
+  const name = document.getElementById('saveNameInput').value.trim();
+  if (!name) return;
+  fetch('/api/record_playback', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'save', name: name})
+  }).then(r => r.json())
+    .then(res => {
+      if (res.ok) {
+        closeSaveModal();
+      } else {
+        alert('Error saving recording: ' + res.error);
+      }
+    });
+}
+
+// ── Recording Actions ──
+function loadRec(name) {
+  rpCmd('load', name);
+}
+
+function playRec(name) {
+  fetch('/api/record_playback', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: 'load', name: name})
+  }).then(() => {
+    setTimeout(() => {
+      rpCmd('playback');
+    }, 150);
+  });
+}
+
+function setActiveRec(name) {
+  rpCmd('set_active', name);
+}
+
+function deleteRec(name) {
+  if (confirm(`Are you sure you want to delete "${name}"?`)) {
+    rpCmd('delete', name);
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Timeline Canvas Drawing ──
+let loadedRecordingSamples = [];
+let loadedRecordingName = '';
+
+function drawTimeline(samples, name) {
+  const canvas = document.getElementById('timelineCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  
+  const width = canvas.clientWidth * 2;
+  const height = canvas.clientHeight * 2;
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  
+  ctx.clearRect(0, 0, width, height);
+  
+  if (!samples || samples.length === 0) {
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '24px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText('No sample data loaded', width / 2, height / 2);
+    return;
+  }
+  
+  const paddingLeft = 70;
+  const paddingRight = 30;
+  const paddingTop = 30;
+  const paddingBottom = 40;
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+  
+  // Draw Background Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 2;
+  const numGridLines = 4;
+  for (let i = 0; i <= numGridLines; i++) {
+    const y = paddingTop + (chartHeight / numGridLines) * i;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(width - paddingRight, y);
+    ctx.stroke();
+  }
+  
+  // Draw Y Labels
+  ctx.fillStyle = '#9ca3af';
+  ctx.font = '18px JetBrains Mono';
+  ctx.textAlign = 'right';
+  ctx.fillText('255', paddingLeft - 15, paddingTop + 5);
+  ctx.fillText('0', paddingLeft - 15, paddingTop + chartHeight / 2 + 5);
+  ctx.fillText('-255', paddingLeft - 15, paddingTop + chartHeight + 5);
+  
+  const getX = (idx) => paddingLeft + (chartWidth * idx) / (samples.length - 1);
+  const getMotorY = (pwm) => {
+    const norm = pwm / 255.0; // [-1.0, 1.0]
+    return paddingTop + chartHeight / 2 - (norm * (chartHeight / 2));
+  };
+  const getServoY = (angle) => {
+    const center = 90;
+    const diff = angle - center; // [-50, 50]
+    const norm = diff / 50.0; // [-1.0, 1.0]
+    return paddingTop + chartHeight / 2 - (norm * (chartHeight / 2));
+  };
+  
+  // Draw Servo Line (Orange)
+  ctx.beginPath();
+  ctx.strokeStyle = '#f97316';
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  samples.forEach((s, idx) => {
+    const x = getX(idx);
+    const y = getServoY(s.servo_angle);
+    if (idx === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  
+  // Draw Motor Line (Blue)
+  ctx.beginPath();
+  ctx.strokeStyle = '#3b82f6';
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  samples.forEach((s, idx) => {
+    const x = getX(idx);
+    const y = getMotorY(s.motor_pwm);
+    if (idx === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function selectRecording(name) {
+  if (!name) return;
+  fetch('/api/recording_data?name=' + encodeURIComponent(name))
+    .then(r => r.json())
+    .then(res => {
+      if (res.ok && res.data) {
+        loadedRecordingSamples = res.data.samples || [];
+        loadedRecordingName = res.data.name || '';
+        drawTimeline(loadedRecordingSamples, loadedRecordingName);
+        
+        document.querySelectorAll('.recording-item').forEach(el => {
+          const itemTitle = el.querySelector('.rec-name').textContent.trim();
+          el.classList.toggle('selected', itemTitle === name);
+        });
+      }
+    });
+}
+
+// ── Render Saved Recordings ──
+function renderRecordings(saved, activeName, currentName) {
+  const listEl = document.getElementById('recordingsList');
+  if (!saved || saved.length === 0) {
+    listEl.innerHTML = '<div class="no-recordings">No saved recordings found.</div>';
+    return;
+  }
+  
+  let html = '';
+  saved.forEach(rec => {
+    const isActive = rec.name === activeName;
+    const isCurrent = rec.name === currentName;
+    const isSelected = rec.name === loadedRecordingName;
+    
+    html += `
+      <div class="recording-item ${isCurrent ? 'current' : ''} ${isActive ? 'active-parking' : ''} ${isSelected ? 'selected' : ''}" onclick="selectRecording('${rec.name}')">
+        <div class="rec-meta">
+          <div class="rec-name-row">
+            <span class="rec-name">${escapeHtml(rec.name)}</span>
+            <div style="display:flex; gap:4px;">
+              ${isActive ? '<span class="star-badge">🅿 Active</span>' : ''}
+              ${isCurrent ? '<span class="load-badge">Loaded</span>' : ''}
+            </div>
+          </div>
+          <div class="rec-details">
+            <span>📊 ${rec.sample_count} samples</span>
+            <span>⏱ ${rec.duration_sec.toFixed(1)}s</span>
+            <span class="rec-date">${rec.created_at}</span>
+          </div>
+        </div>
+        <div class="rec-actions" onclick="event.stopPropagation();">
+          <button class="action-btn load" onclick="loadRec('${rec.name}')">Load</button>
+          <button class="action-btn play" onclick="playRec('${rec.name}')">Play</button>
+          <button class="action-btn set-active" onclick="setActiveRec('${rec.name}')">Set Park</button>
+          <button class="action-btn delete" onclick="deleteRec('${rec.name}')">🗑</button>
+        </div>
+      </div>
+    `;
+  });
+  listEl.innerHTML = html;
+}
+
+// ── Main Data Update Loop ──
 let lastRpState = 'IDLE';
 
 function update() {
-  const t0 = performance.now();
   fetch('/data')
     .then(r => r.json())
     .then(d => {
@@ -2661,10 +3167,13 @@ function update() {
       else if (odomAge < 5) { dot.className = 'status-dot stale'; }
       else { dot.className = 'status-dot offline'; }
 
-      // â”€â”€ Record & Playback State â”€â”€
+      // ── Record & Playback State ──
       const rpState = d.rp_state || 'IDLE';
       const bufSize = d.rp_buffer_size || 0;
       const pbIdx = d.rp_playback_index || 0;
+      const curName = d.rp_recording_name || '';
+      const actName = d.rp_active_parking || '';
+      const savedList = d.rp_saved_recordings || [];
 
       // State badge
       const badge = document.getElementById('rpStateBadge');
@@ -2673,7 +3182,6 @@ function update() {
 
       // Buffer info
       document.getElementById('rpBufferSize').textContent = bufSize;
-      // Estimate duration: bufSize samples * ~50ms avg
       const estDuration = (bufSize * 0.05).toFixed(1);
       document.getElementById('rpDuration').textContent = estDuration;
 
@@ -2689,9 +3197,7 @@ function update() {
       btnRec.disabled = (rpState === 'PLAYBACK');
       btnPlay.disabled = (rpState === 'RECORDING' || bufSize === 0);
       btnStop.disabled = (rpState === 'IDLE');
-      if (btnSave) {
-        btnSave.disabled = (rpState !== 'IDLE' || bufSize === 0);
-      }
+      btnSave.disabled = (rpState !== 'IDLE' || bufSize === 0);
 
       // Progress bar
       const progressTrack = document.getElementById('rpProgress');
@@ -2705,12 +3211,40 @@ function update() {
         progressFill.style.width = '0%';
       }
 
+      // Render recordings list & Active Parking Badge
+      document.getElementById('activeParkingBadge').textContent = actName ? actName : 'None';
+      renderRecordings(savedList, actName, curName);
+
+      // Draw timeline if we just recorded/loaded something new, or drawing the current running buffer
+      if (rpState === 'RECORDING' || (rpState === 'PLAYBACK' && !loadedRecordingName)) {
+        // Build a dummy/live timeline of the current recording buffer
+        const dummySamples = [];
+        for (let i = 0; i < bufSize; i++) {
+          dummySamples.push({ motor_pwm: 0, servo_angle: 90 });
+        }
+        drawTimeline(dummySamples, rpState === 'RECORDING' ? 'Recording...' : 'Replaying...');
+      } else if (curName && curName !== loadedRecordingName) {
+        // Automatically select/draw the loaded recording
+        selectRecording(curName);
+      } else if (!curName && !loadedRecordingName && bufSize > 0) {
+        // Loaded default/unsaved buffer
+        const dummySamples = [];
+        for (let i = 0; i < bufSize; i++) {
+          dummySamples.push({ motor_pwm: 0, servo_angle: 90 });
+        }
+        drawTimeline(dummySamples, 'Unsaved Buffer');
+      }
+
+      // Auto-save dialog trigger when stopping recording
+      if (lastRpState === 'RECORDING' && rpState === 'IDLE' && bufSize > 0) {
+        showSaveModal();
+      }
+
       lastRpState = rpState;
     })
     .catch(() => {});
 }
 
-setInterval(update, 150);
 update();
 </script>
 </body>

@@ -426,13 +426,68 @@ class AutoDriver(Node):
 
     def set_challenge_callback(self, msg: String) -> None:
         """Manual state override: ros2 topic pub /set_challenge std_msgs/String 'data: TUNNEL'"""
-        try:
-            new_state = ChallengeState[msg.data.upper()]
-            if self.state != new_state:
-                self.get_logger().info(f'Manual override: {self.state.name} -> {new_state.name}')
-                self.state = new_state
-        except KeyError:
-            self.get_logger().error(f'Unknown challenge: {msg.data}')
+        cmd_str = msg.data.upper()
+        if cmd_str == 'RESET':
+            self.reset_competition()
+        elif cmd_str == 'LAP1':
+            self.set_lap_1()
+        elif cmd_str == 'LAP2':
+            self.set_lap_2()
+        else:
+            try:
+                new_state = ChallengeState[cmd_str]
+                if self.state != new_state:
+                    self.get_logger().info(f'Manual override: {self.state.name} -> {new_state.name}')
+                    self.state = new_state
+            except KeyError:
+                self.get_logger().error(f'Unknown challenge: {msg.data}')
+
+    def reset_competition(self) -> None:
+        """Reset the competition to the beginning of Lap 1."""
+        self.get_logger().info('Resetting competition to Lap 1 Start')
+        self.current_lap = 1
+        self._param_cache['current_lap'] = 1
+        self.set_parameters([rclpy.Parameter('current_lap', rclpy.Parameter.Type.INTEGER, 1)])
+        self.state = ChallengeState.LANE_FOLLOW
+        self.lap_1_complete = False
+        self._parking_parallel_sent = False
+        self._parking_perp_sent = False
+        self.parallel_done = False
+        self.perpendicular_done = False
+        self.parking_sequence_active = False
+        self._boom_gate_armed = False
+        self._tl_armed = False
+        self._obs_cleared_time = 0.0
+        self._obs_was_active = False
+        self.distance = 0.0
+        self.distance_past_light = 0.0
+        self.state_entry_time = time.monotonic()
+        self.stop_reason = ''
+
+    def set_lap_1(self) -> None:
+        self.reset_competition()
+
+    def set_lap_2(self) -> None:
+        self.get_logger().info('Setting competition to Lap 2 Start')
+        self.current_lap = 2
+        self._param_cache['current_lap'] = 2
+        self.set_parameters([rclpy.Parameter('current_lap', rclpy.Parameter.Type.INTEGER, 2)])
+        self.state = ChallengeState.LANE_FOLLOW
+        self.lap_1_complete = False
+        self._parking_parallel_sent = False
+        self._parking_perp_sent = False
+        self.parallel_done = False
+        self.perpendicular_done = False
+        self.parking_sequence_active = False
+        self._boom_gate_armed = False
+        self._tl_armed = False
+        self._obs_cleared_time = 0.0
+        self._obs_was_active = False
+        self.distance = 0.0
+        self.distance_past_light = 0.0
+        self.state_entry_time = time.monotonic()
+        self.stop_reason = ''
+
 
     # ========== State machine ==========
     def _publish_dash_state(self) -> None:
@@ -530,17 +585,12 @@ class AutoDriver(Node):
         if self._is_stale(self.boom_gate_last_time):
             self.boom_gate_open = True
 
-        # Lap Sequence Tracking (latch on green rising edge)
+        # Lap Sequence Tracking (trigger Lap 2 immediately on green light from AI signage detector)
         if self.current_lap == 1:
-            if self.traffic_light_state == 'green' and self._last_tl_state != 'green':
-                self.lap_1_complete = True
-                self.distance_past_light = 0.0
-        self._last_tl_state = self.traffic_light_state
-        
-        if self.lap_1_complete and self.distance_past_light > self._param_cache['dist_lap_complete']:
-            if self.current_lap == 1:
-                self.get_logger().info('Lap 1 complete -> starting Lap 2')
+            if self.traffic_light_state == 'green':
+                self.get_logger().info('Green light detected -> starting Lap 2')
                 self.current_lap = 2
+                self._param_cache['current_lap'] = 2
                 self.set_parameters([rclpy.Parameter('current_lap', rclpy.Parameter.Type.INTEGER, 2)])
                 self.lap_1_complete = False
                 self._parking_parallel_sent = False
@@ -553,6 +603,7 @@ class AutoDriver(Node):
                 self._tl_armed = False
                 self._obs_cleared_time = 0.0
                 self._obs_was_active = False
+
 
         # ── Obstruction edge detection (runs every tick) ──
         if self.obstruction_active:
