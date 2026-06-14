@@ -632,7 +632,7 @@ def _ros_get_param(node_name, param_name):
     try:
         client = _get_client(node_name, 'get')
         if not client.service_is_ready():
-            if not client.wait_for_service(timeout_sec=1.0):
+            if not client.wait_for_service(timeout_sec=0.15):
                 return None, f'Node /{node_name} not available'
         req = GetParameters.Request()
         req.names = [param_name]
@@ -676,7 +676,7 @@ def _ros_set_param(node_name, param_name, value_str):
     try:
         client = _get_client(node_name, 'set')
         if not client.service_is_ready():
-            if not client.wait_for_service(timeout_sec=1.0):
+            if not client.wait_for_service(timeout_sec=0.15):
                 return False, f'Node /{node_name} not available'
         param = RosParameter()
         param.name = param_name

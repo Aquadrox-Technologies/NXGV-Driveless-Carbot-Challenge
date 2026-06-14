@@ -1851,6 +1851,20 @@ const PARAM_GROUPS = [
   ]},
 ];
 
+function toggleNodeParams(headerEl, nodeName) {
+  const body = headerEl.nextElementSibling;
+  const opening = !body.classList.contains('open');
+  body.classList.toggle('open');
+  if (opening) {
+    const group = PARAM_GROUPS.find(g => g.node === nodeName);
+    if (group) {
+      group.params.forEach(p => {
+        getParam(nodeName, p, true);
+      });
+    }
+  }
+}
+
 function buildParamUI() {
   const c = document.getElementById('paramContainer');
   c.innerHTML = PARAM_GROUPS.map(g => {
@@ -1858,14 +1872,14 @@ function buildParamUI() {
       const tip = PARAM_TIPS[p] || '';
       return `<div class="param-row">
         <span class="param-name" ${tip ? 'title="'+tip+'"' : ''}>${p}</span>
-        <input class="param-val" id="pv_${g.node}_${p}" placeholder="â€”" />
+        <input class="param-val" id="pv_${g.node}_${p}" placeholder="—" />
         <button class="param-get-btn" onclick="getParam('${g.node}','${p}')">Get</button>
         <button class="param-set-btn" onclick="setParam('${g.node}','${p}')">Set</button>
         <span class="param-status" id="ps_${g.node}_${p}"></span>
       </div>`;
     }).join('');
     return `<div class="param-node-block">
-      <div class="param-node-header" onclick="this.nextElementSibling.classList.toggle('open')">
+      <div class="param-node-header" onclick="toggleNodeParams(this, '${g.node}')">
         <span class="param-node-name">${g.label}</span>
         <span class="param-node-count">${g.params.length} params</span>
       </div>
@@ -1966,14 +1980,7 @@ async function saveDefaults() {
 
 buildParamUI();
 
-// Auto-fetch parameters on load to populate current values and defaults
-setTimeout(async () => {
-  for (const g of PARAM_GROUPS) {
-    for (const p of g.params) {
-      await getParam(g.node, p, true);
-    }
-  }
-}, 1000);
+// Parameters are now fetched on-demand when expanding the sections in the UI.
 
 setInterval(update, 200);
 update();
