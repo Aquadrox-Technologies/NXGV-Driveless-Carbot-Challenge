@@ -4,7 +4,7 @@
 clear; clc; close all;
 
 %% Configuration
-robot_host = 'risabot';
+robot_host = '172.23.193.1';
 robot_user = 'sunrise';
 remote_path = '/home/sunrise/pid_log.csv';
 local_path = 'pid_log.csv';
