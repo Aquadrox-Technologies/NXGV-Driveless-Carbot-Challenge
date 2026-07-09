@@ -503,7 +503,7 @@ class SignageDetector(Node):
             'Obstacle_signboard',     # Class 2
             'ParallelP_signboard',    # Class 3
             'PerpendP_signboard',     # Class 4
-            'RISAbotRemastered',      # Class 5
+            'Roundabout_signboard',   # Class 5 (Renamed from RISAbotRemastered)
             'Traffic_Green',          # Class 6
             'Traffic_Red',            # Class 7
             'Trafficlight_signboard', # Class 8
