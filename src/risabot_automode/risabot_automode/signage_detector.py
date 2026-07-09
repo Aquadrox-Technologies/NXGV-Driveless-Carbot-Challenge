@@ -277,7 +277,7 @@ class SignageDetector(Node):
                 resized = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
                 h_img, w_img = resized.shape[:2]
                 for idx, cid in enumerate(final_class_ids):
-                    if cid == 8:  # Trafficlight_signboard (generic) — CV-reclassify color
+                    if cid in (6, 7, 8):  # Run CV color verification on green, red, or generic detections
                         box = final_boxes[idx]
                         x1_c = max(0, int(box[0]))
                         y1_c = max(0, int(box[1]))
