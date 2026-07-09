@@ -247,8 +247,8 @@ class SignageDetector(Node):
             class_ids = np.argmax(pred[:, 5:], axis=1)
             max_scores = pred[:, 4] * pred[np.arange(len(pred)), 5 + class_ids]
             
-            # Filter by confidence threshold
-            keep_indices = max_scores >= conf_threshold
+            # Filter by confidence threshold and ignore null class (9)
+            keep_indices = (max_scores >= conf_threshold) & (class_ids != 9)
             filtered_boxes = pred[keep_indices, 0:4]
             filtered_scores = max_scores[keep_indices]
             filtered_class_ids = class_ids[keep_indices]
