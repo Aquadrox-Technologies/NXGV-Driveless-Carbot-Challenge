@@ -49,7 +49,7 @@ class SignageDetector(Node):
 
         # ── Tunable parameters ─────────────────────────────────────────────
         self.declare_parameter('model_path',             '/home/sunrise/risabot_signs_640x640_nv12.bin')
-        self.declare_parameter('conf_threshold',         0.10)
+        self.declare_parameter('conf_threshold',         0.05)
         self.declare_parameter('iou_threshold',          0.45)
         self.declare_parameter('show_debug',             False)
         self.declare_parameter('heartbeat_sec',          0.5)
