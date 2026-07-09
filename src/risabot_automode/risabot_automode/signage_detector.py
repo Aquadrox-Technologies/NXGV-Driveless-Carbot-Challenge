@@ -65,12 +65,12 @@ class SignageDetector(Node):
         # ── Per-class confidence thresholds ─────────────────────────────────
         # Custom thresholds per class ID:
         self.class_thresholds = {
-            0: 0.13,  # Bumper_signboard
-            1: 0.13,  # Hill_signboard
-            2: 0.13,  # Obstacle_signboard
-            3: 0.15,  # ParallelP_signboard
-            4: 0.15,  # PerpendP_signboard
-            5: 0.15,  # RISAbotRemastered
+            0: 0.06,  # Bumper_signboard
+            1: 0.06,  # Hill_signboard
+            2: 0.06,  # Obstacle_signboard
+            3: 0.10,  # ParallelP_signboard
+            4: 0.10,  # PerpendP_signboard
+            5: 0.10,  # RISAbotRemastered
             6: 0.15,  # Traffic_Green
             7: 0.15,  # Traffic_Red
             8: 0.15,  # Trafficlight_signboard
