@@ -65,9 +65,9 @@ class SignageDetector(Node):
         # ── Per-class confidence thresholds ─────────────────────────────────
         # Custom thresholds per class ID:
         self.class_thresholds = {
-            0: 0.06,  # Bumper_signboard
-            1: 0.06,  # Hill_signboard
-            2: 0.06,  # Obstacle_signboard
+            0: 0.15,  # Bumper_signboard
+            1: 0.15,  # Hill_signboard
+            2: 0.15,  # Obstacle_signboard
             3: 0.10,  # ParallelP_signboard
             4: 0.10,  # PerpendP_signboard
             5: 0.10,  # RISAbotRemastered
