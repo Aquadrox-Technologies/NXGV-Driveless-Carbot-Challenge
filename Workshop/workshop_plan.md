@@ -1,61 +1,94 @@
-# 🤖 RISA-bot Competition Workshop — 2-Day Instructor Plan
-
-> **Teaching Method:** Instructor teaches and demonstrates → Participants try it → Instructor supervises  
-> **Prerequisite:** Participants have completed Workshop 00 (Linux) and 01 (ROS basics)  
-> **Platform:** RISA-bot (ROS 2 Humble, RDK X5, Astra Camera, YDLiDAR)
+# RISA-bot Competition Workshop — 2-Day Plan
 
 ---
 
-## Testing Field Layout
+## At a Glance
+
+| | Detail |
+|---|---|
+| **Participants** | 21 people — 7 groups × 3 per group |
+| **Duration** | 2 days × 5.5 hours (10:00–13:00, 14:30–17:00) |
+| **Teaching Style** | Instructor teaches + demonstrates → groups try while supervised |
+| **Prerequisite** | Workshop 00 (Linux) and 01 (ROS basics) completed |
+
+---
+
+## Test Setup Layout
 
 ```
-LANE 1                   LANE 2                   TRACK 3
-┌───────────────┐        ┌───────────────┐        ┌──────────────┐
-│  Lane Follow  │        │  Lane Follow  │        │  Roundabout  │
-│  + Tunnel     │        │  + Hill       │        │  + Boom Gate │
-│               │        │  + Bumper     │        │  + Parking   │
-│               │        │  + Traffic    │        │  + Obstruct. │
-│               │        │    Light      │        │              │
-└───────────────┘        └───────────────┘        └──────────────┘
+LANE 1                    LANE 2                    TRACK 3
+┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│  Lane Following  │      │  Lane Following  │      │  Roundabout      │
+│  Tunnel          │      │  Hill            │      │  Boom Gate       │
+│                  │      │  Bumper          │      │  Parking         │
+│                  │      │  Traffic Light   │      │  Obstruction     │
+└──────────────────┘      └──────────────────┘      └──────────────────┘
+  Groups rotate in          Groups rotate in          Groups rotate in
+  2-per-slot turns          2-per-slot turns          2-per-slot turns
 ```
 
 ---
 
-## 🗓️ DAY 1
+## Group Rotation Rule
 
-### Block 1 — Recap: ROS & Linux Basics
-`🕙 10:00 – 10:35 (35 min)`
+Whenever a block requires the **physical track**, groups rotate in pairs through the course section. While waiting, groups stay at their station — reviewing code, adjusting parameters on the dashboard, or observing the active group.
 
-**TEACH (15 min)**
+```
+Slot A → Groups 1, 2 on track    (others at station)
+Slot B → Groups 3, 4 on track    (others at station)
+Slot C → Groups 5, 6 on track    (others at station)
+Slot D → Group  7   on track     (others at station, re-test open)
+```
 
-Recap from Workshop 00 & 01. Cover only what's needed for today:
+> Blocks that do NOT need the physical track (recap, competition overview, architecture,
+> dashboard, state machine theory) — ALL 7 groups work simultaneously at their station.
 
+---
+---
+
+# DAY 1
+
+## Day 1 — Schedule Overview
+
+| Time | Block | Topic | Where | Groups |
+|------|-------|-------|-------|--------|
+| 10:00–10:35 | 1 | ROS & Linux Recap | At Station | All 7 |
+| 10:35–11:05 | 2 | Competition Overview | At Station | All 7 |
+| 11:05–11:40 | 3 | Architecture & Component Setup | At Station | All 7 |
+| 11:40–12:10 | 4 | Dashboard Tour | At Station | All 7 |
+| 12:10–13:00 | 5 | Lane Detection (Image Pipeline) | At Station | All 7 |
+| 13:00–14:30 | — | **LUNCH BREAK** | — | — |
+| 14:30–15:10 | 6 | PID Steering | Lane 1 | Rotate pairs |
+| 15:10–16:10 | 7 | Tunnel Navigation (LiDAR) | Lane 1 | Rotate pairs |
+| 16:10–17:00 | 8 | Full Lane 1 Tuning Run | Lane 1 | Rotate pairs |
+
+---
+
+## Block 1 — ROS & Linux Recap
+`10:00 – 10:35 | 35 min | All 7 groups at their station`
+
+**Instructor teaches (15 min)**
 - SSH into robot: `ssh sunrise@<robot_ip>`
-- Workspace and sourcing:
+- Source workspace: `cd ~/risabotcar_ws && source install/setup.bash`
+- Key ROS commands they will use all day:
   ```bash
-  cd ~/risabotcar_ws
-  source install/setup.bash
+  ros2 topic list
+  ros2 topic echo /lane_error
+  ros2 node list
+  ros2 param get /auto_driver forward_speed
+  ros2 param set /auto_driver forward_speed 0.15
   ```
-- Essential ROS commands they'll use all day:
-  ```bash
-  ros2 topic list              # see all active topics
-  ros2 topic echo /lane_error  # read a topic live
-  ros2 node list               # see all running nodes
-  ros2 param set /node param value   # change a parameter live
-  ros2 param get /node param         # read a parameter value
-  ```
-- Launch the system: `ros2 launch risabot_automode bringup.launch.py`
-- Build aliases: `cb` = rebuild, `sos` = re-source
+- Launch system: `ros2 launch risabot_automode bringup.launch.py`
+- Build aliases: `cb` = rebuild · `sos` = re-source
 
-**TRY (20 min)**
+**Groups try (20 min)**
 
-Participants SSH into their robot and run through the commands above themselves. Instructor walks around confirming each team is connected and can see topic output.
+Each group SSHs in and runs through the commands above. Instructor walks the room.
 
 ```bash
-# Participants run these one by one:
 ros2 launch risabot_automode bringup.launch.py
 
-# In a second SSH terminal:
+# Second SSH terminal:
 ros2 topic list
 ros2 topic echo /lane_error
 ros2 node list
@@ -64,360 +97,304 @@ ros2 param get /auto_driver forward_speed
 
 ---
 
-### Block 2 — Competition Overview
-`🕙 10:35 – 11:05 (30 min)`
+## Block 2 — Competition Overview
+`10:35 – 11:05 | 30 min | All 7 groups at their station`
 
-**TEACH (20 min)**
+**Instructor teaches (20 min)**
 
-Show [competition_layout_overview.jpeg](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Guide/competition_layout_overview.jpeg). Walk through all 9 challenges in sequence and explain the sensor + approach for each:
+Walk through the course layout image. For each of the 9 challenges, explain the sensor and approach:
 
-| # | Challenge | Sensor | Approach | Test Setup |
-|---|-----------|--------|----------|------------|
+| # | Challenge | Sensor Used | Approach | Test Setup |
+|---|-----------|-------------|----------|------------|
 | 1 | Obstruction | LiDAR | Timed dodge maneuver | Track 3 |
 | 2 | Roundabout | Camera | Lane following through curves | Track 3 |
-| 3 | Tunnel | LiDAR | Wall following (centerline PD) | Lane 1 |
+| 3 | Tunnel | LiDAR | Wall following — centerline PD | Lane 1 |
 | 4 | Boom Gate | LiDAR | Point cluster detection | Track 3 |
 | 5 | Hill | Camera + IMU | Lane follow + speed boost | Lane 2 |
-| 6 | Bumper | Camera | Lane follow — no special code | Lane 2 |
+| 6 | Bumper | Camera | Lane follow — no special code needed | Lane 2 |
 | 7 | Traffic Light | Camera | HSV color thresholding | Lane 2 |
 | 8 | Parallel Park | Odometry | Recorded trajectory playback | Track 3 |
 | 9 | Perp Park | Odometry | Recorded trajectory playback | Track 3 |
 
-Key points to communicate:
-- Every challenge maps to one sensor and one algorithm
-- Lane following is the **foundation** — used on most challenges
-- The robot's brain (`auto_driver`) switches between algorithms automatically using a priority-based state machine
-- This workshop focuses on understanding those algorithms well enough to tune them for competition conditions
+Key message: every challenge = one sensor + one algorithm. Lane following is the foundation — used on most of the course. The brain (`auto_driver`) switches between algorithms automatically.
 
-**TRY (10 min)**
+**Groups try (10 min)**
 
-Participants open [challenges_breakdown.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Guide/challenges_breakdown.md) on their laptops and read through the challenge descriptions while the system is running.
+Groups open `Guide/challenges_breakdown.md` on their laptops and read through the descriptions while the robot is running.
 
 ---
 
-### Block 3 — Architecture: How RISA-bot is Built
-`🕙 11:05 – 11:40 (35 min)`
+## Block 3 — Architecture & Component Setup
+`11:05 – 11:40 | 35 min | All 7 groups at their station`
 
-**TEACH (20 min)**
+**Instructor teaches (20 min)**
 
-Show the node graph from [ARCHITECTURE.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/ARCHITECTURE.md). Explain the 3-layer structure:
-
+Show the node graph. Explain the 3-layer structure:
 ```
-Sensors (Camera, LiDAR, Joystick)
-    ↓
-Perception (lane follower, tunnel, traffic light, etc.)
-    ↓
-Brain (auto_driver → cmd_safety_controller → servo_controller → Motors)
+Sensors  →  Perception  →  Brain  →  Motors
 ```
 
-**How to include a component in your robot** — show the pattern in [bringup.launch.py](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/launch/bringup.launch.py):
-1. Find the hardware SDK (already included in `src/` — e.g. `YDLidar-SDK`, `ros2_astra_camera`)
-2. Include its launch file using `IncludeLaunchDescription`
-3. Add your own nodes using the `Node(...)` entry
-4. Load settings from `params.yaml` using `parameters=[params_file]`
+**How to set up a component on your own robot** — the pattern used in `bringup.launch.py`:
+1. Find the hardware SDK (`src/YDLidar-SDK/`, `src/ros2_astra_camera/`)
+2. Include its launch file with `IncludeLaunchDescription`
+3. Add your node with a `Node(...)` entry
+4. Load settings from `params.yaml` with `parameters=[params_file]`
 
-Show the 3-tier startup timing in `bringup.launch.py`:
-- **0s** — Hardware: camera, LiDAR, joystick, servo controller, dashboard
-- **3s** — Perception: line follower, tunnel, traffic light, obstacle detection
-- **5s** — Brain: `auto_driver` (waits for all perception nodes to be ready)
+**Startup timing in `bringup.launch.py`:**
 
-Show [params.yaml](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/config/params.yaml) — one file that holds ALL tunable settings for every node. Changing a value here and rebuilding (or using `ros2 param set` at runtime) updates that node's behaviour.
+| Delay | What starts | Why |
+|-------|-------------|-----|
+| 0 s | Camera, LiDAR, joystick, servo, dashboard | Hardware first |
+| 3 s | Line follower, tunnel, traffic light, obstacle | Sensors must be ready |
+| 5 s | `auto_driver` (brain) | All perception must be running |
 
-**TRY (15 min)**
+Show `params.yaml` — one file holds ALL tunable settings for every node.
 
-Participants open both files on their laptops alongside the running system:
+**Groups try (15 min)**
 
 ```bash
-# On robot — show the launch file
+# On robot — read the files
 cat ~/risabotcar_ws/src/RISA-bot/src/risabot_automode/launch/bringup.launch.py
-
-# Show the params file
 cat ~/risabotcar_ws/src/RISA-bot/src/risabot_automode/config/params.yaml
 ```
 
-They find these specific values in `params.yaml`:
-- `forward_speed` under `auto_driver`
-- `white_threshold` under `line_follower_camera`
-- `kp` and `kd` under `tunnel_wall_follower`
-
-Then try changing one via CLI:
+Find these in `params.yaml`: `forward_speed`, `white_threshold`, `kp` under tunnel. Then change one live:
 ```bash
 ros2 param set /auto_driver forward_speed 0.12
-ros2 param get /auto_driver forward_speed   # confirm it changed
-ros2 param set /auto_driver forward_speed 0.15   # revert
+ros2 param get /auto_driver forward_speed    # confirm
+ros2 param set /auto_driver forward_speed 0.15    # revert
 ```
 
 ---
 
-### Block 4 — Dashboard: Monitoring & Tuning Interface
-`🕙 11:40 – 12:10 (30 min)`
+## Block 4 — Dashboard Tour
+`11:40 – 12:10 | 30 min | All 7 groups at their station`
 
-**TEACH (12 min)**
+**Instructor teaches (12 min)**
 
-Open `http://<robot_ip>:8080` on projector. Walk through each panel:
+Open `http://<robot_ip>:8080` on projector. Walk through every panel:
 
-- **State display** — current robot state (MANUAL, LANE_FOLLOW, TUNNEL, etc.)
-- **Camera debug tabs** — switch between: Lane Lines / Traffic Light / Obstacle / Signage
-  - Lane Lines: blue dots = left edge, pink dots = right edge, green dots = center, purple line = crop boundary
-- **Sensor panel** — green/red indicators for each sensor
-- **LiDAR canvas** — real-time laser dots
-- **Odometry** — distance and speed
-- **Parameters drawer** (slide-out on the right):
-  - Get — read current value
-  - Set — change a value live (takes effect immediately, no restart needed)
-  - **💾 Save Current as Default** — writes all current values back to `params.yaml`
+| Panel | What it shows |
+|-------|--------------|
+| State display | Current robot state (MANUAL, LANE_FOLLOW, TUNNEL…) |
+| Camera debug tabs | Lane Lines / Traffic Light / Obstacle / Signage overlays |
+| Lane Lines overlay | Blue = left edge · Pink = right edge · Green = center · Purple = crop boundary |
+| Sensor panel | Green/red status per sensor |
+| LiDAR canvas | Live laser dots |
+| Odometry | Distance and speed |
+| Parameters drawer | Slide-out panel — Get/Set any parameter live |
+| 💾 Save button | Writes current values back to `params.yaml` |
 
-**TRY (18 min)**
+**Groups try (18 min)**
 
-Participants on their own dashboards:
-
-1. Switch to **Lane Lines** debug tab — observe what the robot sees
-2. Open Parameters drawer → find `forward_speed` → change to `0.20` → Set
-3. Verify: `ros2 param get /auto_driver forward_speed` in terminal
-4. Change `white_threshold` to `50` → watch Lane Lines tab (everything becomes "lane" — too sensitive)
-5. Change `white_threshold` to `220` → nothing detected (too strict)
-6. Revert both to defaults, click **💾 Save**
-
-Instructor walks around confirming each team can use the drawer and see changes reflected.
+Each group on their own dashboard:
+1. Switch through all camera debug tabs
+2. Open Parameters drawer → change `forward_speed` to `0.20` → Set → verify in terminal
+3. Change `white_threshold` to `50` → watch Lane Lines tab (everything goes bright — too sensitive)
+4. Change `white_threshold` to `220` → nothing detected (too strict)
+5. Revert both values → click **💾 Save**
 
 ---
 
-### Block 5 — Lane Detection: How the Robot Sees the Lane
-`🕙 12:10 – 1:00 (50 min)`
+## Block 5 — Lane Detection: Image Pipeline
+`12:10 – 13:00 | 50 min | All 7 groups at their station`
 
-**TEACH (20 min)**
+**Instructor teaches (20 min)**
 
-Open [line_follower_camera.py](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/risabot_automode/line_follower_camera.py) and [04-lane-follower.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Workshop/04-lane-follower.md) on projector. Walk through the processing pipeline step by step:
-
+The camera processing pipeline:
 ```
 Camera frame
   → Resize to 320×240
-  → Crop bottom portion          ← controlled by crop_ratio_base
-  → CLAHE contrast enhancement   ← compensates uneven lighting
-  → Threshold to binary          ← controlled by white_threshold
-  → Morphological cleanup        ← removes noise, fills gaps
-  → Multi-scanline detection     ← finds left + right edges
-  → Kalman filter smoothing      ← removes jitter
-  → Publish /lane_error          ← single number: -1.0 (left) to +1.0 (right)
+  → Crop bottom portion           ← crop_ratio_base
+  → CLAHE contrast boost          ← handles uneven lighting
+  → Threshold to black/white      ← white_threshold
+  → Morphological cleanup         ← removes noise, fills gaps
+  → Multi-scanline edge finding   ← detects left + right borders
+  → Kalman filter smoothing       ← removes jitter
+  → Publish /lane_error           ← one number: –1.0 (left) to +1.0 (right)
 ```
 
-Explain the two key parameters in detail:
+**Two key parameters:**
 
-**`crop_ratio_base`** (default 0.55):
-- Controls how much of the bottom of the image is used as the "road region"
-- Higher = robot looks further ahead (more road visible, purple line lower on screen)
-- Lower = robot looks at what's immediately in front (purple line higher)
-- Too low: robot cuts corners on curves (reacts too late)
-- Too high: picks up background noise (walls, ceiling)
+`crop_ratio_base` (default 0.55)
+- Higher → robot sees further ahead (purple line lower on screen)
+- Lower → robot sees only what's right in front (purple line higher)
+- Too low: cuts corners · Too high: picks up wall/ceiling noise
 
-**`white_threshold`** (default 100):
-- Brightness cutoff for lane detection. With `invert_binary: true`, pixels BELOW this value = lane
-- Lower value = more sensitive (picks up more as "lane")
-- Higher value = stricter (only very dark regions count as lane)
-- Tune this FIRST — clean detection is the foundation of everything
+`white_threshold` (default 100) — with `invert_binary: true`, pixels BELOW this = lane
+- Lower → more sensitive (everything looks like lane)
+- Higher → stricter (only very dark areas count)
+- **Tune this first.** Clean detection is the foundation of everything.
 
-**TRY (25 min) — on Lane 1 or Lane 2**
+**Groups try (25 min)**
 
-Dashboard → switch to **Lane Lines** debug tab. Participants tune while watching the overlay update live:
+Dashboard → **Lane Lines** tab. Robot can be at the station — no track needed yet.
 
 ```bash
-# Tune crop_ratio_base — watch purple line move
-ros2 param set /line_follower_camera crop_ratio_base 0.3   # line moves up (less road)
-ros2 param set /line_follower_camera crop_ratio_base 0.7   # line moves down (more road)
-# Find the value where blue/pink dots cleanly track both lane edges
+# Tune crop_ratio_base — watch the purple line move
+ros2 param set /line_follower_camera crop_ratio_base 0.3
+ros2 param set /line_follower_camera crop_ratio_base 0.7
+# → Find value where blue/pink dots track both lane edges cleanly
 
-# Tune white_threshold — watch dot coverage
-ros2 param set /line_follower_camera white_threshold 50    # too sensitive
-ros2 param set /line_follower_camera white_threshold 220   # too strict
-# Find the value where ONLY the lane borders light up
+# Tune white_threshold — watch dot coverage change
+ros2 param set /line_follower_camera white_threshold 50
+ros2 param set /line_follower_camera white_threshold 220
+# → Find value where ONLY lane borders light up
 
-# Observe the error live
+# Watch the error signal live
 ros2 topic echo /lane_error
-# Slide robot left → negative values. Right → positive. Center → near 0.
+# Slide robot left → negative. Right → positive. Center → near 0.
 ```
 
-Participants write down their best values for `crop_ratio_base` and `white_threshold`.
-
-Instructor supervises — look for: blue/pink dots tracking cleanly with no false detections on the floor.
-
-**Save values via dashboard 💾 when detection looks clean.**
+Each group writes down their best `crop_ratio_base` and `white_threshold`. Save via 💾.
 
 ---
 
-### 🍽️ LUNCH BREAK: 1:00 – 2:30
+## 🍽️ LUNCH BREAK — 13:00 to 14:30
 
-> [!IMPORTANT]
-> **Instructor tasks:**
-> - Confirm tunnel is set up on Lane 1
-> - Charge any low robots
-> - Note which teams had detection issues — support them first after break
+**Instructor tasks during break:**
+- Confirm tunnel walls are set up on Lane 1
+- Charge any low-battery robots
+- Note which groups had detection trouble — check on them first after lunch
 
 ---
 
-### Block 6 — PID Steering: How the Robot Turns
-`🕙 2:30 – 3:10 (40 min)`
+## Block 6 — PID Steering
+`14:30 – 15:10 | 40 min | Lane 1 — rotate groups in pairs`
 
-**TEACH (12 min)**
-
-Explain PID using the lane error signal as input:
+**Instructor teaches (12 min) — all groups listen**
 
 ```
-lane_error  →  PID controller  →  angular.z (steering command)
+lane_error  →  PID controller  →  steering command (angular.z)
 
-steering = (Kp × error) + (Ki × accumulated_error) + (Kd × rate_of_change)
+steering = (Kp × error) + (Ki × total_past_error) + (Kd × rate_of_change)
 ```
 
-| Term | Parameter | Role | Too low | Too high |
-|------|-----------|------|---------|----------|
-| P | `pid_kp` | Main steering strength | Barely turns on curves | Oscillates left-right |
-| I | `pid_ki` | Fixes persistent drift to one side | Slow drift correction | Overshoots, unstable |
-| D | `pid_kd` | Damping — prevents overshooting | Oscillates after turns | Sluggish, jerky |
+| Param | Role | Too low | Too high |
+|-------|------|---------|----------|
+| `pid_kp` | Main steering strength | Barely turns on curves | Oscillates left–right |
+| `pid_kd` | Damping — stops overshoot | Wobbles after turns | Sluggish and jerky |
+| `pid_ki` | Corrects persistent drift | Slow to fix drift | Unstable |
 
-Adaptive speed — robot automatically slows in sharp turns:
-```python
-speed_multiplier = max(min_turn_speed, 1.0 - speed_error_scale × |error|)
-```
-So at full error (`1.0`), speed drops to `min_turn_speed` fraction. At no error (`0.0`), full `forward_speed`.
+Speed adapts automatically in corners — robot slows when `|error|` is large.
 
-Starting values to use:
+Safe starting values:
 ```bash
-ros2 param set /auto_driver forward_speed 0.10   # conservative start
+ros2 param set /auto_driver forward_speed 0.10
 ros2 param set /auto_driver pid_kp 0.5
 ros2 param set /auto_driver pid_kd 0.2
 ros2 param set /auto_driver pid_ki 0.01
 ```
 
-**TRY (25 min) — on Lane 1**
+**Groups try (25 min) — Lane 1 rotation**
 
-Place robot on lane. Enable auto mode (Start button on joystick). Instructor guides tuning:
+Groups rotate onto Lane 1 in pairs. Enable auto mode (Start button). Tune while running:
 
-```bash
-# Start here:
-ros2 param set /auto_driver forward_speed 0.10
-ros2 param set /auto_driver pid_kp 0.5
-ros2 param set /auto_driver pid_kd 0.2
+| What you see | What to change |
+|-------------|----------------|
+| Oscillates left–right | Lower `pid_kp` → 0.4, raise `pid_kd` → 0.3 |
+| Not turning enough on curves | Raise `pid_kp` → 0.8 |
+| Drifts to one side on straight | Raise `pid_ki` → 0.02 |
+| Cuts corners | Raise `crop_ratio_base` → 0.5 |
+| Working — want more speed | Increase `forward_speed` by 0.02 at a time |
 
-# If oscillating on straights → lower kp, raise kd:
-ros2 param set /auto_driver pid_kp 0.4
-ros2 param set /auto_driver pid_kd 0.3
+**Rotation schedule:**
 
-# If not turning enough on curves → raise kp:
-ros2 param set /auto_driver pid_kp 0.8
+| Slot | Time | On Lane 1 | At station |
+|------|------|-----------|------------|
+| A | 14:42–14:55 | Groups 1, 2 | Groups 3, 4, 5, 6, 7 |
+| B | 14:55–15:08 | Groups 3, 4 | All others |
+| (wrap-up) | 15:08–15:10 | — | All save params via 💾 |
 
-# If drifting to one side on straight → small ki:
-ros2 param set /auto_driver pid_ki 0.02
-
-# If cutting corners → raise crop_ratio_base:
-ros2 param set /line_follower_camera crop_ratio_base 0.5
-
-# Once stable → increase speed gradually:
-ros2 param set /auto_driver forward_speed 0.13
-ros2 param set /auto_driver forward_speed 0.15
-```
-
-Instructor walks around supervising. Watch the dashboard debug view — use the `/lane_error` echo to diagnose.
-
-**Save via 💾 when stable on Lane 1 straights and curves.**
+Groups 5, 6, 7 start their Lane 1 practice in Block 7 (Slot C onward).
 
 ---
 
-### Block 7 — Tunnel Navigation: LiDAR Wall Following
-`🕙 3:10 – 4:10 (60 min)`
+## Block 7 — Tunnel Navigation
+`15:10 – 16:10 | 60 min | Lane 1 — rotate groups in pairs`
 
-**TEACH (15 min)**
+**Instructor teaches (15 min) — all groups listen**
 
-Why LiDAR for tunnels — camera fails in darkness, LiDAR doesn't need light.
+Why LiDAR for tunnels: camera needs visible lane lines — those disappear in darkness. LiDAR fires laser beams that work in any lighting.
 
-Walk through [tunnel_wall_follower.py](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/risabot_automode/tunnel_wall_follower.py) and [05-tunnel-navigation.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Workshop/05-tunnel-navigation.md):
-
+Algorithm:
 ```
 LiDAR scan
-  → Convert polar (angle, dist) to Cartesian (x, y)
-  → Classify: left wall (15°–120°) vs right wall (-120° to -15°)
-  → Bin wall points by forward distance
-  → Compute centerline: midpoint between left and right at each distance
-  → PD control: lateral error + heading error → angular velocity
+  → Convert to x, y coordinates
+  → Classify: left wall (15°–120°) vs right wall (–120° to –15°)
+  → Bin points by forward distance
+  → Find centerline (midpoint between left and right at each depth)
+  → PD control on two errors:
+      lateral error  — how far off-center right now
+      heading error  — which way the tunnel curves ahead
   → EMA smoothing → publish /tunnel_cmd_vel
 ```
 
-Two error signals (better than one):
-- **Lateral error** — how far off-center the robot is right now
-- **Heading error** — which direction the tunnel is curving (anticipates turns early)
+Auto-switching: both walls seen for **3 consecutive frames** → `TUNNEL` mode. Walls gone for 3 frames → back to `LANE_FOLLOW`. (Hysteresis — prevents flickering.)
 
-Auto-switching logic in `auto_driver`:
-- Both walls detected for **3 consecutive frames** → enters `TUNNEL` state → uses `/tunnel_cmd_vel`
-- Walls absent for 3 frames → back to `LANE_FOLLOW` → uses `/lane_error`
-- This 3-frame requirement (hysteresis) prevents flickering at tunnel entrance/exit
-
-Key tuning parameters:
-| Parameter | Default | Effect |
-|-----------|---------|--------|
+| Param | Default | Effect |
+|-------|---------|--------|
 | `kp` | 5.0 | Lateral centering strength |
 | `kd` | 0.5 | Lateral damping |
 | `kp_heading` | 1.0 | Curve anticipation |
-| `forward_speed` | 0.12 | Speed inside tunnel |
-| `min_wall_points` | 5 | Points required to detect a wall |
+| `forward_speed` | 0.12 | Speed in tunnel |
+| `min_wall_points` | 5 | Points needed per wall |
 
-**TRY (40 min) — on Lane 1 (tunnel section)**
+**Groups try (40 min) — Lane 1 rotation with tunnel**
 
-Step 1 — Verify detection (10 min):
+Each pair spends ~15 min on Lane 1 doing the full lane → tunnel → exit run. Remaining groups continue PID tuning on open floor or observe.
+
+**Rotation schedule:**
+
+| Slot | Time | On Lane 1 (tunnel run) | At station |
+|------|------|------------------------|------------|
+| A | 15:25–15:40 | Groups 1, 2 | All others |
+| B | 15:40–15:55 | Groups 3, 4 | All others |
+| C | 15:55–16:08 | Groups 5, 6 | All others |
+| D | (carry to Block 8) | Group 7 | — |
+
+While on Lane 1, groups verify detection first:
 ```bash
-# Echo the tunnel debug output
 ros2 topic echo /tunnel_debug
-# l = left distance, r = right distance, lat = lateral error, w = angular output
+# l = left dist · r = right dist · lat = lateral error · w = angular output
 ```
-Participants place robot inside the tunnel → confirm `l` and `r` values appear → watch dashboard Sensor panel show `IN TUNNEL`.
-
-Step 2 — Drive through tunnel (20 min):
-
-Enable auto mode → robot approaches lane section → enters tunnel → drives through → exits back to lane following. Observe state changes on dashboard.
-
+Then enable auto mode and drive through. Tune as needed:
 ```bash
-# If oscillating between walls:
+# Oscillating in tunnel:
 ros2 param set /tunnel_wall_follower kp 3.0
 ros2 param set /tunnel_wall_follower kd 0.8
-
-# If drifting to one side:
-ros2 param set /tunnel_wall_follower target_center_dist 0.02   # adjust ±
-
-# If not detecting tunnel at all:
+# Drifting to one side:
+ros2 param set /tunnel_wall_follower target_center_dist 0.02
+# Not detecting walls:
 ros2 param set /tunnel_wall_follower min_wall_points 3
-
-# If too fast:
-ros2 param set /tunnel_wall_follower forward_speed 0.10
 ```
 
-Step 3 — Observe the mode switch (10 min):
+Observe the mode switch (two terminals):
 ```bash
-# Two terminals side by side:
 ros2 topic echo /lane_error       # active outside tunnel
 ros2 topic echo /tunnel_cmd_vel   # active inside tunnel
 ```
-Drive robot in and out of tunnel — participants see which topic becomes active at each point.
 
-**Save via 💾 when tunnel run is clean.**
+Save via 💾 when clean.
 
 ---
 
-### Block 8 — Full Lane 1 Tuning Run
-`🕙 4:10 – 5:00 (50 min)`
+## Block 8 — Full Lane 1 Tuning Run
+`16:10 – 17:00 | 50 min | Lane 1 — rotate groups in pairs`
 
-**TEACH (10 min)**
+**Instructor teaches (10 min) — all groups listen**
 
-Tuning order — always follow this sequence:
-
+**Always tune in this order — never skip ahead:**
 ```
-1. white_threshold        → clean lane detection first
-2. crop_ratio_base        → correct crop region for this lane
-3. pid_kp / pid_kd        → stable steering (no oscillation)
-4. tunnel kp / kd         → stable wall following
-5. forward_speed          → increase LAST, only when steering is stable
+1. white_threshold    → clean detection first
+2. crop_ratio_base    → right crop region
+3. pid_kp / pid_kd    → stable steering
+4. tunnel kp / kd     → stable wall following
+5. forward_speed      → increase LAST, only when steering is stable
 ```
 
-Print and distribute the cheat sheet from [tuning_guide.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Guide/tuning_guide.md):
-
+Quick cheat sheet:
 ```bash
-# 8 most common params:
 ros2 param set /auto_driver forward_speed 0.15
 ros2 param set /auto_driver pid_kp 0.8
 ros2 param set /auto_driver pid_kd 0.20
@@ -428,208 +405,206 @@ ros2 param set /tunnel_wall_follower kp 5.0
 ros2 param set /tunnel_wall_follower kd 0.5
 ```
 
-**TRY (35 min) — Lane 1 full runs**
+**Groups try (35 min) — full Lane 1 runs, rotate in pairs**
 
-Each team runs the full Lane 1 end-to-end repeatedly:
-- Lane section → tunnel → lane section
-- Adjust one parameter at a time between runs
-- Instructor supervises, diagnoses using dashboard debug view, helps struggling teams
+Goal: complete clean end-to-end run — lane section → tunnel → exit back to lane. Fix one parameter between each run.
 
-Instructor notes to self while supervising:
-- If robot leaves the lane on curves → `crop_ratio_base` too low or `pid_kp` too low
-- If robot oscillates → `pid_kp` too high or `pid_kd` too low
-- If tunnel detection flickers → `min_wall_points` or `tunnel_hysteresis_frames`
-- If robot drifts in tunnel → `target_center_dist` adjustment
+| Slot | Time | On Lane 1 | At station |
+|------|------|-----------|------------|
+| A | 16:20–16:32 | Groups 1, 2 | All others |
+| B | 16:32–16:44 | Groups 3, 4 | All others |
+| C | 16:44–16:56 | Groups 5, 6, 7 | All others |
 
-**Save final params via 💾 at end of session.**
+**Save all final params via 💾 before 17:00.**
 
-Recap (5 min): Recap what was covered today — detection, PID, tunnel — and preview Day 2.
+Instructor quick-diagnose guide while supervising:
+
+| Symptom | Likely cause |
+|---------|-------------|
+| Leaves lane on curves | `crop_ratio_base` too low or `pid_kp` too low |
+| Oscillates on straights | `pid_kp` too high or `pid_kd` too low |
+| Tunnel detection flickers | Lower `min_wall_points` or raise `tunnel_hysteresis_frames` |
+| Robot drifts in tunnel | Adjust `target_center_dist` ± 0.02 |
+
+Brief recap at 16:57 — preview what Day 2 covers.
+
+---
+---
+
+# DAY 2
+
+## Day 2 — Schedule Overview
+
+| Time | Block | Topic | Where | Groups |
+|------|-------|-------|-------|--------|
+| 10:00–10:20 | 9 | Warm-Up: Re-Test Lane 1 | Lane 1 | All 7 (pairs) |
+| 10:20–10:55 | 10 | Hill & Bumper | Lane 2 | Rotate pairs |
+| 10:55–11:45 | 11 | Traffic Light | Lane 2 | Rotate pairs |
+| 11:45–12:20 | 12 | State Machine & Forced States | At Station | All 7 |
+| 12:20–13:00 | 13 | Boom Gate & Roundabout | Track 3 | Rotate pairs |
+| 13:00–14:30 | — | **LUNCH BREAK** | — | — |
+| 14:30–15:25 | 14 | Record & Playback — Parking | Track 3 | Rotate pairs |
+| 15:25–16:00 | 15 | Obstruction Avoidance | Track 3 | Rotate pairs |
+| 16:00–16:50 | 16 | Lane-by-Lane Testing Runs | All 3 | Split + rotate |
+| 16:50–17:00 | 17 | Competition Prep & Wrap-Up | — | All 7 |
 
 ---
 
-## 🗓️ DAY 2
+## Block 9 — Warm-Up: Re-Test Lane 1
+`10:00 – 10:20 | 20 min | Lane 1 — rotate pairs`
 
-### Block 9 — Warm-Up: Re-Test Lane 1
-`🕙 10:00 – 10:20 (20 min)`
+**Instructor (3 min):** Params load from `params.yaml` on launch. Quick verify that yesterday's work is intact.
 
-**TEACH (3 min)**
-
-Briefly explain: params are loaded from `params.yaml` on launch. Verify yesterday's work is intact.
-
-**TRY (17 min)**
-
-Each team launches and runs a quick Lane 1 test:
+**Groups try (17 min):**
 ```bash
 ros2 launch risabot_automode bringup.launch.py
-# Verify params loaded:
 ros2 param get /auto_driver pid_kp
 ros2 param get /line_follower_camera white_threshold
 ```
+Run one lane+tunnel pass. If lighting changed overnight, re-tune `white_threshold` before moving on — this teaches an important competition-day lesson.
 
-If detection changed (different lighting today), re-tune `white_threshold` first. Run one lane+tunnel pass — confirm it still works before continuing.
-
----
-
-### Block 10 — Hill & Bumper (Lane 2)
-`🕙 10:20 – 10:55 (35 min)`
-
-**TEACH (12 min)**
-
-Hill and bumper require no new code — the existing lane follower handles them automatically.
-
-**Hill:**
-- The camera still sees lane lines on the ramp surface → lane following continues
-- The IMU measures pitch angle. When pitch exceeds `hill_pitch_threshold` (default 12°), `auto_driver` enters `HILL` state
-- In HILL state: speed is boosted to `hill_drive_speed` (default 0.35 m/s), steering is scaled to drive straighter (`hill_steer_scale = 0.0` = ignore lane error, drive straight up)
-- After cresting the hill, pitch drops → returns to LANE_FOLLOW
-
-**Bumper:**
-- Just a physical bump the robot drives over. No detection, no state change. Lane following handles it. Only concern: enough speed to clear it without stalling.
-
-Parameters to know:
-```bash
-ros2 param set /auto_driver hill_pitch_threshold 12.0  # degrees — trigger angle
-ros2 param set /auto_driver hill_drive_speed 0.35      # m/s — climbing speed
-```
-
-**TRY (20 min) — on Lane 2**
-
-Run robot on Lane 2 in auto mode. Let it approach the hill:
-
-```bash
-# Watch IMU pitch and state on dashboard
-ros2 topic echo /imu/pitch
-```
-
-- If stalls on hill: increase `hill_drive_speed` to 0.40
-- If triggers hill mode too early: increase `hill_pitch_threshold` to 15.0
-- If triggers too late: decrease to 10.0
-- Drive over bumper — should be seamless with existing settings
-
-Instructor supervises. Note if any robot needs mechanical check (loose wires from vibration).
+| Slot | Time | On Lane 1 | At station |
+|------|------|-----------|------------|
+| A | 10:03–10:10 | Groups 1, 2, 3 | Groups 4, 5, 6, 7 |
+| B | 10:10–10:18 | Groups 4, 5, 6, 7 | Groups 1, 2, 3 |
 
 ---
 
-### Block 11 — Traffic Light Detection (Lane 2)
-`🕙 10:55 – 11:45 (50 min)`
+## Block 10 — Hill & Bumper
+`10:20 – 10:55 | 35 min | Lane 2 — rotate pairs`
 
-**TEACH (15 min)**
+**Instructor teaches (12 min) — all groups listen**
 
-How it works — [traffic_light_detector.py](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/risabot_automode/traffic_light_detector.py):
+**Hill:** Camera still sees lane lines on the ramp → lane following continues. The IMU measures pitch angle. When pitch exceeds `hill_pitch_threshold` (default 12°), `auto_driver` enters `HILL` state → boosts speed to `hill_drive_speed` (0.35 m/s) → drives straighter (`hill_steer_scale = 0.0`). After the crest, pitch drops → returns to `LANE_FOLLOW`.
+
+**Bumper:** Robot drives over it. No detection, no state change. Lane following handles it. Only concern: enough speed not to stall.
+
+```bash
+ros2 param set /auto_driver hill_pitch_threshold 12.0   # degrees
+ros2 param set /auto_driver hill_drive_speed 0.35       # m/s climbing speed
+```
+
+**Groups try (20 min) — Lane 2 rotation**
+
+| Slot | Time | On Lane 2 | At station |
+|------|------|-----------|------------|
+| A | 10:32–10:43 | Groups 1, 2 | All others |
+| B | 10:43–10:54 | Groups 3, 4 | All others |
+
+Groups 5, 6, 7 move to Lane 2 at the start of Block 11.
+
+On Lane 2, enable auto mode → let robot approach hill:
+```bash
+ros2 topic echo /imu/pitch    # watch angle
+```
+- Stalls on hill → raise `hill_drive_speed` to 0.40
+- Hill mode triggers too early → raise `hill_pitch_threshold` to 15.0
+- Hill mode triggers too late → lower to 10.0
+
+---
+
+## Block 11 — Traffic Light Detection
+`10:55 – 11:45 | 50 min | Lane 2 — rotate pairs`
+
+**Instructor teaches (15 min) — all groups listen**
 
 ```
 Camera frame
   → Convert to HSV color space
-  → Apply color masks (Red, Yellow, Green hue ranges)
-  → Find circular blobs matching each color
+  → Filter for Red hue ranges  (two ranges — wraps around 0°)
+  → Filter for Yellow hue      (~20–35)
+  → Filter for Green hue       (~40–85)
   → Count pixels per color
-  → Publish /traffic_light_state ("red" / "yellow" / "green" / "unknown")
+  → Publish /traffic_light_state  ("red" / "yellow" / "green" / "unknown")
 ```
 
-HSV explained briefly:
-- **H** (Hue) = the color (0–180 in OpenCV, wraps around)
-- **S** (Saturation) = how vivid
-- **V** (Value) = how bright
-- Red wraps around 0° so it needs two ranges (`red_h_low1/high1` and `red_h_low2/high2`)
+> **Warning:** HSV thresholds are extremely sensitive to lighting.
+> Always re-tune at the competition venue on the day.
 
-> [!WARNING]
-> HSV thresholds are extremely sensitive to lighting. The values in `params.yaml` are a starting point — **always re-tune at the competition venue.**
-
-In `auto_driver`: when `TRAFFIC_LIGHT` state is active, red or yellow → robot stops, green → robot moves.
+When active in `auto_driver`: Red/Yellow → robot stops. Green → robot goes.
 
 Key parameters:
 ```bash
-ros2 param set /traffic_light_detector sat_min 80        # minimum saturation
-ros2 param set /traffic_light_detector val_min 80        # minimum brightness
-ros2 param set /traffic_light_detector min_pixel_count 50  # noise filter
-ros2 param set /traffic_light_detector required_confidence 3  # frames before acting
+ros2 param set /traffic_light_detector sat_min 80         # minimum saturation
+ros2 param set /traffic_light_detector val_min 80         # minimum brightness
+ros2 param set /traffic_light_detector min_pixel_count 50 # noise filter
+ros2 param set /traffic_light_detector required_confidence 3  # frames to confirm
 ```
 
-**TRY (30 min) — on Lane 2**
+**Groups try (30 min) — Lane 2 rotation**
 
-Step 1 — Test detection in isolation:
+| Slot | Time | On Lane 2 | At station |
+|------|------|-----------|------------|
+| A | 11:10–11:22 | Groups 1, 2 | All others |
+| B | 11:22–11:34 | Groups 3, 4 | All others |
+| C | 11:34–11:44 | Groups 5, 6, 7 | All others |
+
+Step 1 — Isolated test using colored cards:
 ```bash
-# Force traffic light state
 ros2 topic pub --once /set_challenge std_msgs/String "data: TRAFFIC_LIGHT"
-
-# Watch the state
 ros2 topic echo /traffic_light_state
 ```
+Hold red card → should read `"red"`. Green → `"green"`. Yellow → `"yellow"`.
 
-Hold colored cards in front of the camera:
-- Red card → should read `"red"`
-- Green card → should read `"green"`
-- Yellow card → should read `"yellow"`
-
-Tune if needed:
+Step 2 — Fix if not detecting:
 ```bash
-# Not detecting anything:
 ros2 param set /traffic_light_detector sat_min 50
 ros2 param set /traffic_light_detector val_min 50
-
-# False positives (detecting wrong objects):
+# False positives:
 ros2 param set /traffic_light_detector min_pixel_count 100
-
-# Slow to respond:
-ros2 param set /traffic_light_detector required_confidence 2
 ```
 
-Step 2 — Test integrated on Lane 2:
-- Robot drives lane → approaches traffic light position → stops on red → resumes on green
-- Dashboard shows state switch: `LANE_FOLLOW` → `TRAFFIC_LIGHT` → `LANE_FOLLOW`
+Step 3 — Integrated test on Lane 2: robot drives → stops on red → goes on green.
 
-**Save via 💾 when working.**
+Save via 💾 when working.
 
 ---
 
-### Block 12 — State Machine: Testing Challenges in Isolation
-`🕙 11:45 – 12:20 (35 min)`
+## Block 12 — State Machine & Testing Challenges in Isolation
+`11:45 – 12:20 | 35 min | At Station — all 7 groups simultaneously`
 
-**TEACH (12 min)**
+**Instructor teaches (12 min)**
 
-Show the state machine priority table from [ARCHITECTURE.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/ARCHITECTURE.md):
+Priority table — the brain picks the highest active priority:
 
-| Priority | State | Triggered by |
-|----------|-------|--------------|
+| Priority | State | What triggers it |
+|----------|-------|-----------------|
 | 1 | MANUAL | Joystick Start button |
 | 4 | OBSTRUCTION | LiDAR detects lateral obstacle |
-| 7 | TUNNEL | Walls on both sides detected |
+| 7 | TUNNEL | Walls on both sides for 3 frames |
 | 9 | TRAFFIC_LIGHT | Red/yellow detected (when armed) |
 | 9.5 | HILL | IMU pitch exceeds threshold |
-| 11 | LANE_FOLLOW | Default |
+| 11 | LANE_FOLLOW | Default state — always active |
 
-Lap tracking: `current_lap` = 1 or 2. Some challenges only activate on specific laps (e.g. parking on Lap 2).
+Lap tracking: `current_lap` 1 or 2. Some challenges only arm on a specific lap.
 
-Distance-based transitions — these control WHEN the state advances:
+Distance/time transitions — when the state machine auto-advances:
 ```bash
-ros2 param set /auto_driver t_roundabout_sec 8.0      # time in roundabout
-ros2 param set /auto_driver dist_roundabout 2.0       # distance to exit roundabout
-ros2 param set /auto_driver dist_boom_gate_1_pass 0.5 # distance after boom gate 1
+ros2 param set /auto_driver t_roundabout_sec 8.0
+ros2 param set /auto_driver dist_boom_gate_1_pass 0.5
 ```
 
-**The most important tool for testing: force any state directly**
+**The most important competition-day debugging tool:**
 ```bash
 ros2 topic pub --once /set_challenge std_msgs/String "data: TUNNEL"
 ros2 topic pub --once /set_challenge std_msgs/String "data: TRAFFIC_LIGHT"
 ros2 topic pub --once /set_challenge std_msgs/String "data: OBSTRUCTION"
 ros2 topic pub --once /set_challenge std_msgs/String "data: LANE_FOLLOW"
 ```
-Use this on competition day to test individual challenges without running the full course.
+Force any state directly to test that challenge in isolation without running the full course.
 
-**TRY (20 min)**
+**Groups try (20 min) — at station, all 7 simultaneously**
 
-Participants force each state and observe dashboard:
-
+All groups force each state and observe the dashboard:
 ```bash
-# Force each state, observe dashboard state display and robot behaviour
 ros2 topic pub --once /set_challenge std_msgs/String "data: TUNNEL"
-# → State shows TUNNEL, robot uses LiDAR
+# → Dashboard shows TUNNEL, robot uses LiDAR
 
 ros2 topic pub --once /set_challenge std_msgs/String "data: TRAFFIC_LIGHT"
-# → State shows TRAFFIC_LIGHT, robot stops
+# → Robot stops, waits for green
 
 ros2 topic pub --once /set_challenge std_msgs/String "data: HILL"
-# → State shows HILL, robot boosts speed
+# → Robot boosts speed
 
 ros2 topic pub --once /set_challenge std_msgs/String "data: LANE_FOLLOW"
 # → Returns to camera lane following
@@ -637,73 +612,73 @@ ros2 topic pub --once /set_challenge std_msgs/String "data: LANE_FOLLOW"
 
 ---
 
-### Block 13 — Boom Gate & Roundabout (Track 3)
-`🕙 12:20 – 1:00 (40 min)`
+## Block 13 — Boom Gate & Roundabout
+`12:20 – 13:00 | 40 min | Track 3 — rotate pairs`
 
-**TEACH (12 min)**
+**Instructor teaches (12 min) — all groups listen**
 
-**Boom Gate** — [boom_gate_detector.py](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/risabot_automode/boom_gate_detector.py):
-- LiDAR looks at a narrow forward arc (±20°, 0.1–0.8m range)
-- If a dense cluster of points appears at similar distances (low distance variance) → horizontal bar = gate CLOSED
-- Hysteresis: must see OPEN for 3 consecutive frames before publishing `True`
-- Two gates on the course: Gate 1 (always open Lap 1, closed Lap 2), Gate 2 (random)
-
-**Roundabout:**
-- Uses normal lane following — the roundabout has painted lines
-- `auto_driver` enters `ROUNDABOUT` state after obstruction clears
-- `t_roundabout_sec` controls how long to follow before exiting
+**Boom Gate:**
+- LiDAR checks a narrow forward arc (±20°, range 0.1–0.8 m)
+- Dense cluster of points at similar distances (low variance) = horizontal bar = CLOSED
+- Hysteresis: must see OPEN for 3 frames before publishing `True`
+- Two gates: Gate 1 (open Lap 1, closed Lap 2), Gate 2 (random)
 
 ```bash
-# Key boom gate params:
-ros2 param set /boom_gate_detector min_gate_points 5       # points needed to detect bar
-ros2 param set /boom_gate_detector distance_variance_max 0.05  # how "flat" the bar must be
+ros2 param set /boom_gate_detector min_gate_points 5
+ros2 param set /boom_gate_detector distance_variance_max 0.05
 ```
 
-**TRY (25 min) — on Track 3**
+**Roundabout:**
+- Normal lane following — roundabout has painted lines
+- `ROUNDABOUT` state uses `t_roundabout_sec` timer to know when to exit
+- On Lap 2, Gate 1 is closed → robot takes parking path instead
+
+**Groups try (25 min) — Track 3 rotation**
+
+| Slot | Time | On Track 3 | At station |
+|------|------|-----------|------------|
+| A | 12:32–12:43 | Groups 1, 2 | All others |
+| B | 12:43–12:54 | Groups 3, 4 | All others |
+
+Groups 5, 6, 7 move to Track 3 at the start of Block 14.
 
 Boom gate test:
 ```bash
 ros2 topic pub --once /set_challenge std_msgs/String "data: BOOM_GATE_2"
 ros2 topic echo /boom_gate_open
 ```
-- Hold a horizontal stick/ruler in front of robot → should read `False` (closed)
-- Remove → should read `True` (open)
-- Tune `min_gate_points` and `distance_variance_max` as needed
+Hold stick horizontally in front → `False` (closed). Remove → `True` (open).
 
-Roundabout test on Track 3:
-- Place robot at roundabout entrance → auto mode → follows lane through roundabout
-- Adjust `t_roundabout_sec` if it exits the roundabout too early or too late
+Roundabout: Place robot at entrance → auto mode → drives through. Adjust `t_roundabout_sec` if exits too early/late.
 
 ---
 
-### 🍽️ LUNCH BREAK: 1:00 – 2:30
+## 🍽️ LUNCH BREAK — 13:00 to 14:30
 
-> [!IMPORTANT]
-> **Instructor tasks:**
-> - Set up parking slot on Track 3
-> - Charge all robots FULLY — critical for recording accuracy
-> - Print tuning cheat sheet for each team if not already done
+**Instructor tasks during break:**
+- Set up parking slot on Track 3 if not already done
+- Charge ALL robots fully — critical for recording accuracy
+- Print tuning cheat sheet for any group that doesn't have one
 
 ---
 
-### Block 14 — Record & Playback: Parking
-`🕙 2:30 – 3:25 (55 min)`
+## Block 14 — Record & Playback — Parking
+`14:30 – 15:25 | 55 min | Track 3 — rotate pairs`
 
-**TEACH (15 min)**
+**Instructor teaches (15 min) — all groups listen**
 
-Reference [06-autonomous-parking.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Workshop/06-autonomous-parking.md).
+Why record & playback: reactive sensors are unreliable for precise parking. Open-loop recording at 20 Hz is repeatable when conditions are consistent.
 
-Why record & playback — reactive sensors are unreliable for precise parking. Open-loop recording at 20Hz is repeatable when conditions are consistent.
+**The interface:**
 
-The interface:
-| Button | Command | Action |
-|--------|---------|--------|
-| Button A | `record` | Start recording (clears buffer, records at 20Hz) |
-| Button A again | `stop` | Stop recording |
-| Button B | `save` | Write to `~/recorded_movement.json` |
-| Button X | `playback` | Replay saved recording |
+| Button | Action |
+|--------|--------|
+| Button A | Start recording |
+| Button A again | Stop recording |
+| Button B | Save to `~/recorded_movement.json` |
+| Button X | Play back recording |
 
-Can also publish directly:
+Same commands via terminal:
 ```bash
 ros2 topic pub --once /record_playback_cmd std_msgs/String "{data: 'record'}"
 ros2 topic pub --once /record_playback_cmd std_msgs/String "{data: 'stop'}"
@@ -711,207 +686,169 @@ ros2 topic pub --once /record_playback_cmd std_msgs/String "{data: 'save'}"
 ros2 topic pub --once /record_playback_cmd std_msgs/String "{data: 'playback'}"
 ```
 
-**What affects recording accuracy:**
-- 🔋 **Battery level** — open-loop is voltage-sensitive. A low battery plays back slower than it recorded. **Charge fully.**
-- 🏗️ **Surface** — record on the SAME floor type as competition
-- 🎮 **Input quality** — slow, smooth joystick movements = clean recording = clean playback
-- ⏱️ **`parking_idle_duration`** — time robot waits (default 2.0s) before starting playback, letting it fully stop:
+**What affects accuracy:**
+- 🔋 Battery level — low battery = slower playback than recorded. **Charge fully.**
+- 🏗️ Surface — must be the same surface type as competition
+- 🎮 Input quality — slow, smooth joystick = cleaner recording
+- ⏱️ `parking_idle_duration` — settling time before playback starts (default 2.0 s):
   ```bash
   ros2 param set /auto_driver parking_idle_duration 2.5
   ```
 
-Signage trigger flow (how it works in auto mode on Lap 2):
-```
-signage_detector detects parking sign
-  → auto_driver: PARKING_IDLE (stop + wait parking_idle_duration)
-  → auto_driver: PARKING_PLAYBACK (publishes "playback" command)
-  → servo_controller: executes recorded movement
-  → auto_driver: FINISHED
-```
+**Groups try (35 min) — Track 3 rotation**
 
-**TRY (35 min) — on Track 3 parking slot**
+| Slot | Time | On Track 3 | At station |
+|------|------|-----------|------------|
+| A | 14:45–14:57 | Groups 1, 2 | All others |
+| B | 14:57–15:09 | Groups 3, 4 | All others |
+| C | 15:09–15:21 | Groups 5, 6, 7 | All others |
 
-Step 1 — Record (15 min):
-1. Position robot at the correct starting point relative to slot
-2. Press **Button A** → terminal shows `🔴 RECORDING started`
-3. Drive slowly and smoothly into the slot using joystick
+On Track 3, each group:
+
+1. Position robot next to parking slot
+2. Press **Button A** → terminal: `🔴 RECORDING started`
+3. Drive slowly and smoothly into the slot
 4. Press **Button A** → `⏹ RECORDING stopped`
-5. Press **Button B** → `Saved X movement samples to ~/recorded_movement.json`
-
-Step 2 — Playback test (15 min):
-1. Return robot to exact starting position
-2. Press **Button X** → robot replays
-3. Evaluate: did it park cleanly?
-4. If drifts at start: increase `parking_idle_duration` to 2.5 or 3.0
-5. If trajectory is wrong: re-record with smoother movements
-6. Repeat until 3 consecutive playbacks land in the slot
-
-Step 3 (if time allows) — Test signage trigger:
-```bash
-ros2 param set /auto_driver current_lap 2
-# Enable auto mode → robot drives → sees sign → PARKING_IDLE → playback
-```
+5. Press **Button B** → `Saved X movement samples`
+6. Return to starting position
+7. Press **Button X** → watch robot replay
+8. Not accurate? Re-record. Iterate until 3 consecutive plays land in slot.
 
 ---
 
-### Block 15 — Obstruction Avoidance (Track 3)
-`🕙 3:25 – 4:00 (35 min)`
+## Block 15 — Obstruction Avoidance
+`15:25 – 16:00 | 35 min | Track 3 — rotate pairs`
 
-**TEACH (12 min)**
-
-Reference [challenges_breakdown.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Guide/challenges_breakdown.md) Section 2.
+**Instructor teaches (12 min) — all groups listen**
 
 The detect → timed maneuver → resume pattern:
-
 ```
 LiDAR detects object in lane < detect_dist
-  → Check left vs right clearance
-  → Phase 1: Steer away (steer_away_duration seconds)
-  → Phase 2: Drive straight alongside obstacle (pass_duration seconds)
-  → Phase 3: Steer back into lane (steer_back_duration seconds)
-  → Set active=False → auto_driver resumes lane following
+  → Check: left or right has more clearance?
+  → Phase 1: Steer away          (steer_away_duration)
+  → Phase 2: Drive alongside     (pass_duration)
+  → Phase 3: Steer back          (steer_back_duration)
+  → Resume lane following
 ```
 
-All timing is open-loop — same principle as parking recording.
-
-Key parameters:
 ```bash
-ros2 param set /obstruction_avoidance detect_dist 0.50       # how far ahead to detect
-ros2 param set /obstruction_avoidance steer_angular 0.6      # how hard to steer away
-ros2 param set /obstruction_avoidance pass_duration 2.0      # time alongside obstacle
-ros2 param set /obstruction_avoidance steer_back_duration 1.5  # time returning to lane
+ros2 param set /obstruction_avoidance detect_dist 0.50
+ros2 param set /obstruction_avoidance steer_angular 0.6
+ros2 param set /obstruction_avoidance pass_duration 2.0
+ros2 param set /obstruction_avoidance steer_back_duration 1.5
 ```
 
-**TRY (20 min) — on Track 3**
+**Groups try (20 min) — Track 3 rotation**
 
-Place obstacle block in the lane:
+| Slot | Time | On Track 3 | At station |
+|------|------|-----------|------------|
+| A | 15:37–15:48 | Groups 1, 2, 3 | All others |
+| B | 15:48–15:58 | Groups 4, 5, 6, 7 | All others |
+
+Place obstacle block in lane. Force state and enable auto:
 ```bash
 ros2 topic pub --once /set_challenge std_msgs/String "data: OBSTRUCTION"
 ```
-Enable auto mode → robot approaches → dodges:
 
 | Problem | Fix |
 |---------|-----|
-| Doesn't detect early enough | Increase `detect_dist` to 0.65 |
-| Clips obstacle while passing | Increase `pass_duration` to 2.5 |
-| Overshoots return to lane | Decrease `steer_back_duration` to 1.0 |
-| Doesn't steer far enough | Increase `steer_angular` to 0.8 |
+| Doesn't detect early enough | Raise `detect_dist` → 0.65 |
+| Clips obstacle while passing | Raise `pass_duration` → 2.5 |
+| Overshoots back to lane | Lower `steer_back_duration` → 1.0 |
+| Doesn't steer wide enough | Raise `steer_angular` → 0.8 |
 
-**Save via 💾 when dodge is clean.**
-
----
-
-### Block 16 — Lane-by-Lane Testing Runs
-`🕙 4:00 – 4:50 (50 min)`
-
-**TEACH (5 min)**
-
-Each setup is tested end-to-end. The goal is to identify any remaining issues and fix them. Between each run, adjust one parameter at a time. Save when stable.
-
-**TRY — Rotation through all 3 setups (45 min)**
-
-Teams rotate through each setup. Recommended allocation:
-
-| Rotation | Duration | Setup | What to test |
-|----------|----------|-------|-------------|
-| Round 1 | 15 min | **Lane 1** | Full run: lane follow → tunnel → lane follow exit |
-| Round 2 | 15 min | **Lane 2** | Full run: lane follow → hill → bumper → traffic light stop/go |
-| Round 3 | 15 min | **Track 3** | Roundabout → boom gate detect → parking playback |
-
-For each run:
-- Start in auto mode
-- Let it run, note where it fails
-- Fix the parameter
-- Re-run to verify
-- Save when clean
-
-Instructor rotates between teams actively during this block — this is the most hands-on supervision session of the workshop.
+Save via 💾 when clean.
 
 ---
 
-### Block 17 — Wrap-Up & Competition Preparation
-`🕙 4:50 – 5:00 (10 min)`
+## Block 16 — Lane-by-Lane Testing Runs
+`16:00 – 16:50 | 50 min | All 3 setups open`
 
-**TEACH (10 min)**
+**Instructor (5 min):** All setups are now open. Groups spread across all 3 and run end-to-end. Fix what breaks. Save when clean.
 
-Competition day checklist — display on projector:
+**Group assignment — initial split:**
 
-| # | Action |
-|---|--------|
-| 1 | **Re-tune `white_threshold` and HSV ranges at the venue** — lighting changes everything |
-| 2 | **Charge batteries fully** before recording and before competition runs |
-| 3 | **Save params before experimenting** — use 💾 button every time you find a working config |
-| 4 | **Use `/set_challenge` to test individual challenges** before running the full course |
-| 5 | **Keep `forward_speed` conservative** — finishing the course matters more than speed |
-| 6 | **If detection breaks** — fix `white_threshold` first before touching anything else |
-| 7 | **Re-record parking** if the competition surface differs from your practice surface |
-| 8 | **Tune in order** — detection → steering → speed. Never skip ahead |
+| Setup | Groups | Focus |
+|-------|--------|-------|
+| Lane 1 | Groups 1, 2, 3 | Lane follow → tunnel → exit |
+| Lane 2 | Groups 4, 5 | Lane follow → hill → bumper → traffic light |
+| Track 3 | Groups 6, 7 | Roundabout → boom gate → parking playback |
 
-Point participants to the reference materials for continued study:
-- [tuning_guide.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Guide/tuning_guide.md) — full symptom → fix reference
-- [commands_reference.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Guide/commands_reference.md) — all ROS topics and commands
-- [challenges_breakdown.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Guide/challenges_breakdown.md) — code-level explanation of each challenge
+**16:00–16:25 (25 min): First rotation**
 
----
+Each group runs their assigned setup. Notes:
+- Start in auto mode each time
+- One parameter change per run
+- Save when a run is clean
 
-## ⏱️ Time Budget
+**16:25–16:48 (23 min): Second rotation**
 
-### Day 1
+Groups swap to the next setup (if time and resources allow):
 
-| Block | Time | Duration | Topic | Teach | Try |
-|-------|------|----------|-------|-------|-----|
-| 1 | 10:00–10:35 | 35 min | ROS + Linux recap | 15 min | 20 min |
-| 2 | 10:35–11:05 | 30 min | Competition overview | 20 min | 10 min |
-| 3 | 11:05–11:40 | 35 min | Architecture + setup pattern | 20 min | 15 min |
-| 4 | 11:40–12:10 | 30 min | Dashboard | 12 min | 18 min |
-| 5 | 12:10–1:00 | 50 min | Lane detection (image processing) | 20 min | 25 min + 5 save |
-| — | 1:00–2:30 | 90 min | LUNCH | — | — |
-| 6 | 2:30–3:10 | 40 min | PID steering (Lane 1) | 12 min | 25 min + 3 save |
-| 7 | 3:10–4:10 | 60 min | Tunnel navigation (Lane 1) | 15 min | 40 min + 5 save |
-| 8 | 4:10–5:00 | 50 min | Full Lane 1 tuning + recap | 10 min | 35 min + 5 recap |
+| Setup | Groups |
+|-------|--------|
+| Lane 1 | Groups 3, 4 |
+| Lane 2 | Groups 1, 6 |
+| Track 3 | Groups 2, 5, 7 |
 
-### Day 2
-
-| Block | Time | Duration | Topic | Teach | Try |
-|-------|------|----------|-------|-------|-----|
-| 9 | 10:00–10:20 | 20 min | Warm-up: re-test Lane 1 | 3 min | 17 min |
-| 10 | 10:20–10:55 | 35 min | Hill + Bumper (Lane 2) | 12 min | 23 min |
-| 11 | 10:55–11:45 | 50 min | Traffic light (Lane 2) | 15 min | 35 min |
-| 12 | 11:45–12:20 | 35 min | State machine + forced states | 12 min | 20 min + 3 save |
-| 13 | 12:20–1:00 | 40 min | Boom gate + roundabout (Track 3) | 12 min | 25 min + 3 save |
-| — | 1:00–2:30 | 90 min | LUNCH | — | — |
-| 14 | 2:30–3:25 | 55 min | Record & playback parking (Track 3) | 15 min | 35 min + 5 save |
-| 15 | 3:25–4:00 | 35 min | Obstruction avoidance (Track 3) | 12 min | 20 min + 3 save |
-| 16 | 4:00–4:50 | 50 min | Lane-by-lane testing runs (all 3) | 5 min | 45 min |
-| 17 | 4:50–5:00 | 10 min | Competition prep + wrap-up | 10 min | — |
+Instructor rotates between setups actively — this is the most hands-on supervision block.
 
 ---
 
-## 📊 Quick Reference — Key Files
+## Block 17 — Competition Prep & Wrap-Up
+`16:50 – 17:00 | 10 min | All groups`
 
-| What | File |
-|------|------|
-| Competition challenges | [challenges_breakdown.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Guide/challenges_breakdown.md) |
-| Full tuning guide | [tuning_guide.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Guide/tuning_guide.md) |
-| All ROS commands | [commands_reference.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/Guide/commands_reference.md) |
-| Architecture & node graph | [ARCHITECTURE.md](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/ARCHITECTURE.md) |
-| All tunable parameters | [params.yaml](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/config/params.yaml) |
-| Launch file (full system) | [bringup.launch.py](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/launch/bringup.launch.py) |
-| Lane following code | [line_follower_camera.py](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/risabot_automode/line_follower_camera.py) |
-| Tunnel wall follower | [tunnel_wall_follower.py](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/risabot_automode/tunnel_wall_follower.py) |
-| State machine (brain) | [auto_driver.py](file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/src/risabot_automode/risabot_automode/auto_driver.py) |
+**Instructor (10 min) — display on projector:**
+
+**Competition Day Checklist:**
+
+| # | What to do |
+|---|-----------|
+| 1 | Re-tune `white_threshold` and HSV ranges at the venue — lighting is different everywhere |
+| 2 | Charge batteries fully before recording and before every competition run |
+| 3 | Save params before experimenting — use 💾 button every time something works |
+| 4 | Use `/set_challenge` to test each challenge individually before full runs |
+| 5 | Keep `forward_speed` conservative — finishing matters more than speed |
+| 6 | If detection breaks — fix `white_threshold` before touching anything else |
+| 7 | Re-record parking if the competition floor surface is different from practice |
+| 8 | Always tune in order — detection → steering → speed |
+
+**Reference guides (in the repo):**
+- `Guide/tuning_guide.md` — full symptom → fix reference
+- `Guide/commands_reference.md` — all ROS topics and commands
+- `Guide/challenges_breakdown.md` — code-level explanation of each challenge
 
 ---
 
-## 🧰 Pre-Workshop Checklist
+## Quick Reference — Key Parameters
 
-- [ ] All robots on latest `main` branch, `tools/install.sh` completed
-- [ ] All robots on workshop WiFi — IP addresses noted on each robot
-- [ ] Batteries fully charged + spares available
-- [ ] **Lane 1:** lane track + tunnel walls set up
-- [ ] **Lane 2:** lane track + hill ramp + bumper + traffic light set up
-- [ ] **Track 3:** roundabout + boom gate + parking slot + obstacle block set up
-- [ ] Joystick controllers charged and paired to robots
-- [ ] Dashboard accessible from participant laptops (`http://<ip>:8080`)
-- [ ] Tuning cheat sheet printed — one per team
-- [ ] Colored cards (red, green, yellow) for traffic light testing
+| Parameter | Node | Default | What it does |
+|-----------|------|---------|-------------|
+| `forward_speed` | auto_driver | 0.15 | Base driving speed (m/s) |
+| `pid_kp` | auto_driver | 0.8 | Steering strength |
+| `pid_kd` | auto_driver | 0.20 | Steering damping |
+| `pid_ki` | auto_driver | 0.01 | Drift correction |
+| `white_threshold` | line_follower_camera | 100 | Lane detection sensitivity |
+| `crop_ratio_base` | line_follower_camera | 0.55 | How far ahead robot looks |
+| `kp` | tunnel_wall_follower | 5.0 | Tunnel centering strength |
+| `kd` | tunnel_wall_follower | 0.5 | Tunnel damping |
+| `forward_speed` | tunnel_wall_follower | 0.12 | Speed inside tunnel |
+| `hill_pitch_threshold` | auto_driver | 12.0 | Degrees of incline to trigger hill mode |
+| `hill_drive_speed` | auto_driver | 0.35 | Climbing speed |
+| `detect_dist` | obstruction_avoidance | 0.50 | How far ahead to detect obstacle |
+| `parking_idle_duration` | auto_driver | 2.0 | Settle time before parking playback |
+
+---
+
+## Pre-Workshop Checklist
+
+- [ ] All 7 robots on latest branch, `tools/install.sh` completed
+- [ ] All 7 robots connected to workshop WiFi — IP on sticky note on each robot
+- [ ] Batteries fully charged + spares on hand
+- [ ] Joystick controllers charged and paired (one per group)
+- [ ] Dashboard accessible from each group's laptop (`http://<ip>:8080`)
+- [ ] **Lane 1:** lane track + tunnel walls assembled
+- [ ] **Lane 2:** lane track + hill ramp + bumper + traffic light assembled
+- [ ] **Track 3:** roundabout + boom gate + parking slot + obstacle block assembled
+- [ ] Tuning cheat sheet printed — one per group (7 copies)
+- [ ] Colored cards (red, green, yellow) for traffic light testing — one set per group
