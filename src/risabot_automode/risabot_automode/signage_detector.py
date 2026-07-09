@@ -62,6 +62,20 @@ class SignageDetector(Node):
         self.bridge = CvBridge()
         self.bpu_available = BPU_AVAILABLE
 
+        # ── Per-class confidence thresholds ─────────────────────────────────
+        # Custom thresholds per class ID:
+        self.class_thresholds = {
+            0: 0.13,  # Bumper_signboard
+            1: 0.13,  # Hill_signboard
+            2: 0.13,  # Obstacle_signboard
+            3: 0.15,  # ParallelP_signboard
+            4: 0.15,  # PerpendP_signboard
+            5: 0.15,  # RISAbotRemastered
+            6: 0.15,  # Traffic_Green
+            7: 0.15,  # Traffic_Red
+            8: 0.15,  # Trafficlight_signboard
+        }
+
         # ── Detection & Gating state ────────────────────────────────────────
         self.hill_sign_active = False
         self.parking_sign_active = False
@@ -247,8 +261,16 @@ class SignageDetector(Node):
             class_ids = np.argmax(pred[:, 5:], axis=1)
             max_scores = pred[:, 4] * pred[np.arange(len(pred)), 5 + class_ids]
             
-            # Filter by confidence threshold and ignore null class (9)
-            keep_indices = (max_scores >= conf_threshold) & (class_ids != 9)
+            # Filter by per-class confidence thresholds and ignore null class (9)
+            keep_indices = []
+            for idx, cid in enumerate(class_ids):
+                thresh = self.class_thresholds.get(cid, conf_threshold)
+                if max_scores[idx] >= thresh and cid != 9:
+                    keep_indices.append(True)
+                else:
+                    keep_indices.append(False)
+            keep_indices = np.array(keep_indices)
+            
             filtered_boxes = pred[keep_indices, 0:4]
             filtered_scores = max_scores[keep_indices]
             filtered_class_ids = class_ids[keep_indices]
