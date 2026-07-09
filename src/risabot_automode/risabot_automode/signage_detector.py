@@ -24,6 +24,7 @@ from std_msgs.msg import Bool, String
 from .topics import (
     CAMERA_IMAGE_TOPIC,
     HILL_SIGN_TOPIC,
+    OBSTACLE_CAMERA_TOPIC,
     PARKING_SIGN_TOPIC,
     SIGNAGE_DEBUG_TOPIC,
     TRAFFIC_LIGHT_TOPIC,
@@ -64,10 +65,12 @@ class SignageDetector(Node):
         # ── Detection & Gating state ────────────────────────────────────────
         self.hill_sign_active = False
         self.parking_sign_active = False
+        self.obstacle_sign_active = False
         self.traffic_light_active = 'unknown'
 
         self.detected_hill_consecutive = 0
         self.detected_parking_consecutive = 0
+        self.detected_obstacle_consecutive = 0
         self.detected_tl_red_consecutive = 0
         self.detected_tl_green_consecutive = 0
         self.detected_tl_yellow_consecutive = 0
@@ -76,6 +79,7 @@ class SignageDetector(Node):
         self.parking_pub = self.create_publisher(Bool, PARKING_SIGN_TOPIC, 10)
         self.traffic_light_pub = self.create_publisher(String, TRAFFIC_LIGHT_TOPIC, 10)
         self.hill_pub = self.create_publisher(Bool, HILL_SIGN_TOPIC, 10)
+        self.obstacle_pub = self.create_publisher(Bool, OBSTACLE_CAMERA_TOPIC, 10)
         self.debug_pub = self.create_publisher(Image, SIGNAGE_DEBUG_TOPIC, 10)
 
         # Heartbeat timer — continuously publishes last states to keep topics fresh
@@ -140,6 +144,7 @@ class SignageDetector(Node):
         self.parking_pub.publish(Bool(data=self.parking_sign_active))
         self.traffic_light_pub.publish(String(data=self.traffic_light_active))
         self.hill_pub.publish(Bool(data=self.hill_sign_active))
+        self.obstacle_pub.publish(Bool(data=self.obstacle_sign_active))
 
     # ──────────────────────────────────────────────────────────────────────────
     # Image preprocessing (BGR to NV12)
@@ -272,7 +277,7 @@ class SignageDetector(Node):
                 resized = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
                 h_img, w_img = resized.shape[:2]
                 for idx, cid in enumerate(final_class_ids):
-                    if cid == 2:  # traffic_light (generic)
+                    if cid == 8:  # Trafficlight_signboard (generic) — CV-reclassify color
                         box = final_boxes[idx]
                         x1_c = max(0, int(box[0]))
                         y1_c = max(0, int(box[1]))
@@ -316,10 +321,23 @@ class SignageDetector(Node):
     # ──────────────────────────────────────────────────────────────────────────
 
     def update_detection_states(self, boxes: np.ndarray, class_ids: np.ndarray) -> None:
-        """Applies hysteresis / temporal filtering on current detections."""
-        
-        # 1. Hill sign (Class 0)
-        saw_hill = 0 in class_ids
+        """Applies hysteresis / temporal filtering on current detections.
+
+        10-class model mapping:
+          0: Bumper_signboard       → obstacle_pub
+          1: Hill_signboard         → hill_pub
+          2: Obstacle_signboard     → obstacle_pub
+          3: ParallelP_signboard    → parking_pub
+          4: PerpendP_signboard     → parking_pub
+          5: RISAbotRemastered      → ignored
+          6: Traffic_Green          → traffic_light 'green'
+          7: Traffic_Red            → traffic_light 'red'
+          8: Trafficlight_signboard → traffic_light (CV-reclassified in image_callback)
+          9: null                   → ignored
+        """
+
+        # 1. Hill sign (Class 1: Hill_signboard)
+        saw_hill = 1 in class_ids
         if saw_hill:
             self.detected_hill_consecutive = min(10, self.detected_hill_consecutive + 1)
             if self.detected_hill_consecutive >= 3:
@@ -329,13 +347,13 @@ class SignageDetector(Node):
             if self.detected_hill_consecutive == 0:
                 self.hill_sign_active = False
 
-        # 2. Parking sign (Class 1)
+        # 2. Parking sign (Class 3: ParallelP_signboard OR Class 4: PerpendP_signboard)
         # Optional: check if the bounding box meets minimum width constraints
         saw_parking = False
         min_width = int(self._param_cache['min_parking_sign_width'])
-        
+
         for idx, cid in enumerate(class_ids):
-            if cid == 1:
+            if cid in (3, 4):  # ParallelP_signboard or PerpendP_signboard
                 if min_width > 0:
                     box = boxes[idx]
                     box_w = box[2] - box[0]
@@ -355,11 +373,24 @@ class SignageDetector(Node):
             if self.detected_parking_consecutive == 0:
                 self.parking_sign_active = False
 
-        # 3. Traffic light states
-        # Classes: 2: traffic_light, 3: traffic_light_green, 4: traffic_light_red, 5: traffic_light_yellow
-        saw_red = (2 in class_ids) or (4 in class_ids)
-        saw_green = 3 in class_ids
-        saw_yellow = 5 in class_ids
+        # 3. Obstacle sign (Class 0: Bumper_signboard OR Class 2: Obstacle_signboard)
+        saw_obstacle = (0 in class_ids) or (2 in class_ids)
+        if saw_obstacle:
+            self.detected_obstacle_consecutive = min(10, self.detected_obstacle_consecutive + 1)
+            if self.detected_obstacle_consecutive >= 3:
+                self.obstacle_sign_active = True
+        else:
+            self.detected_obstacle_consecutive = max(0, self.detected_obstacle_consecutive - 1)
+            if self.detected_obstacle_consecutive == 0:
+                self.obstacle_sign_active = False
+
+        # 4. Traffic light states
+        # Class 8: Trafficlight_signboard (generic) — CV-reclassified in image_callback to 6 or 7
+        # Class 6: Traffic_Green
+        # Class 7: Traffic_Red
+        # No yellow class in 10-class model
+        saw_red = 7 in class_ids
+        saw_green = 6 in class_ids
 
         if saw_red:
             self.detected_tl_red_consecutive = min(10, self.detected_tl_red_consecutive + 1)
@@ -373,28 +404,22 @@ class SignageDetector(Node):
             self.detected_tl_yellow_consecutive = 0
             if self.detected_tl_green_consecutive >= 3:
                 self.traffic_light_active = 'green'
-        elif saw_yellow:
-            self.detected_tl_yellow_consecutive = min(10, self.detected_tl_yellow_consecutive + 1)
-            self.detected_tl_red_consecutive = 0
-            self.detected_tl_green_consecutive = 0
-            if self.detected_tl_yellow_consecutive >= 3:
-                self.traffic_light_active = 'yellow'
         else:
             # Decay all states
             self.detected_tl_red_consecutive = max(0, self.detected_tl_red_consecutive - 1)
             self.detected_tl_green_consecutive = max(0, self.detected_tl_green_consecutive - 1)
             self.detected_tl_yellow_consecutive = max(0, self.detected_tl_yellow_consecutive - 1)
-            
-            if (self.detected_tl_red_consecutive == 0 and 
-                    self.detected_tl_green_consecutive == 0 and 
+
+            if (self.detected_tl_red_consecutive == 0 and
+                    self.detected_tl_green_consecutive == 0 and
                     self.detected_tl_yellow_consecutive == 0):
                 self.traffic_light_active = 'unknown'
 
     def classify_traffic_light_color(self, crop: np.ndarray) -> int:
         """Analyze cropped traffic light region in HSV to identify the active state.
-        
-        Returns:
-            3 for green, 4 for red, 5 for yellow, or 2 for generic/unknown.
+
+        Returns class IDs matching the 10-class model:
+            6 for Traffic_Green, 7 for Traffic_Red, 8 for unknown/generic.
         """
         if crop is None or crop.size == 0:
             return 2
@@ -428,16 +453,18 @@ class SignageDetector(Node):
         green_count = cv2.countNonZero(mask_green)
         
         # Determine dominant color
-        counts = {3: green_count, 4: red_count, 5: yellow_count}
+        # Map to 10-class model IDs: 6=Traffic_Green, 7=Traffic_Red
+        # Yellow pixels map to red (nearest match — no yellow class in model)
+        counts = {6: green_count, 7: red_count + yellow_count}
         best_cls, max_pixels = max(counts.items(), key=lambda x: x[1])
-        
+
         # Require a minimum count of pixels to prevent noise trigger (e.g. 2% of area, min 10 pixels)
         total_pixels = crop.shape[0] * crop.shape[1]
         min_required = max(10, int(total_pixels * 0.02))
         if max_pixels >= min_required:
             return best_cls
-            
-        return 2
+
+        return 8  # Trafficlight_signboard generic / unknown
 
     # ──────────────────────────────────────────────────────────────────────────
     # Debug visualization publisher
@@ -447,22 +474,31 @@ class SignageDetector(Node):
         """Resize original frame to 640x640, overlay boxes/labels and publish debug stream."""
         debug_img = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
         
+        # 10-class model — must match Roboflow alphabetical export order
         CLASS_NAMES = [
-            'hill_sign',             # Class 0
-            'parking_sign',          # Class 1
-            'traffic_light',         # Class 2
-            'traffic_light_green',   # Class 3
-            'traffic_light_red',     # Class 4
-            'traffic_light_yellow'   # Class 5
+            'Bumper_signboard',       # Class 0
+            'Hill_signboard',         # Class 1
+            'Obstacle_signboard',     # Class 2
+            'ParallelP_signboard',    # Class 3
+            'PerpendP_signboard',     # Class 4
+            'RISAbotRemastered',      # Class 5
+            'Traffic_Green',          # Class 6
+            'Traffic_Red',            # Class 7
+            'Trafficlight_signboard', # Class 8
+            'null',                   # Class 9
         ]
-        
+
         COLOR_MAP = [
-            (128, 0, 128),   # Hill sign (Purple)
-            (255, 0, 0),     # Parking sign (Blue)
-            (255, 255, 0),   # Traffic light generic (Cyan)
-            (0, 255, 0),     # Traffic light green (Green)
-            (0, 0, 255),     # Traffic light red (Red)
-            (0, 255, 255),   # Traffic light yellow (Yellow)
+            (0, 128, 255),   # Bumper_signboard (Orange)
+            (128, 0, 128),   # Hill_signboard (Purple)
+            (0, 165, 255),   # Obstacle_signboard (Deep Orange)
+            (255, 0, 0),     # ParallelP_signboard (Blue)
+            (255, 100, 0),   # PerpendP_signboard (Blue-ish)
+            (200, 200, 200), # RISAbotRemastered (Gray)
+            (0, 255, 0),     # Traffic_Green (Green)
+            (0, 0, 255),     # Traffic_Red (Red)
+            (255, 255, 0),   # Trafficlight_signboard generic (Cyan)
+            (50, 50, 50),    # null (Dark gray)
         ]
 
         for i, box in enumerate(boxes):
