@@ -49,7 +49,7 @@ class SignageDetector(Node):
 
         # ── Tunable parameters ─────────────────────────────────────────────
         self.declare_parameter('model_path',             '/home/sunrise/risabot_signs_640x640_nv12.bin')
-        self.declare_parameter('conf_threshold',         0.08)
+        self.declare_parameter('conf_threshold',         0.15)
         self.declare_parameter('iou_threshold',          0.45)
         self.declare_parameter('show_debug',             False)
         self.declare_parameter('heartbeat_sec',          0.5)
@@ -489,16 +489,16 @@ class SignageDetector(Node):
         ]
 
         COLOR_MAP = [
-            (0, 128, 255),   # Bumper_signboard (Orange)
-            (128, 0, 128),   # Hill_signboard (Purple)
-            (0, 165, 255),   # Obstacle_signboard (Deep Orange)
+            (0, 140, 255),   # Bumper_signboard (Orange)
+            (180, 0, 255),   # Hill_signboard (Pink/Purple)
+            (0, 255, 255),   # Obstacle_signboard (Yellow)
             (255, 0, 0),     # ParallelP_signboard (Blue)
-            (255, 100, 0),   # PerpendP_signboard (Blue-ish)
-            (200, 200, 200), # RISAbotRemastered (Gray)
-            (0, 255, 0),     # Traffic_Green (Green)
-            (0, 0, 255),     # Traffic_Red (Red)
+            (0, 100, 0),     # PerpendP_signboard (Forest Green)
+            (255, 255, 255), # RISAbotRemastered (White)
+            (0, 255, 0),     # Traffic_Green (Pure Green)
+            (0, 0, 255),     # Traffic_Red (Pure Red)
             (255, 255, 0),   # Trafficlight_signboard generic (Cyan)
-            (50, 50, 50),    # null (Dark gray)
+            (128, 128, 128), # null (Gray)
         ]
 
         for i, box in enumerate(boxes):
