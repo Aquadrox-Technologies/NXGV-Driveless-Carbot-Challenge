@@ -53,10 +53,10 @@ Slot D → Group  7   on track     (others at station, re-test open)
 | Time | Block | Topic | Where | Groups |
 |------|-------|-------|-------|--------|
 | 10:00–10:35 | 1 | ROS & Linux Recap | At Station | All 7 |
-| 10:35–11:05 | 2 | Competition Overview | At Station | All 7 |
-| 11:05–11:40 | 3 | Architecture & Component Setup | At Station | All 7 |
-| 11:40–12:10 | 4 | Dashboard Tour | At Station | All 7 |
-| 12:10–13:00 | 5 | Lane Detection (Image Pipeline) | At Station | All 7 |
+| 10:35–10:55 | 2 | RISA-bot Overview & Workshop Goals | At Station | All 7 |
+| 10:55–11:35 | 3 | Architecture & Component Setup | At Station | All 7 |
+| 11:35–12:05 | 4 | Dashboard Tour | At Station | All 7 |
+| 12:05–13:00 | 5 | Lane Detection (Image Pipeline) | At Station | All 7 |
 | 13:00–14:30 | — | **LUNCH BREAK** | — | — |
 | 14:30–15:10 | 6 | PID Steering | Lane 1 | Rotate pairs |
 | 15:10–16:10 | 7 | Tunnel Navigation (LiDAR) | Lane 1 | Rotate pairs |
@@ -97,30 +97,31 @@ ros2 param get /auto_driver forward_speed
 
 ---
 
-## Block 2 — Competition Overview
-`10:35 – 11:05 | 30 min | All 7 groups at their station`
+## Block 2 — RISA-bot Overview & Workshop Goals
+`10:35 – 10:55 | 20 min | All 7 groups at their station`
 
 **Instructor teaches (20 min)**
 
-Walk through the course layout image. For each of the 9 challenges, explain the sensor and approach:
+Set the context before diving into code:
 
-| # | Challenge | Sensor Used | Approach | Test Setup |
-|---|-----------|-------------|----------|------------|
-| 1 | Obstruction | LiDAR | Timed dodge maneuver | Track 3 |
-| 2 | Roundabout | Camera | Lane following through curves | Track 3 |
-| 3 | Tunnel | LiDAR | Wall following — centerline PD | Lane 1 |
-| 4 | Boom Gate | LiDAR | Point cluster detection | Track 3 |
-| 5 | Hill | Camera + IMU | Lane follow + speed boost | Lane 2 |
-| 6 | Bumper | Camera | Lane follow — no special code needed | Lane 2 |
-| 7 | Traffic Light | Camera | HSV color thresholding | Lane 2 |
-| 8 | Parallel Park | Odometry | Recorded trajectory playback | Track 3 |
-| 9 | Perp Park | Odometry | Recorded trajectory playback | Track 3 |
+- **Who we are:** We are the developers of RISA-bot — a demo robot built to prove that a competition-ready autonomous robot is achievable with ROS 2 on accessible hardware (RDK X5, standard camera, LiDAR).
+- **What RISA-bot demonstrates:** Every challenge in the competition has been solved. Lane following, tunnel, traffic light, hill, boom gate, parking — RISA-bot handles all of them using a combination of camera, LiDAR, and IMU with a single state machine brain.
+- **Why this workshop exists:** To show you *how* it works and give you hands-on experience applying the same techniques to your own robot.
 
-Key message: every challenge = one sensor + one algorithm. Lane following is the foundation — used on most of the course. The brain (`auto_driver`) switches between algorithms automatically.
+**What we cover in these 2 days:**
 
-**Groups try (10 min)**
+| Day | Focus | Test Setup |
+|-----|-------|------------|
+| Day 1 AM | ROS recap, architecture, dashboard, lane detection | At station |
+| Day 1 PM | PID steering, tunnel wall following | Lane 1 |
+| Day 2 AM | Hill & bumper, traffic light, state machine, boom gate | Lane 2 + Track 3 |
+| Day 2 PM | Parking (record & playback), obstruction, full testing runs | Track 3 + All |
 
-Groups open `Guide/challenges_breakdown.md` on their laptops and read through the descriptions while the robot is running.
+**How RISA-bot approaches the competition — the core pattern:**
+- One sensor + one algorithm per challenge
+- `auto_driver` (the brain) monitors all sensors and switches to the right algorithm automatically
+- Every algorithm is tunable at runtime — no rebuilding needed
+- Lane following is the foundation — it runs on most of the course and the other algorithms layer on top
 
 ---
 
