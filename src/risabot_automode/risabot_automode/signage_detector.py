@@ -428,17 +428,17 @@ class SignageDetector(Node):
         
         # Define color thresholds (HSV)
         # Red wraps around 0 and 180 in Hue
-        lower_red1 = np.array([0, 40, 50])
+        lower_red1 = np.array([0, 80, 80])
         upper_red1 = np.array([10, 255, 255])
-        lower_red2 = np.array([160, 40, 50])
+        lower_red2 = np.array([160, 80, 80])
         upper_red2 = np.array([180, 255, 255])
         
-        # Yellow/Orange: broadened Hue range and lowered saturation/value thresholds
-        lower_yellow = np.array([11, 40, 50])
+        # Yellow/Orange: broadened Hue range
+        lower_yellow = np.array([11, 80, 80])
         upper_yellow = np.array([38, 255, 255])
         
-        # Green: lowered saturation/value thresholds
-        lower_green = np.array([40, 40, 50])
+        # Green
+        lower_green = np.array([40, 80, 80])
         upper_green = np.array([90, 255, 255])
         
         # Generate masks and count active pixels
