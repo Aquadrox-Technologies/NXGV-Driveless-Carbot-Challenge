@@ -53,7 +53,29 @@ class SignageDetector(Node):
         self.declare_parameter('iou_threshold',          0.45)
         self.declare_parameter('show_debug',             False)
         self.declare_parameter('heartbeat_sec',          0.5)
-        self.declare_parameter('min_parking_sign_width', 0)  # Min pixel width for parking sign trigger (0 = disable)
+        self.declare_parameter('min_parking_sign_width', 0)
+
+        # ── Per-class confidence thresholds (ROS2 params — tunable from dashboard) ─
+        self.declare_parameter('thresh_bumper',      0.15)   # Class 0 Bumper_signboard
+        self.declare_parameter('thresh_hill',        0.15)   # Class 1 Hill_signboard
+        self.declare_parameter('thresh_obstacle',    0.15)   # Class 2 Obstacle_signboard
+        self.declare_parameter('thresh_parallelp',   0.10)   # Class 3 ParallelP_signboard
+        self.declare_parameter('thresh_perpendp',    0.10)   # Class 4 PerpendP_signboard
+        self.declare_parameter('thresh_roundabout',  0.10)   # Class 5 Roundabout_signboard
+        self.declare_parameter('thresh_tl_green',    0.15)   # Class 6 Traffic_Green
+        self.declare_parameter('thresh_tl_red',      0.15)   # Class 7 Traffic_Red
+        self.declare_parameter('thresh_tl_generic',  0.15)   # Class 8 Trafficlight_signboard
+
+        # ── Per-class bounding box colors as BGR strings "B,G,R" ──────────────
+        self.declare_parameter('color_bumper',     '0,140,255')    # Orange
+        self.declare_parameter('color_hill',       '180,0,255')    # Pink/Purple
+        self.declare_parameter('color_obstacle',   '0,255,255')    # Yellow
+        self.declare_parameter('color_parallelp',  '255,0,0')      # Blue
+        self.declare_parameter('color_perpendp',   '0,100,0')      # Forest Green
+        self.declare_parameter('color_roundabout', '255,255,255')  # White
+        self.declare_parameter('color_tl_green',   '0,255,0')      # Pure Green
+        self.declare_parameter('color_tl_red',     '0,0,255')      # Pure Red
+        self.declare_parameter('color_tl_generic', '255,255,0')    # Cyan
 
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -62,19 +84,8 @@ class SignageDetector(Node):
         self.bridge = CvBridge()
         self.bpu_available = BPU_AVAILABLE
 
-        # ── Per-class confidence thresholds ─────────────────────────────────
-        # Custom thresholds per class ID:
-        self.class_thresholds = {
-            0: 0.15,  # Bumper_signboard
-            1: 0.15,  # Hill_signboard
-            2: 0.15,  # Obstacle_signboard
-            3: 0.10,  # ParallelP_signboard
-            4: 0.10,  # PerpendP_signboard
-            5: 0.10,  # RISAbotRemastered
-            6: 0.15,  # Traffic_Green
-            7: 0.15,  # Traffic_Red
-            8: 0.15,  # Trafficlight_signboard
-        }
+        # Per-class thresholds and colors are now read dynamically from ROS2
+        # parameters via _get_class_thresholds() and _get_class_colors().
 
         # ── Detection & Gating state ────────────────────────────────────────
         self.hill_sign_active = False
@@ -141,6 +152,26 @@ class SignageDetector(Node):
             'show_debug':             bool(self.get_parameter('show_debug').value),
             'heartbeat_sec':          float(self.get_parameter('heartbeat_sec').value),
             'min_parking_sign_width': int(self.get_parameter('min_parking_sign_width').value),
+            # Per-class thresholds
+            'thresh_bumper':     float(self.get_parameter('thresh_bumper').value),
+            'thresh_hill':       float(self.get_parameter('thresh_hill').value),
+            'thresh_obstacle':   float(self.get_parameter('thresh_obstacle').value),
+            'thresh_parallelp':  float(self.get_parameter('thresh_parallelp').value),
+            'thresh_perpendp':   float(self.get_parameter('thresh_perpendp').value),
+            'thresh_roundabout': float(self.get_parameter('thresh_roundabout').value),
+            'thresh_tl_green':   float(self.get_parameter('thresh_tl_green').value),
+            'thresh_tl_red':     float(self.get_parameter('thresh_tl_red').value),
+            'thresh_tl_generic': float(self.get_parameter('thresh_tl_generic').value),
+            # Per-class colors
+            'color_bumper':     str(self.get_parameter('color_bumper').value),
+            'color_hill':       str(self.get_parameter('color_hill').value),
+            'color_obstacle':   str(self.get_parameter('color_obstacle').value),
+            'color_parallelp':  str(self.get_parameter('color_parallelp').value),
+            'color_perpendp':   str(self.get_parameter('color_perpendp').value),
+            'color_roundabout': str(self.get_parameter('color_roundabout').value),
+            'color_tl_green':   str(self.get_parameter('color_tl_green').value),
+            'color_tl_red':     str(self.get_parameter('color_tl_red').value),
+            'color_tl_generic': str(self.get_parameter('color_tl_generic').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -148,6 +179,48 @@ class SignageDetector(Node):
             if p.name in self._param_cache:
                 self._param_cache[p.name] = p.value
         return SetParametersResult(successful=True)
+
+    def _get_class_thresholds(self) -> dict:
+        """Build per-class threshold dict from current param cache."""
+        c = self._param_cache
+        return {
+            0: c['thresh_bumper'],
+            1: c['thresh_hill'],
+            2: c['thresh_obstacle'],
+            3: c['thresh_parallelp'],
+            4: c['thresh_perpendp'],
+            5: c['thresh_roundabout'],
+            6: c['thresh_tl_green'],
+            7: c['thresh_tl_red'],
+            8: c['thresh_tl_generic'],
+        }
+
+    @staticmethod
+    def _parse_color(color_str: str) -> tuple:
+        """Parse 'B,G,R' string to a (B, G, R) int tuple for OpenCV."""
+        try:
+            parts = [int(x.strip()) for x in color_str.split(',')]
+            if len(parts) == 3:
+                return tuple(parts)
+        except Exception:
+            pass
+        return (255, 255, 255)  # fallback white
+
+    def _get_class_colors(self) -> list:
+        """Build per-class color list from current param cache."""
+        c = self._param_cache
+        return [
+            self._parse_color(c['color_bumper']),
+            self._parse_color(c['color_hill']),
+            self._parse_color(c['color_obstacle']),
+            self._parse_color(c['color_parallelp']),
+            self._parse_color(c['color_perpendp']),
+            self._parse_color(c['color_roundabout']),
+            self._parse_color(c['color_tl_green']),
+            self._parse_color(c['color_tl_red']),
+            self._parse_color(c['color_tl_generic']),
+            (128, 128, 128),  # null (unused, always filtered)
+        ]
 
     # ──────────────────────────────────────────────────────────────────────────
     # State publishing helper
@@ -262,9 +335,10 @@ class SignageDetector(Node):
             max_scores = pred[:, 4] * pred[np.arange(len(pred)), 5 + class_ids]
             
             # Filter by per-class confidence thresholds and ignore null class (9)
+            class_thresholds = self._get_class_thresholds()
             keep_indices = []
             for idx, cid in enumerate(class_ids):
-                thresh = self.class_thresholds.get(cid, conf_threshold)
+                thresh = class_thresholds.get(int(cid), conf_threshold)
                 if max_scores[idx] >= thresh and cid != 9:
                     keep_indices.append(True)
                 else:
@@ -510,44 +584,30 @@ class SignageDetector(Node):
             'null',                   # Class 9
         ]
 
-        COLOR_MAP = [
-            (0, 140, 255),   # Bumper_signboard (Orange)
-            (180, 0, 255),   # Hill_signboard (Pink/Purple)
-            (0, 255, 255),   # Obstacle_signboard (Yellow)
-            (255, 0, 0),     # ParallelP_signboard (Blue)
-            (0, 100, 0),     # PerpendP_signboard (Forest Green)
-            (255, 255, 255), # RISAbotRemastered (White)
-            (0, 255, 0),     # Traffic_Green (Pure Green)
-            (0, 0, 255),     # Traffic_Red (Pure Red)
-            (255, 255, 0),   # Trafficlight_signboard generic (Cyan)
-            (128, 128, 128), # null (Gray)
-        ]
+        COLOR_MAP = self._get_class_colors()
 
         for i, box in enumerate(boxes):
             x1, y1, x2, y2 = map(int, box)
             score = scores[i]
             cid = class_ids[i]
-            
+
             name = CLASS_NAMES[cid] if cid < len(CLASS_NAMES) else f'class_{cid}'
             color = COLOR_MAP[cid] if cid < len(COLOR_MAP) else (255, 255, 255)
-            
-            # Draw bbox
+
+            # Draw bounding box
             cv2.rectangle(debug_img, (x1, y1), (x2, y2), color, 2)
-            
-            # Label background & text
+
+            # Draw label — bigger text with black outline (no filled background)
             label = f'{name}: {score:.2f}'
-            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)[0]
-            cv2.rectangle(debug_img, (x1, y1 - text_size[1] - 8), (x1 + text_size[0], y1), color, -1)
-            cv2.putText(
-                debug_img,
-                label,
-                (x1, y1 - 4),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
-                (255, 255, 255) if color != (0, 255, 255) else (0, 0, 0),
-                1,
-                lineType=cv2.LINE_AA
-            )
+            font       = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.65
+            thickness  = 2
+            # Black outline for readability
+            cv2.putText(debug_img, label, (x1, y1 - 6), font, font_scale,
+                        (0, 0, 0), thickness + 2, lineType=cv2.LINE_AA)
+            # Colored text on top
+            cv2.putText(debug_img, label, (x1, y1 - 6), font, font_scale,
+                        color, thickness, lineType=cv2.LINE_AA)
             
         # Draw status summaries on top left
         summary_text = (
