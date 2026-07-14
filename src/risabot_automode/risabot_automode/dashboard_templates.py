@@ -1045,6 +1045,46 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="tl-label" id="tlText">unknown</div>
     </div>
 
+    <!-- IMU / Attitude -->
+    <div class="card" id="imuCard">
+      <h3 style="display:flex;align-items:center;justify-content:space-between;">
+        🧭 IMU Attitude
+        <button onclick="calibrateIMU()" id="imuCalBtn"
+          style="padding:4px 10px;border-radius:6px;border:1px solid rgba(30,102,245,0.3);font-size:0.7em;font-weight:700;cursor:pointer;background:rgba(30,102,245,0.08);color:var(--accent);font-family:inherit;transition:all 0.2s;">
+          ⚙ Calibrate
+        </button>
+      </h3>
+
+      <!-- Roll -->
+      <div class="s-row">
+        <span class="s-label">Roll</span>
+        <span class="s-val" id="imuRollVal" style="font-variant-numeric:tabular-nums;">0.00°</span>
+      </div>
+      <div class="meter" style="margin-bottom:8px;">
+        <div class="meter-fill" id="imuRollBar" style="width:50%;background:linear-gradient(90deg,#1565c0,#42a5f5);"></div>
+      </div>
+
+      <!-- Pitch -->
+      <div class="s-row">
+        <span class="s-label">Pitch</span>
+        <span class="s-val" id="imuPitchVal" style="font-variant-numeric:tabular-nums;">0.00°</span>
+      </div>
+      <div class="meter" style="margin-bottom:8px;">
+        <div class="meter-fill" id="imuPitchBar" style="width:50%;background:linear-gradient(90deg,#e65100,#ff9800);"></div>
+      </div>
+
+      <!-- Yaw -->
+      <div class="s-row">
+        <span class="s-label">Yaw</span>
+        <span class="s-val" id="imuYawVal" style="font-variant-numeric:tabular-nums;">0.00°</span>
+      </div>
+      <div class="meter">
+        <div class="meter-fill" id="imuYawBar" style="width:50%;background:linear-gradient(90deg,#4a148c,#ce93d8);"></div>
+      </div>
+
+      <div id="imuCalMsg" style="margin-top:8px;font-size:0.7em;color:var(--muted);min-height:16px;"></div>
+    </div>
+
     <!-- Manual Control -->
     <div class="card">
       <h3>Manual Control</h3>
@@ -1405,6 +1445,35 @@ function rpCmd(action) {
   }).catch(() => {});
 }
 
+function calibrateIMU() {
+  const btn = document.getElementById('imuCalBtn');
+  const msg = document.getElementById('imuCalMsg');
+  btn.disabled = true;
+  btn.textContent = '⏳ Calibrating...';
+  msg.textContent = 'Keep robot perfectly still...';
+  msg.style.color = 'var(--warning)';
+  fetch('/api/calibrate_imu', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        msg.textContent = '✅ ' + data.msg;
+        msg.style.color = 'var(--success)';
+        addLogEntry('IMU calibration triggered');
+      } else {
+        msg.textContent = '❌ ' + (data.error || 'Failed');
+        msg.style.color = 'var(--danger)';
+      }
+    })
+    .catch(e => { msg.textContent = '❌ ' + e; msg.style.color = 'var(--danger)'; })
+    .finally(() => {
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = '⚙ Calibrate';
+        setTimeout(() => { msg.textContent = ''; }, 8000);
+      }, 5000); // re-enable after 5s (calibration window)
+    });
+}
+
 function sendCompCmd(cmd) {
   fetch('/api/reset_competition', {
     method: 'POST',
@@ -1495,6 +1564,29 @@ function update() {
         document.getElementById('tl'+c).classList.toggle('active', d.traffic_light === c.toLowerCase());
       });
       document.getElementById('tlText').textContent = d.traffic_light;
+
+      // IMU Attitude (roll/pitch/yaw)
+      (function() {
+        const roll  = d.imu_roll  || 0;
+        const pitch = d.imu_pitch || 0;
+        const yaw   = d.imu_yaw   || 0;
+        document.getElementById('imuRollVal').textContent  = roll.toFixed(2)  + '°';
+        document.getElementById('imuPitchVal').textContent = pitch.toFixed(2) + '°';
+        document.getElementById('imuYawVal').textContent   = yaw.toFixed(2)   + '°';
+        // Map [-90,90] → [0%,100%] for bars (centre = 50%)
+        const toBar = v => Math.min(100, Math.max(0, 50 + (v / 90) * 50));
+        document.getElementById('imuRollBar').style.width  = toBar(roll)  + '%';
+        document.getElementById('imuPitchBar').style.width = toBar(pitch) + '%';
+        // Yaw maps [-180,180] → [0%,100%]
+        document.getElementById('imuYawBar').style.width   = Math.min(100, Math.max(0, 50 + (yaw / 180) * 50)) + '%';
+        // Colour pitch bar red when steep (>10°)
+        const pitchBar = document.getElementById('imuPitchBar');
+        if (Math.abs(pitch) > 10) {
+          pitchBar.style.background = 'linear-gradient(90deg,#b71c1c,#f44336)';
+        } else {
+          pitchBar.style.background = 'linear-gradient(90deg,#e65100,#ff9800)';
+        }
+      })();
 
       // Sensors
       function ss(dId, vId, v, tl, fl) {

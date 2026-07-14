@@ -48,6 +48,8 @@ from .topics import (
     ODOM_TOPIC,
     SET_CHALLENGE_TOPIC,
     IMU_PITCH_TOPIC,
+    IMU_DATA_TOPIC,
+    IMU_CALIBRATE_TOPIC,
     RECORD_PLAYBACK_STATE_TOPIC,
     RECORD_PLAYBACK_CMD_TOPIC,
 )
@@ -174,12 +176,14 @@ class ServoControllerV9(Node):
         self.odom_pub = self.create_publisher(Odometry, ODOM_TOPIC, 10)
         self.loop_stats_pub = self.create_publisher(String, LOOP_STATS_TOPIC, 10)
         self.pitch_pub = self.create_publisher(Float32, IMU_PITCH_TOPIC, 10)
+        self.imu_data_pub = self.create_publisher(String, IMU_DATA_TOPIC, 10)
         self.rp_state_pub = self.create_publisher(String, RECORD_PLAYBACK_STATE_TOPIC, 10)
 
         # Subscribers
         self.create_subscription(Joy, JOY_TOPIC, self.joy_callback, 10)
         self.create_subscription(Twist, AUTO_CMD_VEL_TOPIC, self.cmd_vel_auto_callback, 10)
         self.create_subscription(String, RECORD_PLAYBACK_CMD_TOPIC, self._record_playback_cmd_cb, 10)
+        self.create_subscription(String, IMU_CALIBRATE_TOPIC, self._imu_calibrate_cb, 10)
 
         # State
         self.manual_mode = True
@@ -662,12 +666,20 @@ class ServoControllerV9(Node):
             self.last_odom_time = now
             return
 
-        # Read IMU Pitch
+        # Read IMU Pitch + full RPY
         try:
             roll, pitch, yaw = self.bot.get_imu_attitude_data()
             pitch_msg = Float32()
             pitch_msg.data = float(pitch)
             self.pitch_pub.publish(pitch_msg)
+            # Publish full RPY as JSON for dashboard
+            rpy_payload = json.dumps(
+                {'roll': round(float(roll), 3),
+                 'pitch': round(float(pitch), 3),
+                 'yaw': round(float(yaw), 3)},
+                separators=(',', ':')
+            )
+            self.imu_data_pub.publish(String(data=rpy_payload))
         except Exception as e:
             self.get_logger().error(f"Failed to read/publish IMU pitch: {e}")
 
@@ -787,6 +799,22 @@ class ServoControllerV9(Node):
             self.get_logger().error(f"Failed to read encoders: {e}")
 
     # ─────────── Record & Playback methods ───────────
+
+    def _imu_calibrate_cb(self, msg: String) -> None:
+        """Trigger IMU/gyroscope calibration on the Rosmaster hardware."""
+        self.get_logger().info('IMU calibration requested from dashboard')
+        try:
+            # Yahboom Rosmaster SDK calibration call
+            if hasattr(self.bot, 'set_gy_calibration'):
+                self.bot.set_gy_calibration()
+                self.get_logger().info('IMU gyroscope calibration started (set_gy_calibration)')
+            elif hasattr(self.bot, 'calibrate_gyroscope'):
+                self.bot.calibrate_gyroscope()
+                self.get_logger().info('IMU gyroscope calibration started (calibrate_gyroscope)')
+            else:
+                self.get_logger().warn('IMU calibration: no calibration method found on bot object')
+        except Exception as e:
+            self.get_logger().error(f'IMU calibration failed: {e}')
 
     def _migrate_old_recording(self) -> None:
         """Migrate legacy ~/recorded_movement.json to ~/risabot_recordings/default.json."""

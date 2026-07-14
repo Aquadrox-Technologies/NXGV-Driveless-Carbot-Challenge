@@ -40,6 +40,8 @@ from .topics import (
     CMD_VEL_TOPIC,
     DASH_CTRL_TOPIC,
     DASH_STATE_TOPIC,
+    IMU_DATA_TOPIC,
+    IMU_CALIBRATE_TOPIC,
     JOY_TOPIC,
     LANE_ERROR_TOPIC,
     OBSTACLE_CAMERA_TOPIC,
@@ -185,6 +187,10 @@ class DashboardNode(Node):
             'rp_active_parking': '',
             'rp_saved_recordings': [],
             'parking_sign_detected': None,
+            # IMU
+            'imu_roll':  0.0,
+            'imu_pitch': 0.0,
+            'imu_yaw':   0.0,
         }
         self.topic_last_update = {
             'auto_mode': 0.0,
@@ -209,12 +215,14 @@ class DashboardNode(Node):
             'loop_stats': 0.0,
             'record_playback_state': 0.0,
             'parking_sign': 0.0,
+            'imu_rpy': 0.0,
         }
         self.data_lock = threading.Lock()
 
         # Record & Playback command publisher
         self.rp_cmd_pub = self.create_publisher(String, RECORD_PLAYBACK_CMD_TOPIC, 10)
         self.challenge_pub = self.create_publisher(String, SET_CHALLENGE_TOPIC, 10)
+        self.imu_cal_pub = self.create_publisher(String, IMU_CALIBRATE_TOPIC, 10)
 
         # State tracking
         self._state_entry_time = time.time()
@@ -253,6 +261,9 @@ class DashboardNode(Node):
 
         # Parking signboard detection flag
         self.create_subscription(Bool, PARKING_SIGN_TOPIC, self._parking_sign_cb, 10)
+
+        # IMU full RPY data
+        self.create_subscription(String, IMU_DATA_TOPIC, self._imu_cb, 10)
 
         # LiDAR scan for 2D visualization
         self.create_subscription(LaserScan, '/scan', self._scan_cb, qos)
@@ -550,6 +561,18 @@ class DashboardNode(Node):
     def _parking_sign_cb(self, msg: Bool) -> None:
         """Update parking signboard detection flag."""
         self._set('parking_sign_detected', msg.data, 'parking_sign')
+
+    def _imu_cb(self, msg: String) -> None:
+        """Update IMU roll/pitch/yaw from /imu/rpy JSON payload."""
+        try:
+            payload = json.loads(msg.data)
+            with self.data_lock:
+                self.data['imu_roll']  = round(float(payload.get('roll',  0.0)), 2)
+                self.data['imu_pitch'] = round(float(payload.get('pitch', 0.0)), 2)
+                self.data['imu_yaw']   = round(float(payload.get('yaw',   0.0)), 2)
+                self.topic_last_update['imu_rpy'] = time.monotonic()
+        except Exception:
+            pass
 
     def _image_cb(self, msg: Image, view_name: str) -> None:
         """Convert ROS Image to JPEG conditionally, tracking active view and clients."""
@@ -1078,6 +1101,21 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                     resp = {'ok': True, 'msg': f'Sent competition command: {cmd}'}
                 else:
                     resp = {'ok': False, 'error': f'Invalid command: {cmd}'}
+            except Exception as e:
+                resp = {'ok': False, 'error': str(e)}
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode())
+        elif self.path == '/api/calibrate_imu':
+            # Trigger hardware IMU calibration via servo_controller
+            try:
+                if _node_ref:
+                    _node_ref.imu_cal_pub.publish(String(data='calibrate'))
+                    resp = {'ok': True, 'msg': 'IMU calibration command sent — keep robot still for 3–5 seconds'}
+                else:
+                    resp = {'ok': False, 'error': 'Dashboard node not ready'}
             except Exception as e:
                 resp = {'ok': False, 'error': str(e)}
             self.send_response(200)

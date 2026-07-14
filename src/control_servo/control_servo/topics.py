@@ -9,6 +9,8 @@ JOY_TOPIC = '/joy'
 DASH_CTRL_TOPIC = '/dashboard_ctrl'
 LOOP_STATS_TOPIC = '/loop_stats'
 IMU_PITCH_TOPIC = '/imu/pitch'
+IMU_DATA_TOPIC = '/imu/rpy'          # JSON: {"roll":0.0,"pitch":0.0,"yaw":0.0}
+IMU_CALIBRATE_TOPIC = '/imu/calibrate'  # publish empty String to trigger hardware calibration
 
 # Record & Playback
 RECORD_PLAYBACK_STATE_TOPIC = '/record_playback_state'

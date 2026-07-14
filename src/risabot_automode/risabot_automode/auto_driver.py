@@ -665,10 +665,10 @@ class AutoDriver(Node):
                     self._obs_cleared_time = 0.0  # prevent re-entry
                     self.get_logger().info('Roundabout complete → boom gate armed')
 
-        # Priority 5: Parking — triggered by parking sign detection (any lap)
+        # Priority 5: Parking — Lap 2 only, triggered by parking sign detection
         # _parking_done latches True after first playback to prevent immediate re-trigger.
         # Call reset_competition() to allow a new parking sequence.
-        elif not self._parking_done and (self.parking_sequence_active or self.signboard_detected):
+        elif self.current_lap == 2 and not self._parking_done and (self.parking_sequence_active or self.signboard_detected):
             self.parking_sequence_active = True
             if self.state not in (ChallengeState.PARKING_IDLE, ChallengeState.PARKING_PLAYBACK):
                 target_state = ChallengeState.PARKING_IDLE
