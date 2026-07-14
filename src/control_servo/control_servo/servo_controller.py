@@ -264,6 +264,7 @@ class ServoControllerV9(Node):
         self.raw_roll = 0.0
         self.raw_pitch = 0.0
         self.raw_yaw = 0.0
+        self.imu_initialized = False
 
         # --- Record & Playback state ---
         self.rp_state = 'IDLE'       # 'IDLE', 'RECORDING', 'PLAYBACK'
@@ -701,6 +702,18 @@ class ServoControllerV9(Node):
             angle += 360.0
         return angle
 
+    def _ema_angle(self, current_ema: float, new_angle: float, alpha: float) -> float:
+        """Calculate EMA for angles without breaking at 180/-180 wrap-arounds."""
+        import math
+        # Convert to radians
+        rad_new = math.radians(new_angle)
+        rad_cur = math.radians(current_ema)
+        # Average vectors
+        sin_avg = alpha * math.sin(rad_new) + (1.0 - alpha) * math.sin(rad_cur)
+        cos_avg = alpha * math.cos(rad_new) + (1.0 - alpha) * math.cos(rad_cur)
+        # Re-convert to degrees
+        return math.degrees(math.atan2(sin_avg, cos_avg))
+
     def _encoder_read_loop(self) -> None:
         """Read hardware encoders and compute/publish /odom"""
         self.encoder_loop_monitor.tick()
@@ -725,9 +738,20 @@ class ServoControllerV9(Node):
             r, p, y = self.bot.get_imu_attitude_data()
             
             # Use raw values directly (hardware is already filtered)
-            self.raw_roll = float(r)
-            self.raw_pitch = float(p)
-            self.raw_yaw = float(y)
+            r = float(r)
+            p = float(p)
+            y = float(y)
+            
+            if not self.imu_initialized:
+                self.raw_roll = r
+                self.raw_pitch = p
+                self.raw_yaw = y
+                self.imu_initialized = True
+            else:
+                alpha = 0.15  # strong filter for micro-changes
+                self.raw_roll = self._ema_angle(self.raw_roll, r, alpha)
+                self.raw_pitch = self._ema_angle(self.raw_pitch, p, alpha)
+                self.raw_yaw = self._ema_angle(self.raw_yaw, y, alpha)
             
             # Apply Software Calibration and normalize
             cal_roll = self._normalize_angle((self.raw_roll - self.imu_roll_offset) * self.imu_roll_scale)
@@ -873,12 +897,18 @@ class ServoControllerV9(Node):
             
             if action == 'zero':
                 self.get_logger().info(f'IMU Zeroing: raw offsets R:{self.raw_roll:.2f}, P:{self.raw_pitch:.2f}, Y:{self.raw_yaw:.2f}')
-                # Store raw values as new offsets
+                
+                # Force update local variables immediately to bypass any param server async quirks
+                self.imu_roll_offset = float(self.raw_roll)
+                self.imu_pitch_offset = float(self.raw_pitch)
+                self.imu_yaw_offset = float(self.raw_yaw)
+                
+                # Store raw values as new offsets in parameter server
                 import rclpy
                 results = self.set_parameters([
-                    rclpy.Parameter('imu_roll_offset', rclpy.Parameter.Type.DOUBLE, self.raw_roll),
-                    rclpy.Parameter('imu_pitch_offset', rclpy.Parameter.Type.DOUBLE, self.raw_pitch),
-                    rclpy.Parameter('imu_yaw_offset', rclpy.Parameter.Type.DOUBLE, self.raw_yaw),
+                    rclpy.Parameter('imu_roll_offset', rclpy.Parameter.Type.DOUBLE, self.imu_roll_offset),
+                    rclpy.Parameter('imu_pitch_offset', rclpy.Parameter.Type.DOUBLE, self.imu_pitch_offset),
+                    rclpy.Parameter('imu_yaw_offset', rclpy.Parameter.Type.DOUBLE, self.imu_yaw_offset),
                 ])
                 for r in results:
                     if not r.successful:
