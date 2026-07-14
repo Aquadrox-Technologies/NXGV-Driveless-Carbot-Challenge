@@ -355,9 +355,15 @@ class ServoControllerV9(Node):
                     self.ticks_per_meter = float(p.value)
                 elif p.name == 'wheel_base':
                     self.wheel_base = float(p.value)
-                elif p.name == 'imu_roll_offset': self.imu_roll_offset = float(p.value)
-                elif p.name == 'imu_pitch_offset': self.imu_pitch_offset = float(p.value)
-                elif p.name == 'imu_yaw_offset': self.imu_yaw_offset = float(p.value)
+                elif p.name == 'imu_roll_offset':
+                    self.imu_roll_offset = float(p.value)
+                    self.get_logger().info(f'Parameter updated: imu_roll_offset = {self.imu_roll_offset}')
+                elif p.name == 'imu_pitch_offset':
+                    self.imu_pitch_offset = float(p.value)
+                    self.get_logger().info(f'Parameter updated: imu_pitch_offset = {self.imu_pitch_offset}')
+                elif p.name == 'imu_yaw_offset':
+                    self.imu_yaw_offset = float(p.value)
+                    self.get_logger().info(f'Parameter updated: imu_yaw_offset = {self.imu_yaw_offset}')
                 elif p.name == 'imu_roll_scale': self.imu_roll_scale = float(p.value)
                 elif p.name == 'imu_pitch_scale': self.imu_pitch_scale = float(p.value)
                 elif p.name == 'imu_yaw_scale': self.imu_yaw_scale = float(p.value)
@@ -680,6 +686,21 @@ class ServoControllerV9(Node):
                         self.manual_mode = True
                         self.auto_mode_pub.publish(Bool(data=False))
 
+    def stop_robot(self) -> None:
+        """Helper to send zero velocity to motors."""
+        try:
+            self.bot.set_motor(0, 0, 0, 0)
+        except Exception:
+            pass
+
+    def _normalize_angle(self, angle: float) -> float:
+        """Normalize an angle to [-180, 180]."""
+        while angle > 180.0:
+            angle -= 360.0
+        while angle < -180.0:
+            angle += 360.0
+        return angle
+
     def _encoder_read_loop(self) -> None:
         """Read hardware encoders and compute/publish /odom"""
         self.encoder_loop_monitor.tick()
@@ -702,14 +723,16 @@ class ServoControllerV9(Node):
         # Read IMU Pitch + full RPY
         try:
             r, p, y = self.bot.get_imu_attitude_data()
+            
+            # Use raw values directly (hardware is already filtered)
             self.raw_roll = float(r)
             self.raw_pitch = float(p)
             self.raw_yaw = float(y)
             
-            # Apply Software Calibration
-            cal_roll = (self.raw_roll - self.imu_roll_offset) * self.imu_roll_scale
-            cal_pitch = (self.raw_pitch - self.imu_pitch_offset) * self.imu_pitch_scale
-            cal_yaw = (self.raw_yaw - self.imu_yaw_offset) * self.imu_yaw_scale
+            # Apply Software Calibration and normalize
+            cal_roll = self._normalize_angle((self.raw_roll - self.imu_roll_offset) * self.imu_roll_scale)
+            cal_pitch = self._normalize_angle((self.raw_pitch - self.imu_pitch_offset) * self.imu_pitch_scale)
+            cal_yaw = self._normalize_angle((self.raw_yaw - self.imu_yaw_offset) * self.imu_yaw_scale)
 
             pitch_msg = Float32()
             pitch_msg.data = cal_pitch
@@ -851,15 +874,15 @@ class ServoControllerV9(Node):
             if action == 'zero':
                 self.get_logger().info(f'IMU Zeroing: raw offsets R:{self.raw_roll:.2f}, P:{self.raw_pitch:.2f}, Y:{self.raw_yaw:.2f}')
                 # Store raw values as new offsets
-                from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
-                self.set_parameters([
-                    Parameter(name='imu_roll_offset', value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=self.raw_roll)),
-                    Parameter(name='imu_pitch_offset', value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=self.raw_pitch)),
-                    Parameter(name='imu_yaw_offset', value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=self.raw_yaw)),
+                import rclpy
+                results = self.set_parameters([
+                    rclpy.Parameter('imu_roll_offset', rclpy.Parameter.Type.DOUBLE, self.raw_roll),
+                    rclpy.Parameter('imu_pitch_offset', rclpy.Parameter.Type.DOUBLE, self.raw_pitch),
+                    rclpy.Parameter('imu_yaw_offset', rclpy.Parameter.Type.DOUBLE, self.raw_yaw),
                 ])
-                # Trigger hardware calibration for good measure
-                if hasattr(self.bot, 'set_gy_calibration'):
-                    self.bot.set_gy_calibration()
+                for r in results:
+                    if not r.successful:
+                        self.get_logger().error(f'Failed to set parameter: {r.reason}')
                 
             elif action == 'set_scale':
                 axis = cmd.get('axis', '')
@@ -881,10 +904,13 @@ class ServoControllerV9(Node):
                 
                 if param_name:
                     self.get_logger().info(f'IMU Scale Update: {axis} target={target}, raw-offset={rel_val:.2f}, new_scale={new_scale:.3f}')
-                    from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
-                    self.set_parameters([
-                        Parameter(name=param_name, value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=float(new_scale)))
+                    import rclpy
+                    results = self.set_parameters([
+                        rclpy.Parameter(param_name, rclpy.Parameter.Type.DOUBLE, float(new_scale))
                     ])
+                    for r in results:
+                        if not r.successful:
+                            self.get_logger().error(f'Failed to set parameter: {r.reason}')
 
         except Exception as e:
             self.get_logger().error(f'IMU calibration failed: {e}')
