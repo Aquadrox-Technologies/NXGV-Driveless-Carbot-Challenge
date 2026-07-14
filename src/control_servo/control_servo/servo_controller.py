@@ -265,6 +265,11 @@ class ServoControllerV9(Node):
         self.raw_pitch = 0.0
         self.raw_yaw = 0.0
         self.imu_initialized = False
+        # Stable (deadband-filtered) output values - suppresses micro-jitter
+        self.stable_roll = 0.0
+        self.stable_pitch = 0.0
+        self.stable_yaw = 0.0
+        self.IMU_DEADBAND_DEG = 0.5  # degrees - changes smaller than this are ignored
 
         # --- Record & Playback state ---
         self.rp_state = 'IDLE'       # 'IDLE', 'RECORDING', 'PLAYBACK'
@@ -758,14 +763,23 @@ class ServoControllerV9(Node):
             cal_pitch = self._normalize_angle((self.raw_pitch - self.imu_pitch_offset) * self.imu_pitch_scale)
             cal_yaw = self._normalize_angle((self.raw_yaw - self.imu_yaw_offset) * self.imu_yaw_scale)
 
+            # Deadband filter: only update stable output if change exceeds threshold
+            db = self.IMU_DEADBAND_DEG
+            if abs(cal_roll - self.stable_roll) > db:
+                self.stable_roll = cal_roll
+            if abs(cal_pitch - self.stable_pitch) > db:
+                self.stable_pitch = cal_pitch
+            if abs(cal_yaw - self.stable_yaw) > db:
+                self.stable_yaw = cal_yaw
+
             pitch_msg = Float32()
-            pitch_msg.data = cal_pitch
+            pitch_msg.data = self.stable_pitch
             self.pitch_pub.publish(pitch_msg)
             # Publish full RPY as JSON for dashboard
             rpy_payload = json.dumps(
-                {'roll': round(cal_roll, 3),
-                 'pitch': round(cal_pitch, 3),
-                 'yaw': round(cal_yaw, 3)},
+                {'roll': round(self.stable_roll, 2),
+                 'pitch': round(self.stable_pitch, 2),
+                 'yaw': round(self.stable_yaw, 2)},
                 separators=(',', ':')
             )
             self.imu_data_pub.publish(String(data=rpy_payload))
