@@ -34,10 +34,27 @@ auto_driver:
     # Challenge 1→2 sequencing (time-based gating)
     t_post_obstacle_sec: 1.5     # re-center delay after obstacle clears (before roundabout)
     t_roundabout_sec: 8.0        # time inside roundabout before exiting
-    # Hill Climbing Mode (Challenge 5)
-    hill_pitch_threshold: 12.0   # trigger angle in degrees (IMU pitch)
-    hill_drive_speed: 0.35       # boost speed (m/s) to climb the incline
-    hill_steer_scale: 0.0        # multiplier for camera lane error (0.0 = drive straight)
+    # ── Hill Climbing Mode (Challenge 5) ──────────────────────────────────
+    # TUNING GUIDE:
+    #   hill_pitch_threshold   : IMU pitch (deg) to enter HILL state. Start at 8-10°.
+    #   hill_pitch_hysteresis  : pitch must drop this many degrees below threshold to EXIT.
+    #                            Prevents rapid flapping on the crest. Default 4°.
+    #   hill_base_speed        : speed (m/s) assigned when pitch first crosses threshold.
+    #                            Should be slightly above forward_speed.
+    #   hill_speed_per_degree  : extra m/s per extra degree of pitch.
+    #                            e.g. 0.006 * 10° = +0.06 m/s boost.
+    #   hill_max_speed         : hard cap. Never exceed this on the hill.
+    #   hill_steer_scale       : fraction of lane-follow steering to keep (0 = dead straight).
+    #   hill_sign_prime_sec    : seconds after seeing the hill sign that priming stays active.
+    #   hill_sign_prime_threshold_reduction : degrees subtracted from threshold while primed.
+    hill_pitch_threshold: 8.0
+    hill_pitch_hysteresis: 4.0
+    hill_base_speed: 0.18        # m/s — starting speed when robot tips onto the slope
+    hill_speed_per_degree: 0.006 # extra m/s per degree above threshold
+    hill_max_speed: 0.28         # safety cap — never go faster than this on the hill
+    hill_steer_scale: 0.4        # keep 40% of lane steering on hill (helps stay straight)
+    hill_sign_prime_sec: 8.0     # prime window duration after hill sign seen (seconds)
+    hill_sign_prime_threshold_reduction: 3.0  # lower threshold by 3° when primed
 
 # --- Command Safety Controller ---
 cmd_safety_controller:
@@ -281,6 +298,13 @@ servo_controller:
     publish_loop_stats: true
     odom_frame_id: "odom"
     base_frame_id: "base_link"
+    # ── Auto-mode steering asymmetry correction ──────────────────────────────
+    # Ackermann geometry means the robot needs more servo throw on one side to
+    # achieve the same physical turning radius. If right turns are sluggish,
+    # increase this value. 1.0 = no boost (symmetric). 1.3 = 30% more right servo angle.
+    # This multiplier ONLY applies in auto mode (process_twist). Manual is unaffected.
+    # TUNING: Start at 1.3. If still understeering right, try 1.4. Max ~1.6 before servo clamps.
+    auto_right_steer_boost: 1.3
 
 # --- BPU Signage Detector ---
 # CLASS MAP:

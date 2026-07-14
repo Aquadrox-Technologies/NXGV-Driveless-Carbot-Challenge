@@ -35,6 +35,7 @@ from .topics import (
     BOOM_GATE_TOPIC,
     CMD_SAFETY_STATUS_TOPIC,
     DASH_STATE_TOPIC,
+    HILL_SIGN_TOPIC,
     LANE_ERROR_TOPIC,
     LANE_LOST_TOPIC,
     IMU_PITCH_TOPIC,
@@ -114,6 +115,11 @@ class AutoDriver(Node):
         self.cmd_safety_estop = False
         self.cmd_safety_last_time = 0.0
 
+        # Hill sign state
+        self.hill_sign_detected = False
+        self._hill_sign_last_time = 0.0  # monotonic time of last hill sign detection
+        self._hill_primed = False         # True during the prime window after sign detection
+
         # PID controller state
         self._pid_prev_error = 0.0
         self._pid_integral = 0.0
@@ -145,9 +151,26 @@ class AutoDriver(Node):
         # Distance threshold (only for determining if a lap is complete after passing traffic light)
         self.declare_parameter('dist_lap_complete', 1.0)
         self.declare_parameter('enable_subsumption_obstacle', False)
-        self.declare_parameter('hill_pitch_threshold', 12.0)
-        self.declare_parameter('hill_drive_speed', 0.15)
-        self.declare_parameter('hill_steer_scale', 0.0)
+
+        # --- Hill Climb Parameters ---
+        # Entry: pitch must exceed this (degrees) to enter HILL state
+        self.declare_parameter('hill_pitch_threshold', 8.0)
+        # Hysteresis exit: pitch must drop below (threshold - this) to exit HILL state
+        self.declare_parameter('hill_pitch_hysteresis', 4.0)
+        # Base speed sent at the moment pitch first crosses the threshold (m/s)
+        self.declare_parameter('hill_base_speed', 0.14)
+        # Extra speed added per degree of pitch above the threshold
+        # e.g. 0.006 * 10° extra pitch → +0.06 m/s
+        self.declare_parameter('hill_speed_per_degree', 0.006)
+        # Maximum speed allowed in hill mode (safety cap)
+        self.declare_parameter('hill_max_speed', 0.22)
+        # How much of the lane-follow steering to retain on the hill (0 = go straight)
+        self.declare_parameter('hill_steer_scale', 0.4)
+        # Duration (sec) after detecting hill sign during which a lower pitch threshold is used
+        # This primes the robot so it boosts speed as soon as it tips onto the slope
+        self.declare_parameter('hill_sign_prime_sec', 8.0)
+        # When primed by the hill sign, the effective pitch threshold is reduced by this amount
+        self.declare_parameter('hill_sign_prime_threshold_reduction', 3.0)
 
         # Challenge sequencing — time-based gating
         self.declare_parameter('t_post_obstacle_sec', 1.5)  # delay after obstacle clears before entering roundabout
@@ -257,6 +280,11 @@ class AutoDriver(Node):
         self.create_subscription(
             String, RECORD_PLAYBACK_STATE_TOPIC, self.record_playback_state_callback, 10
         )
+
+        # Hill sign detection from signage_detector
+        self.create_subscription(
+            Bool, HILL_SIGN_TOPIC, self.hill_sign_callback, 10
+        )
         
         # Subscribe to Odometry (from servo_controller)
         self.odom_sub = self.create_subscription(
@@ -302,9 +330,15 @@ class AutoDriver(Node):
             # Challenge sequencing
             't_post_obstacle_sec': float(self.get_parameter('t_post_obstacle_sec').value),
             't_roundabout_sec':    float(self.get_parameter('t_roundabout_sec').value),
-            'hill_pitch_threshold': float(self.get_parameter('hill_pitch_threshold').value),
-            'hill_drive_speed':    float(self.get_parameter('hill_drive_speed').value),
-            'hill_steer_scale':    float(self.get_parameter('hill_steer_scale').value),
+            # Hill Climb
+            'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
+            'hill_pitch_hysteresis':          float(self.get_parameter('hill_pitch_hysteresis').value),
+            'hill_base_speed':                float(self.get_parameter('hill_base_speed').value),
+            'hill_speed_per_degree':          float(self.get_parameter('hill_speed_per_degree').value),
+            'hill_max_speed':                 float(self.get_parameter('hill_max_speed').value),
+            'hill_steer_scale':               float(self.get_parameter('hill_steer_scale').value),
+            'hill_sign_prime_sec':            float(self.get_parameter('hill_sign_prime_sec').value),
+            'hill_sign_prime_threshold_reduction': float(self.get_parameter('hill_sign_prime_threshold_reduction').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -410,6 +444,20 @@ class AutoDriver(Node):
             self.rp_state = payload.get('state', 'IDLE')
         except Exception:
             pass
+
+    def hill_sign_callback(self, msg: Bool) -> None:
+        """Receive hill sign detection from signage_detector.
+        
+        When the hill sign is detected, open a 'prime window' that:
+        - Lowers the effective pitch threshold (robot reacts earlier on the slope)
+        - Tells the dashboard that a hill is coming
+        """
+        self.hill_sign_detected = msg.data
+        if msg.data:
+            self._hill_sign_last_time = time.monotonic()
+            if not self._hill_primed:
+                self._hill_primed = True
+                self.get_logger().info('⛰ Hill sign detected — hill mode PRIMED')
 
     def _publish_loop_stats(self) -> None:
         """Publish loop timing stats for diagnostics."""
@@ -617,12 +665,27 @@ class AutoDriver(Node):
             self._obs_was_active = False
             self.get_logger().info('Obstruction cleared → roundabout countdown started')
 
-        # Determine if we are on the hill (with hysteresis)
+        # ── Update hill prime state ──
+        prime_sec = float(self._param_cache['hill_sign_prime_sec'])
+        if self._hill_primed and (time.monotonic() - self._hill_sign_last_time) > prime_sec:
+            self._hill_primed = False
+            self.get_logger().info('⛰ Hill prime window expired')
+
+        # Determine effective pitch threshold (lower when hill sign has been seen recently)
+        effective_threshold = float(self._param_cache['hill_pitch_threshold'])
+        if self._hill_primed:
+            reduction = float(self._param_cache['hill_sign_prime_threshold_reduction'])
+            effective_threshold = max(1.0, effective_threshold - reduction)
+
+        # Determine if we are on the hill (with hysteresis to prevent rapid flapping)
+        hysteresis = float(self._param_cache['hill_pitch_hysteresis'])
         is_on_hill = False
         if self.state == ChallengeState.HILL:
-            is_on_hill = (self.current_pitch >= (self._param_cache['hill_pitch_threshold'] - 4.0))
+            # Stay in HILL until pitch drops well below threshold
+            is_on_hill = (self.current_pitch >= (effective_threshold - hysteresis))
         else:
-            is_on_hill = (self.current_pitch >= self._param_cache['hill_pitch_threshold'])
+            # Enter HILL only when pitch clearly exceeds threshold
+            is_on_hill = (self.current_pitch >= effective_threshold)
 
         # --- Priority Evaluation Engine (Sequenced) ---
 
@@ -714,17 +777,27 @@ class AutoDriver(Node):
         #     target_state = ChallengeState.TRAFFIC_LIGHT
         #     self.stop_reason = f'TRAFFIC LIGHT {self.traffic_light_state.upper()}'
 
-        # Priority 8.2: Hill Climb (Challenge 5)
+        # Priority 8.2: Hill Climb — adaptive speed proportional to pitch
         elif is_on_hill:
             target_state = ChallengeState.HILL
-            self.stop_reason = f'HILL CLIMBING ({self.current_pitch:.1f}°)'
-            cmd.linear.x = float(self._param_cache['hill_drive_speed'])
+            # Adaptive speed: base speed + bonus per extra degree of pitch
+            # This ensures the robot pushes harder as the slope gets steeper
+            pitch_above_thresh = max(0.0, self.current_pitch - float(self._param_cache['hill_pitch_threshold']))
+            hill_speed = (float(self._param_cache['hill_base_speed'])
+                          + float(self._param_cache['hill_speed_per_degree']) * pitch_above_thresh)
+            hill_speed = min(hill_speed, float(self._param_cache['hill_max_speed']))
+            cmd.linear.x = hill_speed
+            self.stop_reason = f'HILL ({self.current_pitch:.1f}° → {hill_speed:.3f}m/s{" PRIMED" if self._hill_primed else ""})'
+            # Keep lane-follow steering scaled down (robot needs to stay straight on the hill)
             steer_scale = float(self._param_cache['hill_steer_scale'])
             if steer_scale > 0.0:
                 lf_cmd = self._lane_follow_cmd()
                 cmd.angular.z = lf_cmd.angular.z * steer_scale
             else:
                 cmd.angular.z = 0.0
+            # On exit (pitch drops back): log it
+            if self.state == ChallengeState.HILL and not is_on_hill:
+                self.get_logger().info(f'⛰ Hill climb complete — pitch back to {self.current_pitch:.1f}°')
 
         # Priority 8.5: Lane recovery (lost lane)
         # Stop in place instead of reversing — safer for testing.

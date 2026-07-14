@@ -153,6 +153,10 @@ class ServoControllerV9(Node):
         self.declare_parameter('imu_roll_scale', 1.0)
         self.declare_parameter('imu_pitch_scale', 1.0)
         self.declare_parameter('imu_yaw_scale', 1.0)
+        # Auto steering asymmetry correction
+        # Multiplier applied ONLY to right-turn servo angle in auto mode.
+        # Increase above 1.0 to make right turns sharper (compensates for Ackermann geometry).
+        self.declare_parameter('auto_right_steer_boost', 1.3)
         
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -331,6 +335,7 @@ class ServoControllerV9(Node):
             'imu_roll_scale': float(self.get_parameter('imu_roll_scale').value),
             'imu_pitch_scale': float(self.get_parameter('imu_pitch_scale').value),
             'imu_yaw_scale': float(self.get_parameter('imu_yaw_scale').value),
+            'auto_right_steer_boost': float(self.get_parameter('auto_right_steer_boost').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -373,6 +378,7 @@ class ServoControllerV9(Node):
                 elif p.name == 'imu_roll_scale': self.imu_roll_scale = float(p.value)
                 elif p.name == 'imu_pitch_scale': self.imu_pitch_scale = float(p.value)
                 elif p.name == 'imu_yaw_scale': self.imu_yaw_scale = float(p.value)
+                # auto_right_steer_boost is read directly from _param_cache each call
         return SetParametersResult(successful=True)
 
     def _update_dash(self) -> None:
@@ -606,11 +612,12 @@ class ServoControllerV9(Node):
         # Auto Mode Driving
         pwm_val = int(msg.linear.x * 255.0)
         
-        # Steering — asymmetric left/right ranges
-        # angular_z > 0 → servo increases → physical right → uses range_right
-        # angular_z < 0 → servo decreases → physical left → uses range_left
+        # Steering — asymmetric left/right ranges with Ackermann correction boost
+        # angular_z > 0 → servo increases → physical right → uses range_right + right boost
+        # angular_z < 0 → servo decreases → physical left  → uses range_left
         if msg.angular.z >= 0:
-            angle_offset = msg.angular.z * float(self.servo_range_right)
+            right_boost = float(self._param_cache.get('auto_right_steer_boost', 1.0))
+            angle_offset = msg.angular.z * float(self.servo_range_right) * right_boost
         else:
             angle_offset = msg.angular.z * float(self.servo_range_left)
         steer_angle = int(self.servo_center + angle_offset)
