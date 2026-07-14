@@ -702,6 +702,16 @@ class ServoControllerV9(Node):
             angle += 360.0
         return angle
 
+    @staticmethod
+    def _angle_diff(a: float, b: float) -> float:
+        """Compute shortest signed angular difference (a - b) in degrees, wrapped to [-180, 180]."""
+        d = a - b
+        while d > 180.0:
+            d -= 360.0
+        while d < -180.0:
+            d += 360.0
+        return d
+
     def _ema_angle(self, current_ema: float, new_angle: float, alpha: float) -> float:
         """Calculate EMA for angles without breaking at 180/-180 wrap-arounds."""
         import math
@@ -755,8 +765,10 @@ class ServoControllerV9(Node):
             
             # Apply Software Calibration and normalize
             cal_roll = self._normalize_angle((self.raw_roll - self.imu_roll_offset) * self.imu_roll_scale)
-            cal_pitch = self._normalize_angle((self.raw_pitch - self.imu_pitch_offset) * self.imu_pitch_scale)
-            cal_yaw = self._normalize_angle((self.raw_yaw - self.imu_yaw_offset) * self.imu_yaw_scale)
+            # Negate pitch so nose-up = positive (hardware reports inverted)
+            cal_pitch = -self._normalize_angle((self.raw_pitch - self.imu_pitch_offset) * self.imu_pitch_scale)
+            # Use angle-aware difference for yaw to handle ±180° wrapping correctly
+            cal_yaw = self._normalize_angle(self._angle_diff(self.raw_yaw, self.imu_yaw_offset) * self.imu_yaw_scale)
 
             pitch_msg = Float32()
             pitch_msg.data = cal_pitch
@@ -903,6 +915,17 @@ class ServoControllerV9(Node):
                 self.imu_pitch_offset = float(self.raw_pitch)
                 self.imu_yaw_offset = float(self.raw_yaw)
                 
+                # Reset the EMA accumulators to the new offsets so yaw zeroing
+                # takes effect immediately (prevents stale EMA drift from
+                # keeping the old angle alive after calibration)
+                self.raw_roll = float(self.raw_roll)   # keep current
+                self.raw_pitch = float(self.raw_pitch) # keep current
+                self.raw_yaw = float(self.raw_yaw)     # keep current
+                
+                self.get_logger().info(
+                    f'IMU Zeroed: offsets set to R:{self.imu_roll_offset:.2f}, '
+                    f'P:{self.imu_pitch_offset:.2f}, Y:{self.imu_yaw_offset:.2f}')
+                
                 # Store raw values as new offsets in parameter server
                 import rclpy
                 results = self.set_parameters([
@@ -925,12 +948,26 @@ class ServoControllerV9(Node):
                     param_name = 'imu_pitch_scale'
                     rel_val = self.raw_pitch - self.imu_pitch_offset
                     if abs(rel_val) > 1.0: # avoid div by zero
-                        new_scale = target / rel_val
+                        # Pitch output is negated (cal_pitch = -(rel_val * scale)),
+                        # so use -target to compensate for the negation
+                        new_scale = -target / rel_val
                 elif axis == 'roll':
                     param_name = 'imu_roll_scale'
                     rel_val = self.raw_roll - self.imu_roll_offset
                     if abs(rel_val) > 1.0:
                         new_scale = target / rel_val
+                elif axis == 'yaw':
+                    # Take the current angle as the deadzone or 0 degree (offset = raw_yaw)
+                    self.imu_yaw_offset = float(self.raw_yaw)
+                    self.raw_yaw = float(self.raw_yaw)
+                    self.get_logger().info(f'IMU Yaw Calibrated: offset set to current angle {self.imu_yaw_offset:.2f}°')
+                    import rclpy
+                    results = self.set_parameters([
+                        rclpy.Parameter('imu_yaw_offset', rclpy.Parameter.Type.DOUBLE, self.imu_yaw_offset)
+                    ])
+                    for r in results:
+                        if not r.successful:
+                            self.get_logger().error(f'Failed to set imu_yaw_offset: {r.reason}')
                 
                 if param_name:
                     self.get_logger().info(f'IMU Scale Update: {axis} target={target}, raw-offset={rel_val:.2f}, new_scale={new_scale:.3f}')
