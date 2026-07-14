@@ -253,6 +253,18 @@ class ServoControllerV9(Node):
         self.last_auto_cmd_time = 0.0
         self.auto_cmd_stale_reported = False
 
+        # --- IMU calibration ---
+        self.imu_roll_offset = float(self._param_cache.get('imu_roll_offset', 0.0))
+        self.imu_pitch_offset = float(self._param_cache.get('imu_pitch_offset', 0.0))
+        self.imu_yaw_offset = float(self._param_cache.get('imu_yaw_offset', 0.0))
+        self.imu_roll_scale = float(self._param_cache.get('imu_roll_scale', 1.0))
+        self.imu_pitch_scale = float(self._param_cache.get('imu_pitch_scale', 1.0))
+        self.imu_yaw_scale = float(self._param_cache.get('imu_yaw_scale', 1.0))
+        
+        self.raw_roll = 0.0
+        self.raw_pitch = 0.0
+        self.raw_yaw = 0.0
+
         # --- Record & Playback state ---
         self.rp_state = 'IDLE'       # 'IDLE', 'RECORDING', 'PLAYBACK'
         self.record_buffer = []       # list of {motor_pwm, servo_angle}
