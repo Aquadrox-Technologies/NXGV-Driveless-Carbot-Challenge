@@ -108,7 +108,7 @@ line_follower_camera:
     dead_zone: 0.05
     hold_error_frames: 15
     error_decay_rate: 0.92
-    show_debug: true              # ENABLED for development — see /camera/debug/line_follower
+    show_debug: false             # OFF by default — dashboard auto-enables for active view
     resize_width: 320
     print_debug: false
     debug_print_rate: 0.5
@@ -283,10 +283,54 @@ servo_controller:
     base_frame_id: "base_link"
 
 # --- BPU Signage Detector ---
+# CLASS MAP:
+#   0: Bumper_signboard      ← DISABLED (unnecessary for competition)
+#   1: Hill_signboard        ← CRUCIAL  (Challenge 5 — hill climb trigger)
+#   2: Obstacle_signboard    ← DISABLED (unnecessary for competition)
+#   3: ParallelP_signboard   ← CRUCIAL  (parking trigger)
+#   4: PerpendP_signboard    ← CRUCIAL  (parking trigger)
+#   5: Roundabout_signboard  ← DISABLED (unnecessary for competition)
+#   6: Traffic_Green         ← CRUCIAL  (traffic light state)
+#   7: Traffic_Red           ← CRUCIAL  (traffic light state)
+#   8: Trafficlight_signboard← CRUCIAL  (generic TL — CV reclassified to 6 or 7)
+#   9: null                  ← always ignored
+#
+# TUNING GUIDE:
+#   thresh_*   : per-class minimum confidence (objectness × class_prob)
+#                Set 0.99 to effectively disable a class.
+#                Lower = more sensitive but more false positives.
+#   iou_threshold : NMS overlap threshold (0.45 is standard YOLOv5 default)
+#   min_parking_sign_width : pixel width gate — ignore tiny parking detections
 signage_detector:
   ros__parameters:
     model_path: "/home/sunrise/risabot_signs_640x640_nv12.bin"
-    conf_threshold: 0.05
+    conf_threshold: 0.05          # global fallback (per-class thresholds below take priority)
     iou_threshold: 0.45
-    show_debug: true
+    show_debug: false             # OFF by default — dashboard auto-enables when signage view active
+    heartbeat_sec: 0.5
+    min_parking_sign_width: 0     # set >0 to require minimum bounding-box width for parking
 
+    # ── Per-class confidence thresholds ────────────────────────────────────
+    # CRUCIAL classes — tuned for reliable detection without false positives
+    thresh_hill:       0.06       # Hill_signboard  — tested working value
+    thresh_parallelp:  0.05       # ParallelP_signboard — tested working value
+    thresh_perpendp:   0.05       # PerpendP_signboard  — tested working value
+    thresh_tl_green:   0.25       # Traffic_Green
+    thresh_tl_red:     0.25       # Traffic_Red
+    thresh_tl_generic: 0.20       # Trafficlight_signboard (CV re-classifies to green/red)
+
+    # DISABLED classes — threshold set to 0.99 so they never fire
+    thresh_bumper:     0.99       # Bumper_signboard    ← not used
+    thresh_obstacle:   0.99       # Obstacle_signboard  ← not used
+    thresh_roundabout: 0.50       # Roundabout_signboard← fires high spuriously, 0.5 suppresses false triggers
+
+    # ── Per-class bounding-box colors (BGR) for debug overlay ─────────────
+    color_hill:       '180,0,255'   # Pink/Purple
+    color_parallelp:  '255,0,0'     # Blue
+    color_perpendp:   '0,100,0'     # Forest Green
+    color_tl_green:   '0,255,0'     # Pure Green
+    color_tl_red:     '0,0,255'     # Pure Red
+    color_tl_generic: '255,255,0'   # Cyan
+    color_bumper:     '0,140,255'   # Orange  (unused — class disabled)
+    color_obstacle:   '0,255,255'   # Yellow  (unused — class disabled)
+    color_roundabout: '255,255,255' # White   (unused — class disabled)
