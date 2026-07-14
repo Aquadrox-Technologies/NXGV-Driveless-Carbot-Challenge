@@ -176,6 +176,7 @@ class AutoDriver(Node):
         self.signboard_detected = False
         self._parking_parallel_sent = False
         self._parking_perp_sent = False
+        self._parking_done = False      # latched True after playback completes, reset on reset_competition
 
         # Transition tracking
         self.state_entry_time = time.monotonic()
@@ -455,6 +456,7 @@ class AutoDriver(Node):
         self.parallel_done = False
         self.perpendicular_done = False
         self.parking_sequence_active = False
+        self._parking_done = False
         self._boom_gate_armed = False
         self._tl_armed = False
         self._obs_cleared_time = 0.0
@@ -479,6 +481,7 @@ class AutoDriver(Node):
         self.parallel_done = False
         self.perpendicular_done = False
         self.parking_sequence_active = False
+        self._parking_done = False
         self._boom_gate_armed = False
         self._tl_armed = False
         self._obs_cleared_time = 0.0
@@ -623,11 +626,11 @@ class AutoDriver(Node):
 
         # --- Priority Evaluation Engine (Sequenced) ---
 
-        # Priority 1: Terminal (Finished)
-        if self.current_lap == 2 and self.perpendicular_done:
-            target_state = ChallengeState.FINISHED
-            self.stop_reason = 'COMPETITION FINISHED'
-            self.parking_sequence_active = False
+        # Priority 1: Terminal (Finished) — REMOVED
+        # The robot resumes LANE_FOLLOW after parking playback completes.
+        # Use reset_competition() or set_lap_2() to reset the session.
+        if False:  # placeholder — keeps elif chain valid
+            pass
 
         # Priority 2: Hard Safety (E-Stop)
         elif self.cmd_safety_estop:
@@ -662,8 +665,10 @@ class AutoDriver(Node):
                     self._obs_cleared_time = 0.0  # prevent re-entry
                     self.get_logger().info('Roundabout complete → boom gate armed')
 
-        # Priority 5: Parking (Lap 2 only)
-        elif self.current_lap == 2 and not self.perpendicular_done and (self.parking_sequence_active or self.signboard_detected):
+        # Priority 5: Parking — triggered by parking sign detection (any lap)
+        # _parking_done latches True after first playback to prevent immediate re-trigger.
+        # Call reset_competition() to allow a new parking sequence.
+        elif not self._parking_done and (self.parking_sequence_active or self.signboard_detected):
             self.parking_sequence_active = True
             if self.state not in (ChallengeState.PARKING_IDLE, ChallengeState.PARKING_PLAYBACK):
                 target_state = ChallengeState.PARKING_IDLE
@@ -686,10 +691,11 @@ class AutoDriver(Node):
                 # Check if playback is finished
                 dwell = time.monotonic() - self.state_entry_time
                 if dwell > 0.5 and self.rp_state == 'IDLE':
-                    self.get_logger().info('Preset parking playback complete!')
-                    self.perpendicular_done = True
+                    self.get_logger().info('Parking playback complete — resuming lane follow')
+                    self._parking_done = True       # prevent re-trigger until manual reset
                     self.parking_sequence_active = False
-                    target_state = ChallengeState.FINISHED
+                    self.signboard_detected = False  # clear stale flag
+                    target_state = ChallengeState.LANE_FOLLOW
 
         # Priority 6: Tunnel — Challenge 3 (reactive)
         elif self.tunnel_detected:
