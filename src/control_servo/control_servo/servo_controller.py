@@ -768,21 +768,16 @@ class ServoControllerV9(Node):
                 self.raw_pitch = self._ema_angle(self.raw_pitch, p, alpha)
                 self.raw_yaw = self._ema_angle(self.raw_yaw, y, alpha)
             
-            # Apply Software Calibration and normalize
-            cal_roll = self._normalize_angle((self.raw_roll - self.imu_roll_offset) * self.imu_roll_scale)
+            # Apply Software Calibration and normalize using angle-aware difference for all axes
+            cal_roll = self._normalize_angle(self._angle_diff(self.raw_roll, self.imu_roll_offset) * self.imu_roll_scale)
             # Negate pitch so nose-up = positive (hardware reports inverted)
-            cal_pitch = -self._normalize_angle((self.raw_pitch - self.imu_pitch_offset) * self.imu_pitch_scale)
-            # Use angle-aware difference for yaw to handle ±180° wrapping correctly
+            cal_pitch = -self._normalize_angle(self._angle_diff(self.raw_pitch, self.imu_pitch_offset) * self.imu_pitch_scale)
             cal_yaw = self._normalize_angle(self._angle_diff(self.raw_yaw, self.imu_yaw_offset) * self.imu_yaw_scale)
 
-            # Deadband filter: only update stable output if change exceeds threshold
-            db = self.IMU_DEADBAND_DEG
-            if abs(cal_roll - self.stable_roll) > db:
-                self.stable_roll = cal_roll
-            if abs(cal_pitch - self.stable_pitch) > db:
-                self.stable_pitch = cal_pitch
-            if abs(cal_yaw - self.stable_yaw) > db:
-                self.stable_yaw = cal_yaw
+            # Bypass deadband to prevent values from getting "stuck"
+            self.stable_roll = cal_roll
+            self.stable_pitch = cal_pitch
+            self.stable_yaw = cal_yaw
 
             pitch_msg = Float32()
             pitch_msg.data = self.stable_pitch
@@ -929,6 +924,11 @@ class ServoControllerV9(Node):
                 self.imu_pitch_offset = float(self.raw_pitch)
                 self.imu_yaw_offset = float(self.raw_yaw)
                 
+                # Force reset stable output so it doesn't get stuck by the deadband
+                self.stable_roll = 0.0
+                self.stable_pitch = 0.0
+                self.stable_yaw = 0.0
+                
                 # Reset the EMA accumulators to the new offsets so yaw zeroing
                 # takes effect immediately (prevents stale EMA drift from
                 # keeping the old angle alive after calibration)
@@ -960,14 +960,14 @@ class ServoControllerV9(Node):
                 
                 if axis == 'pitch':
                     param_name = 'imu_pitch_scale'
-                    rel_val = self.raw_pitch - self.imu_pitch_offset
+                    rel_val = self._angle_diff(self.raw_pitch, self.imu_pitch_offset)
                     if abs(rel_val) > 1.0: # avoid div by zero
                         # Pitch output is negated (cal_pitch = -(rel_val * scale)),
                         # so use -target to compensate for the negation
                         new_scale = -target / rel_val
                 elif axis == 'roll':
                     param_name = 'imu_roll_scale'
-                    rel_val = self.raw_roll - self.imu_roll_offset
+                    rel_val = self._angle_diff(self.raw_roll, self.imu_roll_offset)
                     if abs(rel_val) > 1.0:
                         new_scale = target / rel_val
                 elif axis == 'yaw':
