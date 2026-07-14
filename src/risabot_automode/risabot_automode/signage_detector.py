@@ -83,6 +83,7 @@ class SignageDetector(Node):
 
         self.bridge = CvBridge()
         self.bpu_available = BPU_AVAILABLE
+        self._last_log_time = 0.0  # rate-limit log (avoids hasattr in hot path)
 
         # Per-class thresholds and colors are now read dynamically from ROS2
         # parameters via _get_class_thresholds() and _get_class_colors().
@@ -173,12 +174,48 @@ class SignageDetector(Node):
             'color_tl_red':     str(self.get_parameter('color_tl_red').value),
             'color_tl_generic': str(self.get_parameter('color_tl_generic').value),
         }
+        self._build_class_caches()
 
     def _on_params(self, params) -> SetParametersResult:
         for p in params:
             if p.name in self._param_cache:
                 self._param_cache[p.name] = p.value
+        self._build_class_caches()  # rebuild cached arrays whenever any param changes
         return SetParametersResult(successful=True)
+
+    def _build_class_caches(self) -> None:
+        """Pre-build NumPy threshold array and color list from param cache.
+
+        Called once at init and on every parameter change so the hot
+        inference path never constructs these structures per-frame.
+        """
+        c = self._param_cache
+        conf = c['conf_threshold']
+        # Shape (10,) — indexed directly by class_id for vectorised filtering
+        self._class_thresh_array = np.array([
+            c.get('thresh_bumper',     conf),   # 0 Bumper_signboard
+            c.get('thresh_hill',       conf),   # 1 Hill_signboard
+            c.get('thresh_obstacle',   conf),   # 2 Obstacle_signboard
+            c.get('thresh_parallelp',  conf),   # 3 ParallelP_signboard
+            c.get('thresh_perpendp',   conf),   # 4 PerpendP_signboard
+            c.get('thresh_roundabout', conf),   # 5 Roundabout_signboard
+            c.get('thresh_tl_green',   conf),   # 6 Traffic_Green
+            c.get('thresh_tl_red',     conf),   # 7 Traffic_Red
+            c.get('thresh_tl_generic', conf),   # 8 Trafficlight_signboard
+            1.0,                                # 9 null — always filtered out
+        ], dtype=np.float32)
+        self._class_colors_cache = [
+            self._parse_color(c['color_bumper']),
+            self._parse_color(c['color_hill']),
+            self._parse_color(c['color_obstacle']),
+            self._parse_color(c['color_parallelp']),
+            self._parse_color(c['color_perpendp']),
+            self._parse_color(c['color_roundabout']),
+            self._parse_color(c['color_tl_green']),
+            self._parse_color(c['color_tl_red']),
+            self._parse_color(c['color_tl_generic']),
+            (128, 128, 128),  # null (unused)
+        ]
 
     def _get_class_thresholds(self) -> dict:
         """Build per-class threshold dict from current param cache."""
@@ -237,29 +274,25 @@ class SignageDetector(Node):
     # Image preprocessing (BGR to NV12)
     # ──────────────────────────────────────────────────────────────────────────
 
-    def bgr_to_nv12(self, bgr: np.ndarray) -> np.ndarray:
-        """Resize BGR image to 640x640 and convert to NV12 layout for BPU."""
-        # 1. Resize image to model input shape
-        resized = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
-        # 2. Convert to YUV I420
-        yuv = cv2.cvtColor(resized, cv2.COLOR_BGR2YUV_I420)
+    def bgr_to_nv12(self, bgr640: np.ndarray) -> np.ndarray:
+        """Convert a pre-resized 640x640 BGR image to NV12 layout for BPU.
+
+        Caller is responsible for passing an already-resized 640x640 frame so
+        this method performs zero redundant resize work.
+        """
+        # 1. Convert to YUV I420 (input already 640x640)
+        yuv = cv2.cvtColor(bgr640, cv2.COLOR_BGR2YUV_I420)
         # yuv has shape (960, 640)
-        
-        # 3. Extract planar components
+
+        # 2. Extract planar components
         y = yuv[0:640, :]
         u = yuv[640:800, :]
         v = yuv[800:960, :]
-        
-        # 4. Interleave U and V for NV12 format
-        u_flat = u.reshape(-1)
-        v_flat = v.reshape(-1)
-        
-        uv_interleaved = np.zeros(len(u_flat) + len(v_flat), dtype=np.uint8)
-        uv_interleaved[0::2] = u_flat
-        uv_interleaved[1::2] = v_flat
-        uv_planar = uv_interleaved.reshape(320, 640)
-        
-        # 5. Stack Y and interleaved UV planes
+
+        # 3. Interleave U and V for NV12 using column-stack (faster than strided assignment)
+        uv_planar = np.stack([u.ravel(), v.ravel()], axis=1).ravel().reshape(320, 640)
+
+        # 4. Stack Y and interleaved UV planes
         nv12 = np.vstack((y, uv_planar))
         return nv12
 
@@ -312,9 +345,13 @@ class SignageDetector(Node):
         try:
             # Convert ROS Image to OpenCV BGR
             bgr = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
-            
-            # Preprocess to NV12 format
-            nv12 = self.bgr_to_nv12(bgr)
+
+            # Resize ONCE here — reused for BPU NV12 input, CV post-processing,
+            # and debug rendering. Avoids multiple redundant resize calls.
+            bgr640 = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
+
+            # Preprocess to NV12 format (accepts pre-resized 640x640 image)
+            nv12 = self.bgr_to_nv12(bgr640)
             
             # Forward pass on BPU
             # hobot_dnn forward takes list of inputs
@@ -335,15 +372,8 @@ class SignageDetector(Node):
             max_scores = pred[:, 4] * pred[np.arange(len(pred)), 5 + class_ids]
             
             # Filter by per-class confidence thresholds and ignore null class (9)
-            class_thresholds = self._get_class_thresholds()
-            keep_indices = []
-            for idx, cid in enumerate(class_ids):
-                thresh = class_thresholds.get(int(cid), conf_threshold)
-                if max_scores[idx] >= thresh and cid != 9:
-                    keep_indices.append(True)
-                else:
-                    keep_indices.append(False)
-            keep_indices = np.array(keep_indices)
+            # Vectorised NumPy op — replaces a ~25 000-iteration Python for-loop
+            keep_indices = (max_scores >= self._class_thresh_array[class_ids]) & (class_ids != 9)
             
             filtered_boxes = pred[keep_indices, 0:4]
             filtered_scores = max_scores[keep_indices]
@@ -370,8 +400,8 @@ class SignageDetector(Node):
                 final_class_ids = filtered_class_ids[keep]
 
                 # Perform Hybrid CV classification for traffic light color (Option 1)
-                resized = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
-                h_img, w_img = resized.shape[:2]
+                # Reuse bgr640 already computed above — no second resize needed
+                h_img, w_img = bgr640.shape[:2]
                 for idx, cid in enumerate(final_class_ids):
                     if cid in (6, 7, 8):  # Run CV color verification on green, red, or generic detections
                         box = final_boxes[idx]
@@ -379,9 +409,9 @@ class SignageDetector(Node):
                         y1_c = max(0, int(box[1]))
                         x2_c = min(w_img, int(box[2]))
                         y2_c = min(h_img, int(box[3]))
-                        
+
                         if x2_c > x1_c and y2_c > y1_c:
-                            crop = resized[y1_c:y2_c, x1_c:x2_c]
+                            crop = bgr640[y1_c:y2_c, x1_c:x2_c]
                             new_cid = self.classify_traffic_light_color(crop)
                             final_class_ids[idx] = new_cid
             else:
@@ -391,8 +421,6 @@ class SignageDetector(Node):
 
             # Rate-limited status print (once per second) for diagnostics
             now = time.time()
-            if not hasattr(self, '_last_log_time'):
-                self._last_log_time = 0.0
             if now - self._last_log_time > 1.0:
                 max_score_val = float(np.max(max_scores)) if len(max_scores) > 0 else 0.0
                 self.get_logger().info(
@@ -405,9 +433,9 @@ class SignageDetector(Node):
             self.update_detection_states(final_boxes, final_class_ids)
             self.publish_states()
 
-            # Render debug frames if requested
+            # Render debug frames if requested (pass pre-resized frame — no extra resize)
             if self._param_cache['show_debug']:
-                self.draw_debug(bgr, final_boxes, final_scores, final_class_ids)
+                self.draw_debug(bgr640, final_boxes, final_scores, final_class_ids)
 
         except Exception as e:
             self.get_logger().error(f'Inference error: {e}')
@@ -566,9 +594,9 @@ class SignageDetector(Node):
     # Debug visualization publisher
     # ──────────────────────────────────────────────────────────────────────────
 
-    def draw_debug(self, bgr: np.ndarray, boxes: np.ndarray, scores: np.ndarray, class_ids: np.ndarray) -> None:
-        """Resize original frame to 640x640, overlay boxes/labels and publish debug stream."""
-        debug_img = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
+    def draw_debug(self, bgr640: np.ndarray, boxes: np.ndarray, scores: np.ndarray, class_ids: np.ndarray) -> None:
+        """Overlay detection boxes/labels on the pre-resized 640x640 frame and publish debug stream."""
+        debug_img = bgr640.copy()
         
         # 10-class model — must match Roboflow alphabetical export order
         CLASS_NAMES = [
@@ -584,7 +612,7 @@ class SignageDetector(Node):
             'null',                   # Class 9
         ]
 
-        COLOR_MAP = self._get_class_colors()
+        COLOR_MAP = self._class_colors_cache  # use pre-built cache, not per-frame rebuild
 
         for i, box in enumerate(boxes):
             x1, y1, x2, y2 = map(int, box)

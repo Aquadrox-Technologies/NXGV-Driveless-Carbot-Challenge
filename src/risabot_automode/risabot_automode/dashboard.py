@@ -247,9 +247,9 @@ class DashboardNode(Node):
         # Camera subscriptions (SENSOR_DATA QoS to match camera publisher)
         self.create_subscription(Image, CAMERA_IMAGE_TOPIC, lambda msg: self._image_cb(msg, 'raw'), qos)
         self.create_subscription(Image, CAMERA_DEBUG_LINE_TOPIC, lambda msg: self._image_cb(msg, 'line_follower'), qos)
-        self.create_subscription(Image, SIGNAGE_DEBUG_TOPIC, lambda msg: self._image_cb(msg, 'traffic_light'), qos)
-        self.create_subscription(Image, CAMERA_DEBUG_OBS_TOPIC, lambda msg: self._image_cb(msg, 'obstacle'), qos)
+        # Single subscription covers both 'signage' and 'traffic_light' dashboard views
         self.create_subscription(Image, SIGNAGE_DEBUG_TOPIC, lambda msg: self._image_cb(msg, 'signage'), qos)
+        self.create_subscription(Image, CAMERA_DEBUG_OBS_TOPIC, lambda msg: self._image_cb(msg, 'obstacle'), qos)
 
         # Parking signboard detection flag
         self.create_subscription(Bool, PARKING_SIGN_TOPIC, self._parking_sign_cb, 10)
@@ -553,7 +553,11 @@ class DashboardNode(Node):
 
     def _image_cb(self, msg: Image, view_name: str) -> None:
         """Convert ROS Image to JPEG conditionally, tracking active view and clients."""
-        if self.bridge is None or view_name != self.active_camera_view:
+        active = self.active_camera_view
+        if self.bridge is None:
+            return
+        # 'signage' topic covers both the 'signage' and 'traffic_light' dashboard views
+        if view_name != active and not (view_name == 'signage' and active == 'traffic_light'):
             return
             
         with self.camera_clients_lock:

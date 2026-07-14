@@ -148,7 +148,7 @@ class LineFollowerCamera(Node):
         self.declare_parameter('hold_error_frames', 15)
         self.declare_parameter('error_decay_rate', 0.92)
         # Display / debug
-        self.declare_parameter('show_debug', True)
+        self.declare_parameter('show_debug', False)
         self.declare_parameter('resize_width', 320)
         self.declare_parameter('print_debug', False)
         self.declare_parameter('debug_print_rate', 0.5)
