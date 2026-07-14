@@ -145,6 +145,15 @@ class ServoControllerV9(Node):
         self.declare_parameter('publish_loop_stats', True)
         self.declare_parameter('odom_frame_id', ODOM_FRAME)
         self.declare_parameter('base_frame_id', BASE_FRAME)
+
+        # IMU Software Calibration
+        self.declare_parameter('imu_roll_offset', 0.0)
+        self.declare_parameter('imu_pitch_offset', 0.0)
+        self.declare_parameter('imu_yaw_offset', 0.0)
+        self.declare_parameter('imu_roll_scale', 1.0)
+        self.declare_parameter('imu_pitch_scale', 1.0)
+        self.declare_parameter('imu_yaw_scale', 1.0)
+        
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
         self.add_on_set_parameters_callback(self._on_params)
@@ -298,6 +307,12 @@ class ServoControllerV9(Node):
             'publish_loop_stats': bool(self.get_parameter('publish_loop_stats').value),
             'odom_frame_id': str(self.get_parameter('odom_frame_id').value),
             'base_frame_id': str(self.get_parameter('base_frame_id').value),
+            'imu_roll_offset': float(self.get_parameter('imu_roll_offset').value),
+            'imu_pitch_offset': float(self.get_parameter('imu_pitch_offset').value),
+            'imu_yaw_offset': float(self.get_parameter('imu_yaw_offset').value),
+            'imu_roll_scale': float(self.get_parameter('imu_roll_scale').value),
+            'imu_pitch_scale': float(self.get_parameter('imu_pitch_scale').value),
+            'imu_yaw_scale': float(self.get_parameter('imu_yaw_scale').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -328,6 +343,12 @@ class ServoControllerV9(Node):
                     self.ticks_per_meter = float(p.value)
                 elif p.name == 'wheel_base':
                     self.wheel_base = float(p.value)
+                elif p.name == 'imu_roll_offset': self.imu_roll_offset = float(p.value)
+                elif p.name == 'imu_pitch_offset': self.imu_pitch_offset = float(p.value)
+                elif p.name == 'imu_yaw_offset': self.imu_yaw_offset = float(p.value)
+                elif p.name == 'imu_roll_scale': self.imu_roll_scale = float(p.value)
+                elif p.name == 'imu_pitch_scale': self.imu_pitch_scale = float(p.value)
+                elif p.name == 'imu_yaw_scale': self.imu_yaw_scale = float(p.value)
         return SetParametersResult(successful=True)
 
     def _update_dash(self) -> None:
@@ -668,15 +689,24 @@ class ServoControllerV9(Node):
 
         # Read IMU Pitch + full RPY
         try:
-            roll, pitch, yaw = self.bot.get_imu_attitude_data()
+            r, p, y = self.bot.get_imu_attitude_data()
+            self.raw_roll = float(r)
+            self.raw_pitch = float(p)
+            self.raw_yaw = float(y)
+            
+            # Apply Software Calibration
+            cal_roll = (self.raw_roll - self.imu_roll_offset) * self.imu_roll_scale
+            cal_pitch = (self.raw_pitch - self.imu_pitch_offset) * self.imu_pitch_scale
+            cal_yaw = (self.raw_yaw - self.imu_yaw_offset) * self.imu_yaw_scale
+
             pitch_msg = Float32()
-            pitch_msg.data = float(pitch)
+            pitch_msg.data = cal_pitch
             self.pitch_pub.publish(pitch_msg)
             # Publish full RPY as JSON for dashboard
             rpy_payload = json.dumps(
-                {'roll': round(float(roll), 3),
-                 'pitch': round(float(pitch), 3),
-                 'yaw': round(float(yaw), 3)},
+                {'roll': round(cal_roll, 3),
+                 'pitch': round(cal_pitch, 3),
+                 'yaw': round(cal_yaw, 3)},
                 separators=(',', ':')
             )
             self.imu_data_pub.publish(String(data=rpy_payload))
@@ -801,18 +831,49 @@ class ServoControllerV9(Node):
     # ─────────── Record & Playback methods ───────────
 
     def _imu_calibrate_cb(self, msg: String) -> None:
-        """Trigger IMU/gyroscope calibration on the Rosmaster hardware."""
-        self.get_logger().info('IMU calibration requested from dashboard')
+        """Handle JSON calibration commands (zeroing, scaling, or hardware trigger)."""
         try:
-            # Yahboom Rosmaster SDK calibration call
-            if hasattr(self.bot, 'set_gy_calibration'):
-                self.bot.set_gy_calibration()
-                self.get_logger().info('IMU gyroscope calibration started (set_gy_calibration)')
-            elif hasattr(self.bot, 'calibrate_gyroscope'):
-                self.bot.calibrate_gyroscope()
-                self.get_logger().info('IMU gyroscope calibration started (calibrate_gyroscope)')
-            else:
-                self.get_logger().warn('IMU calibration: no calibration method found on bot object')
+            cmd = json.loads(msg.data)
+            action = cmd.get('action', '')
+            
+            if action == 'zero':
+                self.get_logger().info(f'IMU Zeroing: raw offsets R:{self.raw_roll:.2f}, P:{self.raw_pitch:.2f}, Y:{self.raw_yaw:.2f}')
+                # Store raw values as new offsets
+                from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
+                self.set_parameters([
+                    Parameter(name='imu_roll_offset', value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=self.raw_roll)),
+                    Parameter(name='imu_pitch_offset', value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=self.raw_pitch)),
+                    Parameter(name='imu_yaw_offset', value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=self.raw_yaw)),
+                ])
+                # Trigger hardware calibration for good measure
+                if hasattr(self.bot, 'set_gy_calibration'):
+                    self.bot.set_gy_calibration()
+                
+            elif action == 'set_scale':
+                axis = cmd.get('axis', '')
+                target = float(cmd.get('target', 90.0))
+                
+                param_name = ''
+                new_scale = 1.0
+                
+                if axis == 'pitch':
+                    param_name = 'imu_pitch_scale'
+                    rel_val = self.raw_pitch - self.imu_pitch_offset
+                    if abs(rel_val) > 1.0: # avoid div by zero
+                        new_scale = target / rel_val
+                elif axis == 'roll':
+                    param_name = 'imu_roll_scale'
+                    rel_val = self.raw_roll - self.imu_roll_offset
+                    if abs(rel_val) > 1.0:
+                        new_scale = target / rel_val
+                
+                if param_name:
+                    self.get_logger().info(f'IMU Scale Update: {axis} target={target}, raw-offset={rel_val:.2f}, new_scale={new_scale:.3f}')
+                    from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
+                    self.set_parameters([
+                        Parameter(name=param_name, value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=float(new_scale)))
+                    ])
+
         except Exception as e:
             self.get_logger().error(f'IMU calibration failed: {e}')
 

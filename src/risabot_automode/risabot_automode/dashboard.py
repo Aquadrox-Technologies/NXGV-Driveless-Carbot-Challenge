@@ -1109,11 +1109,13 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(resp).encode())
         elif self.path == '/api/calibrate_imu':
-            # Trigger hardware IMU calibration via servo_controller
+            # Forward JSON payload to hardware IMU calibration via servo_controller
+            content_len = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_len) if content_len > 0 else b'{}'
             try:
                 if _node_ref:
-                    _node_ref.imu_cal_pub.publish(String(data='calibrate'))
-                    resp = {'ok': True, 'msg': 'IMU calibration command sent — keep robot still for 3–5 seconds'}
+                    _node_ref.imu_cal_pub.publish(String(data=body.decode('utf-8')))
+                    resp = {'ok': True, 'msg': 'Calibration command sent'}
                 else:
                     resp = {'ok': False, 'error': 'Dashboard node not ready'}
             except Exception as e:
