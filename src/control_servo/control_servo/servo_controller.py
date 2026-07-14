@@ -774,10 +774,17 @@ class ServoControllerV9(Node):
             cal_pitch = -self._normalize_angle(self._angle_diff(self.raw_pitch, self.imu_pitch_offset) * self.imu_pitch_scale)
             cal_yaw = self._normalize_angle(self._angle_diff(self.raw_yaw, self.imu_yaw_offset) * self.imu_yaw_scale)
 
-            # Bypass deadband to prevent values from getting "stuck"
-            self.stable_roll = cal_roll
-            self.stable_pitch = cal_pitch
-            self.stable_yaw = cal_yaw
+            # Snap to nearest integer if within 0.25 degrees to hide small sensor noise (0.01 - 0.15)
+            # This makes the UI feel completely stable when stationary at 0 or 90 degrees.
+            def _snap(val, thresh=0.25):
+                nearest = round(val)
+                if abs(val - nearest) < thresh:
+                    return float(nearest)
+                return val
+
+            self.stable_roll = _snap(cal_roll)
+            self.stable_pitch = _snap(cal_pitch)
+            self.stable_yaw = _snap(cal_yaw)
 
             pitch_msg = Float32()
             pitch_msg.data = self.stable_pitch
