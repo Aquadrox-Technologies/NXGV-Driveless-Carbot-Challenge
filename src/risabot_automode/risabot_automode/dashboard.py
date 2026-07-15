@@ -642,16 +642,23 @@ class DashboardNode(Node):
 _param_clients_lock = threading.Lock()
 _param_clients = {}  # {'/node_name': {'get': client, 'set': client}}
 
+# Dedicated lightweight node + executor for param Get/Set.
+# Isolated from the main dashboard node so camera callbacks never block it.
+_param_helper_node = None
+_param_executor = None
+
 def _get_client(node_name, svc_type):
-    """Get or create a cached service client."""
+    """Get or create a cached service client on the dedicated param helper node."""
     n = node_name if node_name.startswith('/') else '/' + node_name
     key = (n, svc_type)
     with _param_clients_lock:
         if key not in _param_clients:
+            if _param_helper_node is None:
+                return None
             if svc_type == 'get':
-                _param_clients[key] = _node_ref.create_client(GetParameters, n + '/get_parameters')
+                _param_clients[key] = _param_helper_node.create_client(GetParameters, n + '/get_parameters')
             else:
-                _param_clients[key] = _node_ref.create_client(SetParameters, n + '/set_parameters')
+                _param_clients[key] = _param_helper_node.create_client(SetParameters, n + '/set_parameters')
     return _param_clients[key]
 
 def _ros_get_param(node_name, param_name):
@@ -1150,6 +1157,23 @@ def main(args=None) -> None:
     node = DashboardNode()
     _node_ref = node
 
+    # ── Dedicated param helper node (isolated from camera/subscription load) ──
+    global _param_helper_node, _param_executor
+    from rclpy.executors import SingleThreadedExecutor
+    _param_helper_node = rclpy.create_node('dashboard_param_helper')
+    _param_executor = SingleThreadedExecutor()
+    _param_executor.add_node(_param_helper_node)
+
+    def _spin_param_executor():
+        while rclpy.ok():
+            try:
+                _param_executor.spin_once(timeout_sec=0.05)
+            except Exception:
+                break
+
+    param_spin_thread = threading.Thread(target=_spin_param_executor, daemon=True)
+    param_spin_thread.start()
+
     # Start HTTP server in background thread
     class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         daemon_threads = True
@@ -1183,6 +1207,8 @@ def main(args=None) -> None:
     finally:
         server.shutdown()
         executor.shutdown()
+        _param_executor.shutdown()
+        _param_helper_node.destroy_node()
         node.destroy_node()
         rclpy.shutdown()
 
