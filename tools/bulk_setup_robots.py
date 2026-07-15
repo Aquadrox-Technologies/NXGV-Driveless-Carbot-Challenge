@@ -88,7 +88,8 @@ def configure_robot(host_ip, index, ssid, password, sudo_password):
             ssh_args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
+            encoding='utf-8'
         )
         
         stdout_str, stderr_str = proc.communicate()
