@@ -1173,12 +1173,16 @@ def main(args=None) -> None:
     node.get_logger().info(f'  → http://{hostname}.local:8080')
     node.get_logger().info(f'  → http://{ip}:8080')
 
+    from rclpy.executors import MultiThreadedExecutor
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
         server.shutdown()
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 
