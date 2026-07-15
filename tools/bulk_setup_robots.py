@@ -145,7 +145,7 @@ def configure_robot(host_ip, index, ssid, wifi_password, ssh_password):
         # ── Step 4: WiFi ───────────────────────────────────────────────────
         print(f"  ⏳ [4/4] Configuring WiFi SSID '{ssid}'...")
         wifi_cmd = (
-            f"echo '{ssh_password}' | sudo -S bash ~/risabotcar_ws/tools/setup_wifi.sh '{ssid}' '{wifi_password}'"
+            f"echo '{ssh_password}' | sudo -S bash ~/risabotcar_ws/tools/setup_wifi.sh '{ssid}' '{wifi_password}' '{hostname}'"
         )
         code, out, err = ssh_run(client, wifi_cmd, timeout=60)
         if code != 0:

@@ -72,11 +72,12 @@ fi
 
 # ---- Setup mDNS (risabot.local) ----
 echo ""
-echo "📡 Setting up mDNS (risabot.local)..."
+TARGET_HOSTNAME="${3:-risabot}"
+echo "📡 Setting up mDNS ($TARGET_HOSTNAME.local)..."
 if ! dpkg -s avahi-daemon > /dev/null 2>&1; then
     apt-get update -qq && apt-get install -y -qq avahi-daemon > /dev/null 2>&1
 fi
-hostnamectl set-hostname risabot 2>/dev/null || echo "risabot" > /etc/hostname
+hostnamectl set-hostname "$TARGET_HOSTNAME" 2>/dev/null || echo "$TARGET_HOSTNAME" > /etc/hostname
 systemctl enable avahi-daemon 2>/dev/null || true
 systemctl restart avahi-daemon 2>/dev/null || true
 
