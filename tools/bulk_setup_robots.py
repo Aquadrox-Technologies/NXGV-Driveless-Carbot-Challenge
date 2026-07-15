@@ -155,6 +155,15 @@ def configure_robot(host_ip, index, ssid, wifi_password, ssh_password):
         else:
             print(f"  {GREEN}✅ WiFi profiles configured for SSID '{ssid}'!{RESET}")
 
+        # ── Step 5: Reboot ─────────────────────────────────────────────────
+        print(f"  ⏳ [5/5] Rebooting robot so hostname takes effect...")
+        try:
+            reboot_cmd = f"echo '{ssh_password}' | sudo -S reboot"
+            client.exec_command(reboot_cmd)  # fire-and-forget, no wait
+            print(f"  {GREEN}✅ Reboot command sent! Robot will come back as {hostname}.local{RESET}")
+        except Exception:
+            pass  # connection drops on reboot — this is expected
+
     except Exception as e:
         print(f"  {RED}❌ Error during configuration: {e}{RESET}")
         success = False
@@ -235,7 +244,12 @@ def main():
     print(f"Status: {color}{success_count}/{len(robot_ips)} Successful{RESET}")
     print(f"{BOLD}======================================================{RESET}")
     print()
-    print(f"{CYAN}Each robot is now accessible at:{RESET}")
+    print(f"{YELLOW}⚠️  All robots are rebooting. Wait ~30 seconds, then SSH using:{RESET}")
+    for idx, ip in enumerate(robot_ips):
+        n = start_idx + idx
+        print(f"  ssh sunrise@risabot{n}.local   (or via IP: ssh sunrise@{ip})")
+    print()
+    print(f"{CYAN}Dashboard accessible at:{RESET}")
     for idx, ip in enumerate(robot_ips):
         print(f"  http://risabot{start_idx + idx}.local:8080")
 
