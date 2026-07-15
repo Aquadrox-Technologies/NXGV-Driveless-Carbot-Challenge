@@ -16,7 +16,6 @@ tools/deploy_to_robots.py
 # Large AI Model & Calibration Files
 tools/bpu_model/best.onnx
 tools/bpu_model/calibration_data/
-tools/bpu_model/model_output/risabot_signs_640x640_nv12.bin
 tools/bpu_model/model_output/main_graph_subgraph_0.html
 
 # Administrative guides
