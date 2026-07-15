@@ -22,22 +22,23 @@ else
     echo "✅ avahi-daemon already installed"
 fi
 
-# 2. Set hostname to 'risabot'
+# 2. Set hostname (defaults to 'risabot' if no argument provided)
+TARGET_HOSTNAME="${1:-risabot}"
 CURRENT=$(hostname)
-if [ "$CURRENT" != "risabot" ]; then
-    echo "📝 Changing hostname from '$CURRENT' to 'risabot'..."
-    sudo hostnamectl set-hostname risabot
+if [ "$CURRENT" != "$TARGET_HOSTNAME" ]; then
+    echo "📝 Changing hostname from '$CURRENT' to '$TARGET_HOSTNAME'..."
+    sudo hostnamectl set-hostname "$TARGET_HOSTNAME"
 
     # Update /etc/hosts
     if grep -q "$CURRENT" /etc/hosts; then
-        sudo sed -i "s/$CURRENT/risabot/g" /etc/hosts
+        sudo sed -i "s/$CURRENT/$TARGET_HOSTNAME/g" /etc/hosts
     fi
     # Add entry if not present
-    if ! grep -q "risabot" /etc/hosts; then
-        echo "127.0.1.1  risabot" | sudo tee -a /etc/hosts > /dev/null
+    if ! grep -q "$TARGET_HOSTNAME" /etc/hosts; then
+        echo "127.0.1.1  $TARGET_HOSTNAME" | sudo tee -a /etc/hosts > /dev/null
     fi
 else
-    echo "✅ Hostname already set to 'risabot'"
+    echo "✅ Hostname already set to '$TARGET_HOSTNAME'"
 fi
 
 # 3. Enable and start avahi-daemon
@@ -49,7 +50,7 @@ echo "=============================="
 echo "✅ mDNS Setup Complete!"
 echo ""
 echo "Your DR can now open:"
-echo "  http://risabot.local:8080"
+echo "  http://$TARGET_HOSTNAME.local:8080"
 echo ""
 echo "From any device on the same WiFi network."
 echo "=============================="
