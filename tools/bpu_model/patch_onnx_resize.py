@@ -113,4 +113,7 @@ def patch_onnx(file_path):
     print("Done!")
 
 if __name__ == "__main__":
-    patch_onnx("best.onnx")
+    import os
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    model_path = os.path.join(script_dir, "best.onnx")
+    patch_onnx(model_path)
