@@ -4,8 +4,9 @@
 
 By the end of this module, you will:
 - Understand the role of a **BPU (Brain Processing Unit)** in running deep learning models at high frame rates (30+ FPS) on edge devices
-- Learn how the YOLOv5 BPU model detects **signage** and **traffic lights** in `risabotcar_ws`
-- Understand the preprocessing, forward pass, and Non-Maximum Suppression (NMS) pipeline
+- Learn how the custom-trained YOLOv5 BPU model detects **signage** and **traffic lights** in `risabotcar_ws`
+- Trace the complete **BPU working pipeline** (Preprocessing, BPU Forward Pass, Non-Maximum Suppression, and Hysteresis)
+- Design and implement **AI Trigger Points** using a "Priming Window" architecture (using the Hill Sign as a reference)
 - Learn how to run the BPU diagnostic and live validation scripts inside the `tools/bpu_model/` folder
 - Understand how to build a camera-based **Boom Gate Detector** using OpenCV HSV color thresholding and contours
 
@@ -18,60 +19,150 @@ When a mobile robot runs object detection (like YOLOv5) on a standard CPU, it ca
 To solve this, the RISA-bot computer (RDK X5) is equipped with a **BPU (Brain Processing Unit)**. The BPU is a hardware accelerator specialized in matrix calculations. It processes a $640 \times 640$ YOLOv5 model at **30+ FPS** while keeping the CPU load extremely low.
 
 In `risabotcar_ws`, the BPU model is stored as a quantized binary file:
-`file:///c:/Users/Victus/RISAbot/risabotcar_ws/tools/bpu_model/model_output/risabot_signs_640x640_nv12.bin`
+`file:///c:/Users/Lenovo/Downloads/Kerja/RISA-bot-1/tools/bpu_model/model_output/risabot_signs_640x640_nv12.bin`
 
 ---
 
-## 2. The BPU Inference Pipeline
+## 2. The Custom Dataset & BPU Compilation Pipeline
+
+Before a neural network runs at high speeds on the robot, it undergoes a multi-stage compilation and quantization process:
+
+```
+[ Roboflow Dataset ] ──▶ [ Train YOLOv5 PyTorch ] ──▶ [ Export ONNX ] ──▶ [ Horizon Toolchain (Quantize & Compile) ] ──▶ [ BPU .bin Model ]
+```
+
+1. **Dataset Collection**: Images of traffic lights and competition signs (Hill, Parking, Bumper, Obstacle) are captured on the physical track and annotated using Roboflow.
+2. **Training**: A standard YOLOv5 model (usually `yolov5s` or `yolov5n` for speed) is trained on the custom dataset and exported to the **ONNX** format.
+3. **Quantization & Compilation**: Using the Horizon Toolchain (`hb_mapper`), the ONNX model weights are quantized from FP32 to **INT8**. This quantization allows the BPU to perform integer matrix multiplications extremely fast with minimal accuracy loss.
+4. **NV12 Native Format**: The compiler configures the model to accept the **NV12** (YUV420sp) color format natively, bypassing expensive BGR decoding steps at runtime.
+
+---
+
+## 3. The Runtime BPU Inference Pipeline
 
 Open `src/risabot_automode/risabot_automode/signage_detector.py` and observe the pipeline:
 
-### 2.1. Preprocessing (BGR to NV12)
+```
+[ Camera Frame BGR ] ──▶ [ Resize to 640x640 ] ──▶ [ Convert to NV12 ] ──▶ [ BPU Forward Pass ] ──▶ [ NMS Filtering ] ──▶ [ Trigger Flag Publisher ]
+```
+
+### 3.1. Preprocessing (BGR to NV12)
 The BPU hardware expects images in the **NV12** format (YUV420sp, separating brightness Y from chroma UV). The camera output is standard BGR. The node resizes the BGR frame to $640 \times 640$ and reformats the byte layout:
 ```python
-def bgr_to_nv12(self, bgr: np.ndarray) -> np.ndarray:
-    resized = cv2.resize(bgr, (640, 640), interpolation=cv2.INTER_LINEAR)
-    yuv = cv2.cvtColor(resized, cv2.COLOR_BGR2YUV_I420)
-    
+def bgr_to_nv12(self, bgr640: np.ndarray) -> np.ndarray:
+    # 1. Convert to YUV I420 (960x640 layout)
+    yuv = cv2.cvtColor(bgr640, cv2.COLOR_BGR2YUV_I420)
+
+    # 2. Extract planar components
     y = yuv[0:640, :]
     u = yuv[640:800, :]
     v = yuv[800:960, :]
-    
-    u_flat = u.reshape(-1)
-    v_flat = v.reshape(-1)
-    
-    uv_interleaved = np.zeros(len(u_flat) + len(v_flat), dtype=np.uint8)
-    uv_interleaved[0::2] = u_flat
-    uv_interleaved[1::2] = v_flat
-    uv_planar = uv_interleaved.reshape(320, 640)
-    
+
+    # 3. Interleave U and V for NV12
+    uv_planar = np.stack([u.ravel(), v.ravel()], axis=1).ravel().reshape(320, 640)
+
+    # 4. Stack Y and interleaved UV planes
     return np.vstack((y, uv_planar))
 ```
 
-### 2.2. BPU Forward Pass
-The inference is run using the Horizon `pyeasy_dnn` library. The call runs in the dedicated hardware:
+### 3.2. BPU Forward Pass
+The inference is run using the Horizon `pyeasy_dnn` library. The call runs directly on the BPU hardware accelerator:
 ```python
 outputs = self.model.forward([nv12])
 pred = outputs[0].buffer  # Raw predictions tensor
 ```
 
-### 2.3. Postprocessing & Non-Maximum Suppression (NMS)
-The output buffer contains thousands of anchor bounding boxes, confidences, and class probabilities. The node filters out values below the `conf_threshold` parameter and calls a vectorized NMS algorithm in NumPy to merge overlapping boxes:
-```python
-# Filter out anchors under confidence threshold
-keep_indices = max_scores >= conf_threshold
-# Vectorized NMS logic to merge bounding boxes
-keep = self.nms(boxes_x1y1x2y2, filtered_scores, iou_threshold)
-```
-
-The node then maps the class IDs to active challenges:
-*   Class `0`: `hill_sign` $\rightarrow$ `/hill_sign_detected` (Bool)
-*   Class `1`: `parking_sign` $\rightarrow$ `/parking_signboard_detected` (Bool)
-*   Classes `2-5`: `traffic_light` states $\rightarrow$ `/traffic_light_state` (String)
+### 3.3. Postprocessing & Non-Maximum Suppression (NMS)
+The output buffer contains thousands of anchor bounding boxes, confidences, and class probabilities. The node:
+1. Filters out predictions below the class-specific confidence thresholds using vectorized NumPy arrays (e.g., `self._class_thresh_array`).
+2. Runs a vectorized **NMS (Non-Maximum Suppression)** algorithm to merge overlapping bounding boxes pointing to the same object.
+3. Performs hybrid HSV classification on traffic lights to resolve the active state.
+4. Publishes Boolean/String state updates over ROS 2 topics.
 
 ---
 
-## 3. Hands-On: BPU Model Diagnostics in `risabotcar_ws`
+## 4. AI Trigger Points: The "Priming Window" Architecture
+
+> [!IMPORTANT]
+> **Instant Triggering is a Common Failure Mode:**
+> Initiating robot behavior (like stopping or turning) the exact millisecond the camera sees a sign is highly unreliable. Network delays, momentary false positives, or seeing a sign from an adjacent lane can cause the robot to trigger prematurely or crash.
+
+To ensure stability, RISA-bot uses a **Priming Window** (Gated Trigger) architecture. We combine AI computer vision (perception) with physical validation (sensors).
+
+### Case Study: The Hill Climb Trigger
+Observe how the Hill Climb is sequenced in `src/risabot_automode/risabot_automode/auto_driver.py`:
+
+```
+                       [ BPU CAMERA ]
+                             │
+                      Hill Sign Detected
+                             │
+                             ▼
+                    [ PRIMING WINDOW ] 
+              (Starts 8-second countdown timer)
+              (Reduces IMU pitch threshold)
+                             │
+                             ▼
+                    [ PHYSICAL CHECK ] ──(No Slope)──▶ Keep driving normal
+                 (Exceeds lowered pitch?)
+                             │
+                       (Slope Sensed)
+                             │
+                             ▼
+                     [ HILL CLIMB STATE ]
+                       (Boost motors)
+```
+
+1. **Perception**: The camera detects the `Hill_signboard` sign. The `signage_detector` publishes `True` to `/hill_sign_detected`.
+2. **Priming**: When `auto_driver` receives this, it opens an 8-second **Priming Window** by setting `self._hill_primed = True`.
+3. **Parameter Modulation**: During this window, the robot lowers the pitch threshold required to trigger the hill climbing mode (e.g., from 8.0° to 5.0°). This primes the robot to react immediately upon hitting the incline.
+4. **Physical Validation**: The robot continues driving normal lane-follow. It only enters the `HILL` state when the **physical IMU pitch sensor** confirms that the pitch angle has crossed the threshold.
+5. **Execution**: Once physical pitch is validated, the state machine triggers the `HILL` state, boosting motor speeds and keeping steering straight (`hill_steer_scale = 0.4`).
+6. **Time-out Reset**: If the 8-second window expires and the IMU never registers a pitch increase (e.g., the sign was a false positive or far away), the prime window resets to `False` safely.
+
+### How to Implement a Gated Trigger in Your Code
+When building custom behaviors, use this general programming blueprint:
+
+```python
+class CustomTriggerNode(Node):
+    def __init__(self):
+        super().__init__('custom_trigger_node')
+        self.ai_primed = False
+        self.prime_start_time = 0.0
+        self.prime_duration = 5.0  # 5-second window
+        
+        self.create_subscription(Bool, '/ai_detection', self.ai_callback, 10)
+        self.create_subscription(Float32, '/sensor_reading', self.sensor_callback, 10)
+
+    def ai_callback(self, msg):
+        if msg.data:
+            self.ai_primed = True
+            self.prime_start_time = self.get_clock().now().nanoseconds / 1e9
+            self.get_logger().info("AI Detection Received: Gated Trigger Primed.")
+
+    def sensor_callback(self, msg):
+        now = self.get_clock().now().nanoseconds / 1e9
+        
+        # 1. Check if the priming window is still active
+        window_active = self.ai_primed and (now - self.prime_start_time <= self.prime_duration)
+        if not window_active:
+            self.ai_primed = False  # Reset
+            return
+
+        # 2. Check if the physical condition is met (e.g. sensor value > threshold)
+        physical_triggered = msg.data > 4.5
+        
+        # 3. Combine both constraints to trigger the behavior
+        if window_active and physical_triggered:
+            self.execute_behavior()
+
+    def execute_behavior(self):
+        self.get_logger().info("Gated Trigger Fired! Executing target behavior...")
+```
+
+---
+
+## 5. Hands-On: BPU Model Diagnostics in `risabotcar_ws`
 
 The workspace contains two diagnostic scripts in `tools/bpu_model/` designed to check and test the BPU model in isolation.
 
@@ -111,15 +202,18 @@ The second script, `verify_live.py`, subscribes to a single live camera frame, r
 
 1. In Terminal 1, ensure the camera is running:
    ```bash
-   ros2 launch astra_camera astra_mini.launch.py
+   ros2 launch astra_camera bringup.launch.py
    ```
 2. In Terminal 2, run the diagnostic:
    ```bash
    cd ~/risabotcar_ws/tools/bpu_model
+   ```
+3. Run the live diagnostic script:
+   ```bash
    python3 verify_live.py
    ```
-3. Hold a sign (like the parking signboard) in front of the camera.
-4. The script will output raw diagnostic measurements:
+4. Hold a sign (like the parking signboard or hill signboard) in front of the camera.
+5. The script will output raw diagnostic measurements:
    *   Highest anchor confidence.
    *   Class probabilities.
    *   Number of anchors passing different confidence thresholds (`0.01`, `0.10`, `0.30`, etc.).
@@ -128,18 +222,18 @@ This allows you to verify that the camera is publishing and that the BPU is outp
 
 ---
 
-## 4. Designing a Computer Vision Boom Gate Detector
+## 6. Designing a Computer Vision Boom Gate Detector
 
 The standard RISA-bot uses a LiDAR-based boom gate detector, which looks for a horizontal line of laser points. However, we can also build a **Camera-based Boom Gate Detector** using OpenCV!
 
 A boom gate arm typically has bright red/orange and white stripes. We can isolate it using an OpenCV pipeline:
 
 ```text
-    [ RAW IMAGE ]             [ CROP REGION ]           [ HSV THRESHOLD ]          [ FIND CONTOURS ]
- ┌─────────────────┐         ┌───────────────┐         ┌───────────────┐          ┌───────────────┐
- │    [GATE ARM]   │  ──▶    │   [GATE ARM]  │  ──▶    │   ■ ■ ■ ■ ■   │   ──▶    │ ┌───────────┐ │  (Bounding
- │      🚗         │         └───────────────┘         └───────────────┘          │ └───────────┘ │   Box Aspect
- └─────────────────┘                                                              └───────────────┘   Ratio > 3.0)
+     [ RAW IMAGE ]             [ CROP REGION ]           [ HSV THRESHOLD ]          [ FIND CONTOURS ]
+  ┌─────────────────┐         ┌───────────────┐         ┌───────────────┐          ┌───────────────┐
+  │    [GATE ARM]   │  ──▶    │   [GATE ARM]  │  ──▶    │   ■ ■ ■ ■ ■   │   ──▶    │ ┌───────────┐ │  (Bounding
+  │      🚗         │         └───────────────┘         └───────────────┘          │ └───────────┘ │   Box Aspect
+  └─────────────────┘                                                              └───────────────┘   Ratio > 3.0)
 ```
 
 1. **Crop Region of Interest**: Crop the upper-middle frame where a gate arm appears when the robot stops.
@@ -265,7 +359,7 @@ if __name__ == '__main__':
 
 ---
 
-## 5. Live Parameter Tuning in `risabotcar_ws`
+## 7. Live Parameter Tuning in `risabotcar_ws`
 
 The BPU signage detector has parameters you can modify live to adapt to room conditions:
 ```bash
@@ -281,12 +375,12 @@ ros2 param set /signage_detector min_parking_sign_width 80
 
 ---
 
-## 6. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| **BPU script fails to import libraries** | Script run on local PC instead of RDK X5 | The BPU libraries are only available on the robot. Always run BPU diagnostic scripts via SSH |
-| **`verify_live.py` hangs on waiting for frame** | Camera driver node not running | Ensure the camera driver is running: `ros2 launch astra_camera astra_mini.launch.py` |
+| **BPU script fails to import libraries** | Script run on local PC instead of RDK board | The BPU libraries are only available on the robot. Always run BPU diagnostic scripts via SSH |
+| **`verify_live.py` hangs on waiting for frame** | Camera driver node not running | Ensure the camera driver is running: `ros2 launch astra_camera bringup.launch.py` |
 | **CV Gate detector detects floor/boxes as gate** | HSV boundaries are too wide | Increase the Saturation (`sat_min`) or Value (`val_min`) thresholds to ignore background details |
 
 ---
