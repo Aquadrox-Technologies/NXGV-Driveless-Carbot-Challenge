@@ -15,7 +15,9 @@ import numpy as np
 import rclpy
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
-from rclpy.qos import QoSPresetProfiles
+from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Bool
+
 try:
     import cv2
     from cv_bridge import CvBridge
