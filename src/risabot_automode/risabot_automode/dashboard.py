@@ -1470,8 +1470,8 @@ def main(args=None) -> None:
     except Exception:
         ip = '?.?.?.?'
     node.get_logger().info(f'Dashboard live!')
-    node.get_logger().info(f'  → http://{hostname}.local:8080')
-    node.get_logger().info(f'  → http://{ip}:8080')
+    node.get_logger().info(f'  -> http://{hostname}.local:8080')
+    node.get_logger().info(f'  -> http://{ip}:8080')
 
     from rclpy.executors import MultiThreadedExecutor
     executor = MultiThreadedExecutor()
