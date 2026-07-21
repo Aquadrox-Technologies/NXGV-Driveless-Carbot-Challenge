@@ -681,9 +681,10 @@ class AutoDriver(Node):
                 self._obs_cleared_time = 0.0
                 self._obs_was_active = False
 
-        # Release the red-light latch whenever green is explicitly seen
-        if self.traffic_light_state == 'green' and self._tl_red_latched:
-            self.get_logger().info('Traffic light GREEN — releasing red latch, robot may resume')
+        # Release the red-light latch whenever green OR generic (light off) is explicitly seen
+        if self.traffic_light_state in ('green', 'generic') and self._tl_red_latched:
+            self.get_logger().info(
+                f'Traffic light {self.traffic_light_state.upper()} — releasing red latch, robot may resume')
             self._tl_red_latched = False
 
 
@@ -814,6 +815,7 @@ class AutoDriver(Node):
         #     self.stop_reason = 'BOOM GATE CLOSED'
 
         # Priority 8: Traffic Light — Challenge 5 (Unconditional)
+        # Latch on red/yellow; release on green OR generic (light off/unlit = keep moving).
         elif self.traffic_light_state in ('red', 'yellow') or self._tl_red_latched:
             # Update the latch
             if self.traffic_light_state in ('red', 'yellow') and not self._tl_red_latched:

@@ -100,6 +100,7 @@ class SignageDetector(Node):
         self.detected_tl_red_consecutive = 0
         self.detected_tl_green_consecutive = 0
         self.detected_tl_yellow_consecutive = 0
+        self.detected_tl_generic_consecutive = 0
 
         # ── ROS publishers & subscribers ────────────────────────────────────
         self.parking_pub = self.create_publisher(Bool, PARKING_SIGN_TOPIC, 10)
@@ -510,33 +511,47 @@ class SignageDetector(Node):
 
         # 4. Traffic light states
         # Class 8: Trafficlight_signboard (generic) — CV-reclassified in image_callback to 6 or 7
+        #   If CV cannot find red/green pixels it returns 8 (light is off/unlit)
         # Class 6: Traffic_Green
         # Class 7: Traffic_Red
         # No yellow class in 10-class model
-        saw_red = 7 in class_ids
-        saw_green = 6 in class_ids
+        saw_red     = 7 in class_ids
+        saw_green   = 6 in class_ids
+        saw_generic = 8 in class_ids  # traffic light physically present but off/unlit
 
         if saw_red:
-            self.detected_tl_red_consecutive = min(10, self.detected_tl_red_consecutive + 1)
-            self.detected_tl_green_consecutive = 0
-            self.detected_tl_yellow_consecutive = 0
+            self.detected_tl_red_consecutive     = min(10, self.detected_tl_red_consecutive + 1)
+            self.detected_tl_green_consecutive   = 0
+            self.detected_tl_yellow_consecutive  = 0
+            self.detected_tl_generic_consecutive = 0
             if self.detected_tl_red_consecutive >= 3:
                 self.traffic_light_active = 'red'
         elif saw_green:
-            self.detected_tl_green_consecutive = min(10, self.detected_tl_green_consecutive + 1)
-            self.detected_tl_red_consecutive = 0
-            self.detected_tl_yellow_consecutive = 0
+            self.detected_tl_green_consecutive   = min(10, self.detected_tl_green_consecutive + 1)
+            self.detected_tl_red_consecutive     = 0
+            self.detected_tl_yellow_consecutive  = 0
+            self.detected_tl_generic_consecutive = 0
             if self.detected_tl_green_consecutive >= 3:
                 self.traffic_light_active = 'green'
+        elif saw_generic:
+            # Light is visible but unlit/off — publish 'generic' so the robot keeps moving
+            self.detected_tl_generic_consecutive = min(10, self.detected_tl_generic_consecutive + 1)
+            self.detected_tl_red_consecutive     = max(0, self.detected_tl_red_consecutive - 1)
+            self.detected_tl_green_consecutive   = max(0, self.detected_tl_green_consecutive - 1)
+            self.detected_tl_yellow_consecutive  = max(0, self.detected_tl_yellow_consecutive - 1)
+            if self.detected_tl_generic_consecutive >= 3:
+                self.traffic_light_active = 'generic'
         else:
-            # Decay all states
-            self.detected_tl_red_consecutive = max(0, self.detected_tl_red_consecutive - 1)
-            self.detected_tl_green_consecutive = max(0, self.detected_tl_green_consecutive - 1)
-            self.detected_tl_yellow_consecutive = max(0, self.detected_tl_yellow_consecutive - 1)
+            # No traffic light detected at all — decay all counters
+            self.detected_tl_red_consecutive     = max(0, self.detected_tl_red_consecutive - 1)
+            self.detected_tl_green_consecutive   = max(0, self.detected_tl_green_consecutive - 1)
+            self.detected_tl_yellow_consecutive  = max(0, self.detected_tl_yellow_consecutive - 1)
+            self.detected_tl_generic_consecutive = max(0, self.detected_tl_generic_consecutive - 1)
 
             if (self.detected_tl_red_consecutive == 0 and
                     self.detected_tl_green_consecutive == 0 and
-                    self.detected_tl_yellow_consecutive == 0):
+                    self.detected_tl_yellow_consecutive == 0 and
+                    self.detected_tl_generic_consecutive == 0):
                 self.traffic_light_active = 'unknown'
 
     def classify_traffic_light_color(self, crop: np.ndarray) -> int:
