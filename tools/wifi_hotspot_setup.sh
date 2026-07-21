@@ -66,8 +66,8 @@ case "$ACTION" in
         if nmcli connection show --active | grep -q "$CON_NAME"; then
             nmcli connection down "$CON_NAME"
         fi
-        echo "[*] Hotspot stopped. Re-enabling Wi-Fi radio..."
-        nmcli radio wifi on
+        echo "[*] Re-connecting to saved Wi-Fi router network..."
+        nmcli device connect "$IFACE" || true
         echo "[OK] Returned to normal client Wi-Fi mode."
         ;;
 
