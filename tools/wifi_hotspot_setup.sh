@@ -46,6 +46,10 @@ case "$ACTION" in
         nmcli connection add type wifi ifname "$IFACE" con-name "$CON_NAME" autoconnect no ssid "$SSID"
         nmcli connection modify "$CON_NAME" 802-11-wireless.mode ap 802-11-wireless.band bg 802-11-wireless.channel 6
         nmcli connection modify "$CON_NAME" 802-11-wireless-security.key-mgmt wpa-psk 802-11-wireless-security.psk "$PASSWORD"
+        # Apple iOS compatibility: enforce strict WPA2-PSK (RSN with AES/CCMP)
+        nmcli connection modify "$CON_NAME" 802-11-wireless-security.proto rsn
+        nmcli connection modify "$CON_NAME" 802-11-wireless-security.pairwise ccmp
+        nmcli connection modify "$CON_NAME" 802-11-wireless-security.group ccmp
         nmcli connection modify "$CON_NAME" ipv4.method shared ipv4.addresses "$HOTSPOT_IP/24"
         nmcli connection modify "$CON_NAME" ipv6.method ignore
 
