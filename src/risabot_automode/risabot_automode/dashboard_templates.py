@@ -980,6 +980,68 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     border-color: var(--danger);
     color: var(--danger);
   }
+
+  /* ===== LOG SECTION (Event Log + Data Logger) ===== */
+  .log-section {
+    max-width: 1400px;
+    margin: 0 auto 24px;
+    padding: 0 20px;
+  }
+  .log-card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 18px 22px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+  }
+  .log-card h3 {
+    font-size: 1em;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    margin-bottom: 12px;
+    color: var(--text);
+    text-transform: uppercase;
+  }
+  .log-scroll {
+    max-height: 180px;
+    overflow-y: auto;
+    font-size: 0.78em;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .log-entry {
+    display: flex;
+    gap: 10px;
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(0,0,0,0.04);
+  }
+  .log-time {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 60px;
+  }
+  .log-event { color: var(--text); }
+  .logger-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.68em;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    vertical-align: middle;
+    margin-left: 6px;
+  }
+  .logger-badge.idle {
+    background: rgba(140,143,161,0.15);
+    color: var(--muted);
+  }
+  .logger-badge.recording {
+    background: rgba(210,15,57,0.15);
+    color: var(--danger);
+    animation: pulse 1.2s infinite alternate;
+  }
+  @keyframes pulse { 0% { opacity: 1; } 100% { opacity: 0.4; } }
 </style>
 </head>
 <body>
@@ -1813,13 +1875,7 @@ function update() {
         }
       }
       if (d.logger_status) {
-        isLoggingActive = d.logger_status.is_logging;
-        updateLoggerUI(
-          d.logger_status.is_logging,
-          d.logger_status.session_name,
-          d.logger_status.duration_sec,
-          d.logger_status.sample_count
-        );
+        updateLoggerUI(d.logger_status);
       }
     })
     .catch(()=>{
@@ -3570,6 +3626,100 @@ function update() {
 }
 
 update();
+
+// ===== DATA LOGGER FUNCTIONS =====
+let _loggerIsRecording = false;
+
+function toggleLogger() {
+  const btn = document.getElementById('startLoggerBtn');
+  if (_loggerIsRecording) {
+    // Stop logging
+    fetch('/api/logger/stop', {method: 'POST'})
+      .then(r => r.json())
+      .then(res => {
+        if (res.ok) {
+          addLogEntry('Data logger stopped — session: ' + (res.data && res.data.session_name || ''));
+          refreshLogSessions();
+        } else {
+          addLogEntry('Logger stop error: ' + (res.error || 'unknown'));
+        }
+      })
+      .catch(e => addLogEntry('Logger stop failed: ' + e));
+  } else {
+    // Start logging
+    const label = document.getElementById('loggerLabelInput').value.trim();
+    fetch('/api/logger/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({label: label})
+    })
+      .then(r => r.json())
+      .then(res => {
+        if (res.ok) {
+          addLogEntry('Data logger started — session: ' + (res.session_name || ''));
+        } else {
+          addLogEntry('Logger start error: ' + (res.error || 'unknown'));
+        }
+      })
+      .catch(e => addLogEntry('Logger start failed: ' + e));
+  }
+}
+
+function updateLoggerUI(loggerStatus) {
+  if (!loggerStatus) return;
+  const badge = document.getElementById('loggerStatusBadge');
+  const btn = document.getElementById('startLoggerBtn');
+  const activeInfo = document.getElementById('loggerActiveInfo');
+  const sessionNameEl = document.getElementById('loggerSessionName');
+  const durationEl = document.getElementById('loggerDuration');
+  const samplesEl = document.getElementById('loggerSamples');
+
+  _loggerIsRecording = loggerStatus.is_logging;
+
+  if (loggerStatus.is_logging) {
+    badge.textContent = 'RECORDING';
+    badge.className = 'logger-badge recording';
+    btn.textContent = '⏹ Stop Data Logger';
+    btn.style.background = 'var(--danger)';
+    activeInfo.style.display = 'flex';
+    if (sessionNameEl) sessionNameEl.textContent = loggerStatus.session_name || '—';
+    if (durationEl) durationEl.textContent = (loggerStatus.duration_sec || 0).toFixed(1) + 's';
+    if (samplesEl) samplesEl.textContent = loggerStatus.sample_count || 0;
+  } else {
+    badge.textContent = 'IDLE';
+    badge.className = 'logger-badge idle';
+    btn.textContent = '▶ Start Data Logger';
+    btn.style.background = 'var(--accent)';
+    activeInfo.style.display = 'none';
+  }
+}
+
+function refreshLogSessions() {
+  fetch('/api/logger/list')
+    .then(r => r.json())
+    .then(res => {
+      const container = document.getElementById('loggerSessionsList');
+      if (!res.ok || !res.sessions || res.sessions.length === 0) {
+        container.innerHTML = '<div style="color:var(--muted);padding:6px 0;">No saved sessions yet.</div>';
+        return;
+      }
+      const FILES = ['lane_follower.csv', 'auto_driver.csv', 'signage_detector.csv', 'imu_telemetry.csv', 'servo_encoder.csv'];
+      container.innerHTML = res.sessions.map(s => {
+        const links = FILES.map(f =>
+          `<a href="/api/logger/download?session=${encodeURIComponent(s.name)}&file=${f}" download style="margin-right:6px;color:var(--accent);font-size:0.85em;">${f.replace('.csv','')}</a>`
+        ).join('');
+        return `<div style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,0.04);">
+          <span style="font-weight:600;">${s.name}</span>
+          <span style="color:var(--muted);margin-left:8px;">${s.duration || 0}s / ${s.samples || 0} samples</span>
+          <div style="margin-top:3px;">${links}</div>
+        </div>`;
+      }).join('');
+    })
+    .catch(() => {});
+}
+
+// Load initial session list
+refreshLogSessions();
 </script>
 </body>
 </html>"""
