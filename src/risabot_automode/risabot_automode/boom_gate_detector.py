@@ -53,11 +53,11 @@ class BoomGateDetector(Node):
 
         # Camera Red Bar Detection parameters
         self.declare_parameter('enable_camera', True)
-        self.declare_parameter('cam_roi_y_min', 0.35)
-        self.declare_parameter('cam_roi_y_max', 0.75)
-        self.declare_parameter('cam_red_min_width', 50)
-        self.declare_parameter('cam_red_sat_min', 70)
-        self.declare_parameter('cam_red_val_min', 70)
+        self.declare_parameter('cam_roi_y_min', 0.20)
+        self.declare_parameter('cam_roi_y_max', 0.98)
+        self.declare_parameter('cam_red_min_width', 40)
+        self.declare_parameter('cam_red_sat_min', 30)
+        self.declare_parameter('cam_red_val_min', 30)
 
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -94,7 +94,9 @@ class BoomGateDetector(Node):
             self._heartbeat_publish
         )
 
-        self.get_logger().info('Boom Gate Detector started (LiDAR + Camera Red Bar Detection)')
+        self.get_logger().info(
+            f'Boom Gate Detector started (CV_AVAILABLE={CV_AVAILABLE}, enable_cam={self._param_cache.get("enable_camera")}, sat_min={self._param_cache.get("cam_red_sat_min")})'
+        )
 
     def _update_param_cache(self) -> None:
         """Cache frequently used parameters to avoid per-scan lookups."""
@@ -250,8 +252,10 @@ class BoomGateDetector(Node):
 
         # Debug
         status = "CLOSED" if self.gate_blocked else "OPEN"
-        pts = len(forward_distances)
-        self.get_logger().debug(f"{status} | fwd points: {pts} | blocked_cnt: {self.blocked_count} | clear_cnt: {self.clear_count}")
+        self.get_logger().debug(
+            f"{status} | lidar:{self.lidar_blocked} cam:{self.camera_blocked} "
+            f"blocked_cnt:{self.blocked_count} clear_cnt:{self.clear_count}"
+        )
 
 
 def main(args=None) -> None:
