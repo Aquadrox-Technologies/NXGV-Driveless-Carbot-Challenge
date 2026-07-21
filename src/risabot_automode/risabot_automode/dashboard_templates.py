@@ -855,7 +855,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     transition: max-height 0.35s ease;
   }
   .param-node-body.open {
-    max-height: 2000px;
+    max-height: 5000px;
   }
   .param-row {
     display: grid;
@@ -1951,10 +1951,14 @@ const PARAM_GROUPS = [
     'min_state_dwell_sec','publish_loop_stats',
     'pid_kp','pid_ki','pid_kd','pid_integral_max',
     'speed_error_scale','min_turn_speed','lane_steer_slew',
-    't_post_obstacle_sec','t_roundabout_sec',
+    't_post_obstacle_sec','t_roundabout_sec'
+  ]},
+  { node: 'auto_driver', label: '⛰ Hill Climb', params: [
     'hill_pitch_threshold','hill_pitch_hysteresis',
     'hill_base_speed','hill_speed_per_degree','hill_max_speed',
-    'hill_steer_scale','hill_sign_prime_sec','hill_sign_prime_threshold_reduction',
+    'hill_steer_scale','hill_sign_prime_sec','hill_sign_prime_threshold_reduction'
+  ]},
+  { node: 'auto_driver', label: '⛷ Hill Descent', params: [
     'descent_pitch_threshold','descent_pitch_hysteresis',
     'descent_base_speed','descent_speed_per_degree','descent_min_speed','descent_steer_scale'
   ]},
