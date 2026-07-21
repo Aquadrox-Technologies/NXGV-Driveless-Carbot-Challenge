@@ -56,6 +56,15 @@ auto_driver:
     hill_sign_prime_sec: 8.0     # prime window duration after hill sign seen (seconds)
     hill_sign_prime_threshold_reduction: 3.0  # lower threshold by 3° when primed
 
+    # ── Hill Descent Mode ──────────────────────────────────────────────────
+    descent_pitch_threshold: 5.0
+    descent_pitch_hysteresis: 3.0
+    descent_base_speed: 0.08
+    descent_speed_per_degree: 0.004
+    descent_min_speed: 0.04
+    descent_steer_scale: 0.5
+
+
 # --- Command Safety Controller ---
 cmd_safety_controller:
   ros__parameters:

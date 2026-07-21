@@ -102,18 +102,22 @@ print(f"Split complete. Train images: {len(glob.glob(os.path.join(train_img_dir,
 """
 import yaml
 
-# Explicitly define our 6 target classes (mapped to index 0..5 in YOLO annotations)
+# Explicitly define our 10 target classes (mapped to index 0..9 in YOLO annotations)
 data_yaml_content = {
     'train': train_img_dir,
     'val': val_img_dir,
-    'nc': 6,
+    'nc': 10,
     'names': [
-        'hill_sign',             # Class 0
-        'parking_sign',          # Class 1
-        'traffic_light',         # Class 2
-        'traffic_light_green',   # Class 3
-        'traffic_light_red',     # Class 4
-        'traffic_light_yellow'   # Class 5
+        'Bumper_signboard',       # Class 0
+        'Hill_signboard',         # Class 1
+        'Obstacle_signboard',     # Class 2
+        'ParallelP_signboard',    # Class 3
+        'PerpendP_signboard',     # Class 4
+        'Roundabout_signboard',   # Class 5
+        'Traffic_Green',          # Class 6
+        'Traffic_Red',            # Class 7
+        'Trafficlight_signboard', # Class 8
+        'null'                    # Class 9
     ]
 }
 

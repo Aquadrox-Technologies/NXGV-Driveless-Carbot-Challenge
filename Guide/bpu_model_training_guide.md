@@ -202,16 +202,20 @@ After uploading, you need to draw bounding boxes around every object in every im
 
 ### 2.6 Current RISAbot Classes
 
-The current RISAbot model detects 6 classes:
+The current RISAbot model detects 10 classes:
 
 | Index | Class Name | What It Detects | ROS2 Output Topic |
 |-------|------------|-----------------|-------------------|
-| 0 | `hill_sign` | The hill/ramp signboard | `/hill_sign_detected` (Bool) |
-| 1 | `parking_sign` | The parking signboard | `/parking_signboard_detected` (Bool) |
-| 2 | `traffic_light` | Unlit traffic light housing | `/traffic_light_state` ("unknown") |
-| 3 | `traffic_light_green` | Green light illuminated | `/traffic_light_state` ("green") |
-| 4 | `traffic_light_red` | Red light illuminated | `/traffic_light_state` ("red") |
-| 5 | `traffic_light_yellow` | Yellow light illuminated | `/traffic_light_state` ("yellow") |
+| 0 | `Bumper_signboard` | Speedbump signboard | `/obstacle_detected_camera` (Bool) |
+| 1 | `Hill_signboard` | Hill/ramp signboard | `/hill_sign_detected` (Bool) |
+| 2 | `Obstacle_signboard` | Obstacle signboard | `/obstacle_detected_camera` (Bool) |
+| 3 | `ParallelP_signboard` | Parallel parking signboard | `/parking_signboard_detected` (Bool) |
+| 4 | `PerpendP_signboard` | Perpendicular parking signboard | `/parking_signboard_detected` (Bool) |
+| 5 | `Roundabout_signboard` | Roundabout signboard | Ignored / custom |
+| 6 | `Traffic_Green` | Green traffic light | `/traffic_light_state` ("green") |
+| 7 | `Traffic_Red` | Red traffic light | `/traffic_light_state` ("red") |
+| 8 | `Trafficlight_signboard` | Traffic light signboard | `/traffic_light_state` ("unknown") |
+| 9 | `null` | Ignored | Ignored |
 
 ### 2.7 Adding a New Detection Class
 
@@ -478,14 +482,18 @@ import yaml
 data_yaml_content = {
     'train': train_img_dir,
     'val': val_img_dir,
-    'nc': 6,
+    'nc': 10,
     'names': [
-        'hill_sign',             # Class 0
-        'parking_sign',          # Class 1
-        'traffic_light',         # Class 2
-        'traffic_light_green',   # Class 3
-        'traffic_light_red',     # Class 4
-        'traffic_light_yellow'   # Class 5
+        'Bumper_signboard',       # Class 0
+        'Hill_signboard',         # Class 1
+        'Obstacle_signboard',     # Class 2
+        'ParallelP_signboard',    # Class 3
+        'PerpendP_signboard',     # Class 4
+        'Roundabout_signboard',   # Class 5
+        'Traffic_Green',          # Class 6
+        'Traffic_Red',            # Class 7
+        'Trafficlight_signboard', # Class 8
+        'null'                    # Class 9
     ]
 }
 

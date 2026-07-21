@@ -77,6 +77,7 @@ class ChallengeState(Enum):
     HILL = 13                # Hill climbing mode
     PARKING_IDLE = 14        # Idling before executing preset movement
     PARKING_PLAYBACK = 15    # Executing preset movement playback
+    HILL_DESCENT = 16        # Controlled descent down a slope
 
 
 class AutoDriver(Node):
@@ -171,6 +172,21 @@ class AutoDriver(Node):
         self.declare_parameter('hill_sign_prime_sec', 8.0)
         # When primed by the hill sign, the effective pitch threshold is reduced by this amount
         self.declare_parameter('hill_sign_prime_threshold_reduction', 3.0)
+
+        # --- Hill Descent Parameters ---
+        # Negative pitch threshold to enter HILL_DESCENT (degrees, stored as positive — compared to abs(pitch))
+        self.declare_parameter('descent_pitch_threshold', 5.0)
+        # Hysteresis for exiting HILL_DESCENT (degrees)
+        self.declare_parameter('descent_pitch_hysteresis', 3.0)
+        # Base speed for descent (keep slow — gravity assists)
+        self.declare_parameter('descent_base_speed', 0.08)
+        # Speed REDUCTION per extra degree of downward pitch (subtracts from base)
+        # e.g. 0.004 * 10° → -0.04 m/s from base
+        self.declare_parameter('descent_speed_per_degree', 0.004)
+        # Minimum allowed forward speed during descent (floor to avoid stopping completely)
+        self.declare_parameter('descent_min_speed', 0.04)
+        # How much lane-follow steering to retain on descent (0 = go straight)
+        self.declare_parameter('descent_steer_scale', 0.5)
 
         # Challenge sequencing — time-based gating
         self.declare_parameter('t_post_obstacle_sec', 1.5)  # delay after obstacle clears before entering roundabout
@@ -339,6 +355,13 @@ class AutoDriver(Node):
             'hill_steer_scale':               float(self.get_parameter('hill_steer_scale').value),
             'hill_sign_prime_sec':            float(self.get_parameter('hill_sign_prime_sec').value),
             'hill_sign_prime_threshold_reduction': float(self.get_parameter('hill_sign_prime_threshold_reduction').value),
+            # Hill descent
+            'descent_pitch_threshold':  float(self.get_parameter('descent_pitch_threshold').value),
+            'descent_pitch_hysteresis': float(self.get_parameter('descent_pitch_hysteresis').value),
+            'descent_base_speed':       float(self.get_parameter('descent_base_speed').value),
+            'descent_speed_per_degree': float(self.get_parameter('descent_speed_per_degree').value),
+            'descent_min_speed':        float(self.get_parameter('descent_min_speed').value),
+            'descent_steer_scale':      float(self.get_parameter('descent_steer_scale').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -687,6 +710,17 @@ class AutoDriver(Node):
             # Enter HILL only when pitch clearly exceeds threshold
             is_on_hill = (self.current_pitch >= effective_threshold)
 
+        # Determine if we are descending a slope (pitch is negative = nose-down)
+        d_thresh    = float(self._param_cache['descent_pitch_threshold'])
+        d_hyst      = float(self._param_cache['descent_pitch_hysteresis'])
+        is_descending = False
+        if self.state == ChallengeState.HILL_DESCENT:
+            # Stay in descent until nose-down angle eases past hysteresis band
+            is_descending = (self.current_pitch <= -(d_thresh - d_hyst))
+        else:
+            # Enter descent only when pitch is clearly negative and steep enough
+            is_descending = (self.current_pitch <= -d_thresh)
+
         # --- Priority Evaluation Engine (Sequenced) ---
 
         # Priority 1: Terminal (Finished) — REMOVED
@@ -771,11 +805,10 @@ class AutoDriver(Node):
         #     target_state = ChallengeState.BOOM_GATE
         #     self.stop_reason = 'BOOM GATE CLOSED'
 
-        # # Priority 8: Traffic Light — Challenge 5 (GATED: only after tunnel)
-        # # TODO: Enable when traffic light is on the test field
-        # elif self.traffic_light_state in ('red', 'yellow') and self._tl_armed:
-        #     target_state = ChallengeState.TRAFFIC_LIGHT
-        #     self.stop_reason = f'TRAFFIC LIGHT {self.traffic_light_state.upper()}'
+        # Priority 8: Traffic Light — Challenge 5 (Unconditional)
+        elif self.traffic_light_state in ('red', 'yellow'):
+            target_state = ChallengeState.TRAFFIC_LIGHT
+            self.stop_reason = f'TRAFFIC LIGHT {self.traffic_light_state.upper()}'
 
         # Priority 8.2: Hill Climb — adaptive speed proportional to pitch
         elif is_on_hill:
@@ -797,7 +830,27 @@ class AutoDriver(Node):
                 cmd.angular.z = 0.0
             # On exit (pitch drops back): log it
             if self.state == ChallengeState.HILL and not is_on_hill:
-                self.get_logger().info(f'⛰ Hill climb complete — pitch back to {self.current_pitch:.1f}°')
+                self.get_logger().info(f'Hill climb complete — pitch back to {self.current_pitch:.1f}°')
+
+        # Priority 8.3: Hill Descent — proportionally slow when nose-down
+        elif is_descending and not is_on_hill:
+            target_state = ChallengeState.HILL_DESCENT
+            # How many extra degrees below the threshold are we?
+            pitch_below_thresh = max(0.0, abs(self.current_pitch) - d_thresh)
+            descent_speed = (float(self._param_cache['descent_base_speed'])
+                             - float(self._param_cache['descent_speed_per_degree']) * pitch_below_thresh)
+            descent_speed = max(descent_speed, float(self._param_cache['descent_min_speed']))
+            cmd.linear.x = descent_speed
+            self.stop_reason = f'HILL DESCENT ({self.current_pitch:.1f}deg -> {descent_speed:.3f}m/s)'
+            # Retain partial lane-follow steering to stay in lane on the slope
+            steer_scale = float(self._param_cache['descent_steer_scale'])
+            if steer_scale > 0.0:
+                lf_cmd = self._lane_follow_cmd()
+                cmd.angular.z = lf_cmd.angular.z * steer_scale
+            else:
+                cmd.angular.z = 0.0
+            if self.state == ChallengeState.HILL_DESCENT and not is_descending:
+                self.get_logger().info(f'Hill descent complete — pitch back to {self.current_pitch:.1f}°')
 
         # Priority 8.5: Lane recovery (lost lane)
         # Stop in place instead of reversing — safer for testing.
@@ -831,6 +884,7 @@ class AutoDriver(Node):
                 ChallengeState.REVERSE_ADJUST,
                 ChallengeState.EMERGENCY_STOP,
                 ChallengeState.HILL,
+                ChallengeState.HILL_DESCENT,
                 ChallengeState.PARKING_IDLE,
                 ChallengeState.PARKING_PLAYBACK,
             }

@@ -1883,6 +1883,22 @@ const PARAM_TIPS = {
   // Challenge sequencing
   t_post_obstacle_sec:'Lane-follow delay after obstacle clears before entering roundabout (sec)',
   t_roundabout_sec:'Time to traverse the roundabout arc before exiting (sec)',
+  // Hill Climb
+  hill_pitch_threshold:'Nose-up pitch (deg) to enter HILL climb mode',
+  hill_pitch_hysteresis:'Hysteresis band (deg) - exits HILL when pitch drops below threshold minus this',
+  hill_base_speed:'Forward speed (m/s) at the moment pitch crosses the climb threshold',
+  hill_speed_per_degree:'Extra speed added per degree above climb threshold (e.g. 0.006 * 10 deg = +0.06 m/s)',
+  hill_max_speed:'Maximum speed cap in HILL climb mode (m/s)',
+  hill_steer_scale:'Fraction of lane-follow steering to keep on the hill (0=go straight, 1=full steer)',
+  hill_sign_prime_sec:'Window (sec) after hill sign during which the pitch threshold is lowered',
+  hill_sign_prime_threshold_reduction:'How much to reduce the pitch threshold during the prime window (deg)',
+  // Hill Descent
+  descent_pitch_threshold:'Nose-down pitch magnitude (deg) to enter HILL_DESCENT mode (compared to abs(pitch))',
+  descent_pitch_hysteresis:'Hysteresis band (deg) for exiting HILL_DESCENT (exits when |pitch| < threshold - hyst)',
+  descent_base_speed:'Forward speed (m/s) at the descent entry threshold - keep low since gravity assists',
+  descent_speed_per_degree:'Speed REDUCTION per extra degree below descent threshold (subtracted from base)',
+  descent_min_speed:'Floor speed (m/s) during descent - prevents robot from stopping completely on the slope',
+  descent_steer_scale:'Fraction of lane-follow steering to retain on descent (0=straight, 0.5=half steer)',
   odom_yaw_scale:'Extra yaw calibration multiplier', encoder_jump_threshold:'Reject tick jumps above this',
   max_linear_velocity:'Clamp linear odom speed', max_angular_velocity:'Clamp angular odom speed',
   odom_reverse_polarity:'Invert encoder odom sign if needed', odom_velocity_deadband:'Zero odom near standstill',
@@ -1935,7 +1951,12 @@ const PARAM_GROUPS = [
     'min_state_dwell_sec','publish_loop_stats',
     'pid_kp','pid_ki','pid_kd','pid_integral_max',
     'speed_error_scale','min_turn_speed','lane_steer_slew',
-    't_post_obstacle_sec','t_roundabout_sec'
+    't_post_obstacle_sec','t_roundabout_sec',
+    'hill_pitch_threshold','hill_pitch_hysteresis',
+    'hill_base_speed','hill_speed_per_degree','hill_max_speed',
+    'hill_steer_scale','hill_sign_prime_sec','hill_sign_prime_threshold_reduction',
+    'descent_pitch_threshold','descent_pitch_hysteresis',
+    'descent_base_speed','descent_speed_per_degree','descent_min_speed','descent_steer_scale'
   ]},
   { node: 'cmd_safety_controller', label: 'Cmd Safety', params: [
     'publish_hz','cmd_timeout','max_linear_speed','max_angular_speed',
