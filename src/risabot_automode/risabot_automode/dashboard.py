@@ -8,6 +8,7 @@ Run standalone:  python3 dashboard.py
 Or via launch:   included in competition.launch.py
 """
 
+import csv
 import http.server
 import json
 import math
@@ -109,6 +110,206 @@ def load_default_params():
             print(f"Source params path for saving: {_PARAMS_SOURCE_PATH}")
     except Exception as e:
         print(f"Failed to load default params: {e}")
+
+# ======================== Subsystem Data Logger ========================
+
+class SubsystemDataLogger:
+    """Records live robot telemetry into cleanly separated CSV files by subsystem in ~/risabotcar_ws/data_logs/."""
+    def __init__(self, node_ref):
+        self.node = node_ref
+        self.is_logging = False
+        self.lock = threading.Lock()
+        self.session_name = ""
+        self.session_dir = ""
+        self.start_time = 0.0
+        self.sample_count = 0
+        self.files = {}
+        self.writers = {}
+
+    def get_base_dir(self):
+        ws = os.path.expanduser('~/risabotcar_ws')
+        if not os.path.exists(ws):
+            this_dir = os.path.dirname(os.path.abspath(__file__))
+            ws = os.path.abspath(os.path.join(this_dir, '..', '..', '..'))
+        logs_dir = os.path.join(ws, 'data_logs')
+        os.makedirs(logs_dir, exist_ok=True)
+        return logs_dir
+
+    def start(self, label=""):
+        with self.lock:
+            if self.is_logging:
+                return False, "Already logging"
+            
+            ts_str = time.strftime('%Y%m%d_%H%M%S')
+            prefix = f"{label.strip()}_" if label and label.strip() else ""
+            self.session_name = f"session_{prefix}{ts_str}"
+            base_dir = self.get_base_dir()
+            self.session_dir = os.path.join(base_dir, self.session_name)
+            os.makedirs(self.session_dir, exist_ok=True)
+
+            # Headers for cleanly separated CSV logs
+            headers = {
+                'lane_follower': ['timestamp_sec', 'lane_error', 'pid_kp', 'pid_ki', 'pid_kd', 'lane_steer_slew', 'cmd_angular_z', 'cmd_linear_x'],
+                'auto_driver': ['timestamp_sec', 'state', 'lap', 'stop_reason', 'imu_pitch_deg', 'speed_m_s', 'distance_m'],
+                'signage_detector': ['timestamp_sec', 'traffic_light_state', 'parking_sign_detected'],
+                'imu_telemetry': ['timestamp_sec', 'roll_deg', 'pitch_deg', 'yaw_deg'],
+                'servo_encoder': ['timestamp_sec', 'cmd_linear_x', 'cmd_angular_z', 'speed_m_s', 'odom_x', 'odom_y', 'odom_yaw'],
+            }
+
+            self.files = {}
+            self.writers = {}
+            for key, cols in headers.items():
+                fpath = os.path.join(self.session_dir, f"{key}.csv")
+                f = open(fpath, 'w', newline='', encoding='utf-8')
+                writer = csv.writer(f)
+                writer.writerow(cols)
+                f.flush()
+                self.files[key] = f
+                self.writers[key] = writer
+
+            self.start_time = time.time()
+            self.sample_count = 0
+            self.is_logging = True
+            return True, self.session_name
+
+    def log_tick(self):
+        if not self.is_logging:
+            return
+        
+        with self.lock:
+            if not self.is_logging:
+                return
+            
+            now = time.time()
+            rel_t = round(now - self.start_time, 3)
+
+            kp, _ = _ros_get_param('auto_driver', 'pid_kp')
+            ki, _ = _ros_get_param('auto_driver', 'pid_ki')
+            kd, _ = _ros_get_param('auto_driver', 'pid_kd')
+            slew, _ = _ros_get_param('auto_driver', 'lane_steer_slew')
+
+            with self.node.data_lock:
+                d = dict(self.node.data)
+
+            # 1. lane_follower.csv (for PID tuning calculations)
+            self.writers['lane_follower'].writerow([
+                rel_t,
+                round(float(d.get('lane_error', 0.0)), 4),
+                kp or '1.2', ki or '0.01', kd or '0.15', slew or '3.0',
+                round(float(d.get('cmd_ang_z', 0.0)), 4),
+                round(float(d.get('cmd_lin_x', 0.0)), 4),
+            ])
+
+            # 2. auto_driver.csv
+            self.writers['auto_driver'].writerow([
+                rel_t,
+                str(d.get('state', 'UNKNOWN')),
+                int(d.get('lap', 1)),
+                str(d.get('stop_reason', '')),
+                round(float(d.get('imu_pitch', 0.0)), 2),
+                round(float(d.get('speed', 0.0)), 4),
+                round(float(d.get('distance', 0.0)), 4),
+            ])
+
+            # 3. signage_detector.csv
+            self.writers['signage_detector'].writerow([
+                rel_t,
+                str(d.get('traffic_light', 'unknown')),
+                bool(d.get('parking_sign_detected', False)),
+            ])
+
+            # 4. imu_telemetry.csv
+            self.writers['imu_telemetry'].writerow([
+                rel_t,
+                round(float(d.get('imu_roll', 0.0)), 2),
+                round(float(d.get('imu_pitch', 0.0)), 2),
+                round(float(d.get('imu_yaw', 0.0)), 2),
+            ])
+
+            # 5. servo_encoder.csv
+            self.writers['servo_encoder'].writerow([
+                rel_t,
+                round(float(d.get('cmd_lin_x', 0.0)), 4),
+                round(float(d.get('cmd_ang_z', 0.0)), 4),
+                round(float(d.get('speed', 0.0)), 4),
+                round(float(d.get('odom_x', 0.0)), 4),
+                round(float(d.get('odom_y', 0.0)), 4),
+                round(float(d.get('odom_yaw', 0.0)), 4),
+            ])
+
+            # Flush buffers to disk
+            for f in self.files.values():
+                f.flush()
+
+            self.sample_count += 1
+
+    def stop(self):
+        with self.lock:
+            if not self.is_logging:
+                return False, "Not logging"
+            
+            self.is_logging = False
+            duration = round(time.time() - self.start_time, 2)
+
+            for f in self.files.values():
+                try:
+                    f.flush()
+                    f.close()
+                except Exception:
+                    pass
+            self.files.clear()
+            self.writers.clear()
+
+            meta_path = os.path.join(self.session_dir, "session_meta.json")
+            meta_data = {
+                "session_name": self.session_name,
+                "start_time_iso": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self.start_time)),
+                "duration_sec": duration,
+                "samples_recorded": self.sample_count,
+                "subsystems": ["lane_follower", "auto_driver", "signage_detector", "imu_telemetry", "servo_encoder"],
+            }
+            try:
+                with open(meta_path, 'w', encoding='utf-8') as f:
+                    json.dump(meta_data, f, indent=2)
+            except Exception:
+                pass
+
+            return True, {"session_name": self.session_name, "duration": duration, "samples": self.sample_count, "dir": self.session_dir}
+
+    def get_status(self):
+        with self.lock:
+            dur = round(time.time() - self.start_time, 1) if self.is_logging else 0.0
+            return {
+                "is_logging": self.is_logging,
+                "session_name": self.session_name,
+                "duration_sec": dur,
+                "sample_count": self.sample_count,
+                "log_dir": self.get_base_dir(),
+            }
+
+    def list_sessions(self):
+        base_dir = self.get_base_dir()
+        sessions = []
+        if os.path.exists(base_dir):
+            for d in sorted(os.listdir(base_dir), reverse=True):
+                sdir = os.path.join(base_dir, d)
+                if os.path.isdir(sdir):
+                    meta_file = os.path.join(sdir, "session_meta.json")
+                    meta = {}
+                    if os.path.exists(meta_file):
+                        try:
+                            with open(meta_file, 'r') as f:
+                                meta = json.load(f)
+                        except Exception:
+                            pass
+                    sessions.append({
+                        "name": d,
+                        "time": meta.get("start_time_iso", d),
+                        "duration": meta.get("duration_sec", 0),
+                        "samples": meta.get("samples_recorded", 0),
+                        "path": sdir,
+                    })
+        return sessions
 
 # ======================== ROS2 Dashboard Node ========================
 
@@ -274,10 +475,15 @@ class DashboardNode(Node):
         # Record & Playback state from servo_controller
         self.create_subscription(String, RECORD_PLAYBACK_STATE_TOPIC, self._rp_state_cb, 10)
 
-        # Simulate odometry since hardware might not publish
-        self.create_timer(0.05, self._simulate_odom_loop)
+        # Subsystem Data Logger (10 Hz sample rate)
+        self.data_logger = SubsystemDataLogger(self)
+        self.create_timer(0.1, self._logger_timer_cb)
 
         self.get_logger().info('Dashboard subscriptions ready')
+
+    def _logger_timer_cb(self) -> None:
+        if hasattr(self, 'data_logger') and self.data_logger:
+            self.data_logger.log_tick()
 
     def _simulate_odom_loop(self) -> None:
         """Simulates odometry position based on commanded velocities.
@@ -622,6 +828,8 @@ class DashboardNode(Node):
                 stale_streams.append(key)
         d['freshness_sec'] = freshness
         d['stale_streams'] = stale_streams
+        if hasattr(self, 'data_logger') and self.data_logger:
+            d['logger_status'] = self.data_logger.get_status()
         
         # Ensure odometry types are standard python floats for JSON serialization
         for k in ['distance', 'speed', 'odom_x', 'odom_y', 'odom_yaw']:
@@ -986,6 +1194,42 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(json.dumps(result).encode())
+        elif self.path.startswith('/api/logger/status'):
+            res = {'ok': False}
+            if _node_ref and hasattr(_node_ref, 'data_logger'):
+                res = {'ok': True, 'data': _node_ref.data_logger.get_status()}
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode())
+        elif self.path.startswith('/api/logger/list'):
+            res = {'ok': False}
+            if _node_ref and hasattr(_node_ref, 'data_logger'):
+                res = {'ok': True, 'sessions': _node_ref.data_logger.list_sessions()}
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode())
+        elif self.path.startswith('/api/logger/download'):
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            session = qs.get('session', [''])[0]
+            file_name = qs.get('file', ['lane_follower.csv'])[0]
+            if _node_ref and hasattr(_node_ref, 'data_logger') and session and file_name:
+                base_dir = _node_ref.data_logger.get_base_dir()
+                fpath = os.path.join(base_dir, session, file_name)
+                if os.path.exists(fpath):
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/csv')
+                    self.send_header('Content-Disposition', f'attachment; filename="{session}_{file_name}"')
+                    self.end_headers()
+                    with open(fpath, 'rb') as f:
+                        self.wfile.write(f.read())
+                    return
+            self.send_response(404)
+            self.end_headers()
         elif self.path.startswith('/api/recording_data'):
             from urllib.parse import urlparse, parse_qs
             qs = parse_qs(urlparse(self.path).query)
@@ -1108,6 +1352,38 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                     resp = {'ok': True, 'msg': f'Sent competition command: {cmd}'}
                 else:
                     resp = {'ok': False, 'error': f'Invalid command: {cmd}'}
+            except Exception as e:
+                resp = {'ok': False, 'error': str(e)}
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode())
+        elif self.path == '/api/logger/start':
+            content_len = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_len) if content_len > 0 else b'{}'
+            try:
+                data = json.loads(body) if body else {}
+                label = data.get('label', '')
+                if _node_ref and hasattr(_node_ref, 'data_logger'):
+                    ok, msg = _node_ref.data_logger.start(label)
+                    resp = {'ok': ok, 'session_name' if ok else 'error': msg}
+                else:
+                    resp = {'ok': False, 'error': 'Logger not initialized'}
+            except Exception as e:
+                resp = {'ok': False, 'error': str(e)}
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode())
+        elif self.path == '/api/logger/stop':
+            try:
+                if _node_ref and hasattr(_node_ref, 'data_logger'):
+                    ok, msg = _node_ref.data_logger.stop()
+                    resp = {'ok': ok, 'data' if ok else 'error': msg}
+                else:
+                    resp = {'ok': False, 'error': 'Logger not initialized'}
             except Exception as e:
                 resp = {'ok': False, 'error': str(e)}
             self.send_response(200)

@@ -239,6 +239,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     border: 1px solid rgba(105,240,174,0.4);
     animation: playPulse 1.5s ease infinite;
   }
+  .logger-badge {
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 0.85em;
+    font-weight: 800;
+    margin-left: 8px;
+  }
+  .logger-badge.idle { background: rgba(108,112,134,0.15); color: var(--muted); }
+  .logger-badge.recording { background: rgba(210,15,57,0.15); color: var(--danger); border: 1px solid var(--danger); animation: recPulse 1.5s ease infinite; }
   @keyframes recPulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,82,82,0.3)} 50%{box-shadow:0 0 20px 4px rgba(255,82,82,0.2)} }
   @keyframes playPulse { 0%,100%{box-shadow:0 0 0 0 rgba(105,240,174,0.3)} 50%{box-shadow:0 0 20px 4px rgba(105,240,174,0.2)} }
 
@@ -1285,6 +1294,38 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 </div>
 
+<!-- ===== DATA LOGGER SECTION ===== -->
+<div class="log-section">
+  <div class="log-card" style="border: 1px solid rgba(30,102,245,0.2);">
+    <h3 style="display:flex; align-items:center; justify-content:space-between;">
+      <span><span style="opacity:0.8">📊</span> Subsystem Data Logger <span id="loggerStatusBadge" class="logger-badge idle">IDLE</span></span>
+    </h3>
+    <div style="font-size:0.75em; color:var(--muted); margin-bottom:10px;">
+      Records 10 Hz telemetry into separated CSV files (<code>lane_follower.csv</code>, <code>auto_driver.csv</code>, etc.) inside <code>~/risabotcar_ws/data_logs/</code> for PID calculations & troubleshooting.
+    </div>
+    
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <input type="text" id="loggerLabelInput" placeholder="Session Label (e.g. pid_test_kp1.2)" style="padding:6px 10px; border-radius:6px; border:1px solid rgba(0,0,0,0.1); font-size:0.8em; flex:1; min-width:180px;" />
+      <button id="startLoggerBtn" onclick="toggleLogger()" style="padding:8px 16px; border-radius:8px; font-size:0.8em; font-weight:700; cursor:pointer; background:var(--accent); color:#fff; border:none; transition:all 0.2s;">
+        ▶ Start Data Logger
+      </button>
+      <button onclick="refreshLogSessions()" style="padding:8px 12px; border-radius:8px; font-size:0.78em; font-weight:600; cursor:pointer; background:rgba(0,0,0,0.05); color:var(--text); border:1px solid rgba(0,0,0,0.1);">
+        📂 Refresh Saved Logs
+      </button>
+    </div>
+
+    <div id="loggerActiveInfo" style="display:none; margin-top:10px; padding:8px 12px; background:rgba(30,102,245,0.08); border-radius:6px; font-size:0.78em; justify-content:space-between; align-items:center;">
+      <span>Active Session: <b id="loggerSessionName">—</b></span>
+      <span>Duration: <b id="loggerDuration">0.0s</b></span>
+      <span>Samples Recorded: <b id="loggerSamples">0</b></span>
+    </div>
+
+    <div id="loggerSessionsList" style="margin-top:10px; max-height:140px; overflow-y:auto; font-size:0.75em; border-top:1px solid rgba(0,0,0,0.05); padding-top:6px;">
+      <!-- Dynamically filled with saved session files -->
+    </div>
+  </div>
+</div>
+
 <!-- ===== EVENT LOG ===== -->
 <div class="log-section">
   <div class="log-card">
@@ -1766,12 +1807,19 @@ function update() {
       if (progressTrack && progressFill) {
         if (rpState === 'PLAYBACK' && bufSize > 0) {
           progressTrack.style.display = 'block';
-          const pct = Math.min(100, (pbIdx / bufSize) * 100);
-          progressFill.style.width = pct + '%';
         } else {
           progressTrack.style.display = 'none';
           progressFill.style.width = '0%';
         }
+      }
+      if (d.logger_status) {
+        isLoggingActive = d.logger_status.is_logging;
+        updateLoggerUI(
+          d.logger_status.is_logging,
+          d.logger_status.session_name,
+          d.logger_status.duration_sec,
+          d.logger_status.sample_count
+        );
       }
     })
     .catch(()=>{
@@ -2151,8 +2199,107 @@ buildParamUI();
 
 // Parameters are now fetched on-demand when expanding the sections in the UI.
 
+let isLoggingActive = false;
+
+async function toggleLogger() {
+  const btn = document.getElementById('startLoggerBtn');
+  const labelInput = document.getElementById('loggerLabelInput');
+  
+  if (!isLoggingActive) {
+    const label = labelInput ? labelInput.value : '';
+    try {
+      const r = await fetch('/api/logger/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({label: label})
+      });
+      const d = await r.json();
+      if (d.ok) {
+        isLoggingActive = true;
+        updateLoggerUI(true, d.session_name, 0, 0);
+      } else {
+        alert('Failed to start logger: ' + (d.error || 'Unknown error'));
+      }
+    } catch(e) {
+      alert('Network error starting data logger');
+    }
+  } else {
+    try {
+      const r = await fetch('/api/logger/stop', {method: 'POST'});
+      const d = await r.json();
+      if (d.ok) {
+        isLoggingActive = false;
+        updateLoggerUI(false, '', 0, 0);
+        refreshLogSessions();
+        alert(`Log saved successfully!\nSession: ${d.data.session_name}\nSamples: ${d.data.samples}\nLocation: ${d.data.dir}`);
+      }
+    } catch(e) {
+      alert('Network error stopping data logger');
+    }
+  }
+}
+
+function updateLoggerUI(logging, sessionName, dur, samples) {
+  const btn = document.getElementById('startLoggerBtn');
+  const badge = document.getElementById('loggerStatusBadge');
+  const info = document.getElementById('loggerActiveInfo');
+  
+  if (btn) {
+    if (logging) {
+      btn.textContent = '⏹ Stop & Save Log';
+      btn.style.background = 'var(--danger)';
+    } else {
+      btn.textContent = '▶ Start Data Logger';
+      btn.style.background = 'var(--accent)';
+    }
+  }
+  if (badge) {
+    badge.className = logging ? 'logger-badge recording' : 'logger-badge idle';
+    badge.textContent = logging ? 'REC 🔴' : 'IDLE';
+  }
+  if (info) {
+    info.style.display = logging ? 'flex' : 'none';
+    if (logging) {
+      document.getElementById('loggerSessionName').textContent = sessionName || '—';
+      document.getElementById('loggerDuration').textContent = dur + 's';
+      document.getElementById('loggerSamples').textContent = samples;
+    }
+  }
+}
+
+async function refreshLogSessions() {
+  const container = document.getElementById('loggerSessionsList');
+  if (!container) return;
+  try {
+    const r = await fetch('/api/logger/list');
+    const d = await r.json();
+    if (d.ok && d.sessions) {
+      if (d.sessions.length === 0) {
+        container.innerHTML = '<div style="color:var(--muted); padding:4px;">No saved log sessions found in ~/risabotcar_ws/data_logs/</div>';
+        return;
+      }
+      container.innerHTML = d.sessions.map(s => {
+        return `<div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid rgba(0,0,0,0.03);">
+          <div>
+            <b>${s.name}</b> <span style="color:var(--muted); margin-left:6px;">(${s.duration}s, ${s.samples} samples)</span>
+          </div>
+          <div style="display:flex; gap:4px; flex-wrap:wrap;">
+            <a href="/api/logger/download?session=${s.name}&file=lane_follower.csv" download style="color:var(--accent); text-decoration:none; font-weight:700; background:rgba(30,102,245,0.08); padding:2px 6px; border-radius:4px;">📥 lane_follower.csv</a>
+            <a href="/api/logger/download?session=${s.name}&file=auto_driver.csv" download style="color:#42a5f5; text-decoration:none; font-weight:600; background:rgba(66,165,245,0.08); padding:2px 6px; border-radius:4px;">📥 auto_driver.csv</a>
+            <a href="/api/logger/download?session=${s.name}&file=signage_detector.csv" download style="color:#4caf50; text-decoration:none; font-weight:600; background:rgba(76,175,80,0.08); padding:2px 6px; border-radius:4px;">📥 signage.csv</a>
+            <a href="/api/logger/download?session=${s.name}&file=imu_telemetry.csv" download style="color:#ff9800; text-decoration:none; font-weight:600; background:rgba(255,152,0,0.08); padding:2px 6px; border-radius:4px;">📥 imu.csv</a>
+          </div>
+        </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    if (container) container.innerHTML = '<div style="color:var(--danger)">Failed to load log sessions</div>';
+  }
+}
+
 setInterval(update, 200);
 update();
+refreshLogSessions();
 
 // â”€â”€ LiDAR 2D Visualization â”€â”€
 (function(){
