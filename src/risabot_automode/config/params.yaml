@@ -166,6 +166,18 @@ traffic_light_detector:
     debug_print_rate: 0.5
     heartbeat_sec: 0.5
 
+# --- Camera Obstacle Avoidance ---
+obstacle_avoidance_camera:
+  ros__parameters:
+    edge_threshold: 0.02
+    canny_low: 50
+    canny_high: 150
+    blur_kernel: 5
+    hysteresis_on: 3
+    hysteresis_off: 5
+    show_debug: false
+    resize_width: 320
+
 # --- Boom Gate Detector ---
 boom_gate_detector:
   ros__parameters:
@@ -177,6 +189,12 @@ boom_gate_detector:
     lidar_angle_offset: 3.1416
     hysteresis: 3
     heartbeat_sec: 0.5
+    enable_camera: true
+    cam_roi_y_min: 0.35
+    cam_roi_y_max: 0.75
+    cam_red_min_width: 50
+    cam_red_sat_min: 70
+    cam_red_val_min: 70
 
 # --- Tunnel Wall Follower (RANSAC Enhanced) ---
 # TUNING GUIDE:

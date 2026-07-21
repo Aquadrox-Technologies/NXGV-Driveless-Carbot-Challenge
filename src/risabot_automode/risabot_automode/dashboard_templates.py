@@ -2070,7 +2070,11 @@ const PARAM_GROUPS = [
     'publish_hz','cmd_timeout','max_linear_speed','max_angular_speed',
     'max_linear_accel','max_angular_accel','deadband_linear','deadband_angular','publish_loop_stats'
   ]},
+  { node: 'obstacle_avoidance_camera', label: 'Camera Obstacle', params: [
+    'edge_threshold','canny_low','canny_high','blur_kernel','hysteresis_on','hysteresis_off'
+  ]},
   { node: 'boom_gate_detector', label: 'Boom Gate', params: [
+    'enable_camera','cam_red_min_width','cam_red_sat_min','cam_red_val_min',
     'min_detect_dist','max_detect_dist','angle_window',
     'min_gate_points','distance_variance_max','lidar_angle_offset','hysteresis','heartbeat_sec'
   ]},

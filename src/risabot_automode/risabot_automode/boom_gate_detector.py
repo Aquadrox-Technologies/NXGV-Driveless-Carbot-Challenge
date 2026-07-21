@@ -16,14 +16,19 @@ import rclpy
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import QoSPresetProfiles
-from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Bool
+try:
+    import cv2
+    from cv_bridge import CvBridge
+    from sensor_msgs.msg import Image
+    CV_AVAILABLE = True
+except ImportError:
+    CV_AVAILABLE = False
 
 from .topics import BOOM_GATE_TOPIC
 
 
 class BoomGateDetector(Node):
-    """Detects boom gate presence from LiDAR scans."""
+    """Detects boom gate presence from LiDAR scans and Camera red horizontal bar detection."""
 
     def __init__(self):
         super().__init__('boom_gate_detector')
@@ -42,6 +47,15 @@ class BoomGateDetector(Node):
         self.declare_parameter('lidar_angle_offset', 1.5708)  # pi/2
         self.declare_parameter('hysteresis', 3)
         self.declare_parameter('heartbeat_sec', 0.5)
+
+        # Camera Red Bar Detection parameters
+        self.declare_parameter('enable_camera', True)
+        self.declare_parameter('cam_roi_y_min', 0.35)
+        self.declare_parameter('cam_roi_y_max', 0.75)
+        self.declare_parameter('cam_red_min_width', 50)
+        self.declare_parameter('cam_red_sat_min', 70)
+        self.declare_parameter('cam_red_val_min', 70)
+
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
         self.add_on_set_parameters_callback(self._on_params)
@@ -49,7 +63,7 @@ class BoomGateDetector(Node):
         # Publisher
         self.gate_pub = self.create_publisher(Bool, BOOM_GATE_TOPIC, 10)
 
-        # Subscriber
+        # Subscribers
         self.scan_sub = self.create_subscription(
             LaserScan,
             '/scan',
@@ -57,8 +71,19 @@ class BoomGateDetector(Node):
             QoSPresetProfiles.SENSOR_DATA.value
         )
 
+        self.camera_blocked = False
+        if CV_AVAILABLE:
+            self.bridge = CvBridge()
+            self.cam_sub = self.create_subscription(
+                Image,
+                '/camera/color/image_raw',
+                self.camera_callback,
+                QoSPresetProfiles.SENSOR_DATA.value
+            )
+
         # State
         self.gate_blocked = False
+        self.lidar_blocked = False
         self.blocked_count = 0
         self.clear_count = 0
         self._heartbeat_timer = self.create_timer(
@@ -66,7 +91,7 @@ class BoomGateDetector(Node):
             self._heartbeat_publish
         )
 
-        self.get_logger().info('Boom Gate Detector started')
+        self.get_logger().info('Boom Gate Detector started (LiDAR + Camera Red Bar Detection)')
 
     def _update_param_cache(self) -> None:
         """Cache frequently used parameters to avoid per-scan lookups."""
@@ -79,6 +104,12 @@ class BoomGateDetector(Node):
             'lidar_angle_offset': float(self.get_parameter('lidar_angle_offset').value),
             'hysteresis': int(self.get_parameter('hysteresis').value),
             'heartbeat_sec': float(self.get_parameter('heartbeat_sec').value),
+            'enable_camera': bool(self.get_parameter('enable_camera').value),
+            'cam_roi_y_min': float(self.get_parameter('cam_roi_y_min').value),
+            'cam_roi_y_max': float(self.get_parameter('cam_roi_y_max').value),
+            'cam_red_min_width': int(self.get_parameter('cam_red_min_width').value),
+            'cam_red_sat_min': int(self.get_parameter('cam_red_sat_min').value),
+            'cam_red_val_min': int(self.get_parameter('cam_red_val_min').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -93,6 +124,54 @@ class BoomGateDetector(Node):
         gate_msg = Bool()
         gate_msg.data = not self.gate_blocked
         self.gate_pub.publish(gate_msg)
+
+    def camera_callback(self, msg) -> None:
+        if not CV_AVAILABLE or not self._param_cache.get('enable_camera', True):
+            self.camera_blocked = False
+            return
+
+        try:
+            cv_img = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+            h, w = cv_img.shape[:2]
+            if w != 320 or h != 240:
+                cv_img = cv2.resize(cv_img, (320, 240))
+                h, w = 240, 320
+
+            y_min = int(h * float(self._param_cache.get('cam_roi_y_min', 0.35)))
+            y_max = int(h * float(self._param_cache.get('cam_roi_y_max', 0.75)))
+            x_min = int(w * 0.15)
+            x_max = int(w * 0.85)
+
+            roi = cv_img[y_min:y_max, x_min:x_max]
+            hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+
+            sat_min = int(self._param_cache.get('cam_red_sat_min', 70))
+            val_min = int(self._param_cache.get('cam_red_val_min', 70))
+
+            mask1 = cv2.inRange(hsv, np.array([0, sat_min, val_min]), np.array([12, 255, 255]))
+            mask2 = cv2.inRange(hsv, np.array([160, sat_min, val_min]), np.array([180, 255, 255]))
+            mask = cv2.bitwise_or(mask1, mask2)
+
+            # Morphological close with horizontal kernel to join red bar segments
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 3))
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            min_w = int(self._param_cache.get('cam_red_min_width', 50))
+            found_red_bar = False
+            for cnt in contours:
+                x, y, cw, ch = cv2.boundingRect(cnt)
+                aspect = float(cw) / max(1.0, float(ch))
+                # Horizontal red bar spanning horizontally (aspect >= 2.0 and width >= min_w)
+                if cw >= min_w and aspect >= 2.0:
+                    found_red_bar = True
+                    break
+
+            self.camera_blocked = found_red_bar
+
+        except Exception as e:
+            self.get_logger().error(f"Camera boom gate processing error: {e}")
 
     def scan_callback(self, msg: LaserScan) -> None:
         min_dist = self._param_cache['min_detect_dist']
@@ -125,7 +204,7 @@ class BoomGateDetector(Node):
 
         # Gate detection logic:
         # A boom gate creates a dense cluster of points at roughly the same distance
-        is_blocked = False
+        lidar_is_blocked = False
         if len(forward_distances) >= min_pts:
             distances = np.array(forward_distances)
             # Check if points cluster tightly (low variance = solid barrier)
@@ -133,7 +212,11 @@ class BoomGateDetector(Node):
             dist_mean = np.mean(distances)
             # Require both: low spread AND reasonable distance (not noise at range_max)
             if dist_std < dist_var_max and dist_mean < max_dist * 0.9:
-                is_blocked = True
+                lidar_is_blocked = True
+
+        self.lidar_blocked = lidar_is_blocked
+        # Fused decision: gate is blocked if either LiDAR detects barrier OR Camera detects Red Bar
+        is_blocked = self.lidar_blocked or self.camera_blocked
 
         # Hysteresis to avoid flicker
         if is_blocked:
@@ -146,7 +229,8 @@ class BoomGateDetector(Node):
         hysteresis = self._param_cache['hysteresis']
         if self.blocked_count >= hysteresis and not self.gate_blocked:
             self.gate_blocked = True
-            self.get_logger().warn('Boom gate CLOSED - barrier detected')
+            reason = "Camera Red Bar" if self.camera_blocked else "LiDAR Barrier"
+            self.get_logger().warn(f'Boom gate CLOSED - barrier detected ({reason})')
         elif self.clear_count >= hysteresis and self.gate_blocked:
             self.gate_blocked = False
             self.get_logger().info('Boom gate OPEN - path clear')
