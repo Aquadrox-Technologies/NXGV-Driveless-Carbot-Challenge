@@ -113,6 +113,17 @@ def generate_launch_description():
         ]),
 
 
+        # G1. Boom Gate Detector (LiDAR + Camera Red Bar)
+        TimerAction(period=3.0, actions=[
+            Node(
+                package='risabot_automode',
+                executable='boom_gate_detector',
+                name='boom_gate_detector',
+                output='screen',
+                parameters=[params_file]
+            ),
+        ]),
+
         # G2. Tunnel wall follower
         TimerAction(period=3.0, actions=[
             Node(

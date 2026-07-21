@@ -755,6 +755,13 @@ class AutoDriver(Node):
             tl_label = self.traffic_light_state.upper() if self.traffic_light_state in ('red', 'yellow') else 'HELD'
             self.stop_reason = f'TRAFFIC LIGHT {tl_label} [LATCHED]'
 
+        # Priority 2.6: Boom Gate — Barrier Stop (Overrides Lane Follow & Navigation)
+        elif not self.boom_gate_open:
+            target_state = ChallengeState.BOOM_GATE
+            self.stop_reason = 'BOOM GATE CLOSED'
+            cmd.linear.x = 0.0
+            cmd.angular.z = 0.0
+
         # Priority 3: Obstruction — Challenge 1 (reactive)
         elif self.obstruction_active:
             target_state = ChallengeState.OBSTRUCTION
