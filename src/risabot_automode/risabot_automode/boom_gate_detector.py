@@ -105,11 +105,11 @@ class BoomGateDetector(Node):
             'hysteresis': int(self.get_parameter('hysteresis').value),
             'heartbeat_sec': float(self.get_parameter('heartbeat_sec').value),
             'enable_camera': bool(self.get_parameter('enable_camera').value),
-            'cam_roi_y_min': float(self.get_parameter('cam_roi_y_min').value),
-            'cam_roi_y_max': float(self.get_parameter('cam_roi_y_max').value),
-            'cam_red_min_width': int(self.get_parameter('cam_red_min_width').value),
-            'cam_red_sat_min': int(self.get_parameter('cam_red_sat_min').value),
-            'cam_red_val_min': int(self.get_parameter('cam_red_val_min').value),
+            'cam_roi_y_min': float(self.get_parameter('cam_roi_y_min', 0.20).value if hasattr(self.get_parameter('cam_roi_y_min'), 'value') else 0.20),
+            'cam_roi_y_max': float(self.get_parameter('cam_roi_y_max', 0.98).value if hasattr(self.get_parameter('cam_roi_y_max'), 'value') else 0.98),
+            'cam_red_min_width': int(self.get_parameter('cam_red_min_width', 40).value if hasattr(self.get_parameter('cam_red_min_width'), 'value') else 40),
+            'cam_red_sat_min': int(self.get_parameter('cam_red_sat_min', 50).value if hasattr(self.get_parameter('cam_red_sat_min'), 'value') else 50),
+            'cam_red_val_min': int(self.get_parameter('cam_red_val_min', 50).value if hasattr(self.get_parameter('cam_red_val_min'), 'value') else 50),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -137,19 +137,20 @@ class BoomGateDetector(Node):
                 cv_img = cv2.resize(cv_img, (320, 240))
                 h, w = 240, 320
 
-            y_min = int(h * float(self._param_cache.get('cam_roi_y_min', 0.35)))
-            y_max = int(h * float(self._param_cache.get('cam_roi_y_max', 0.75)))
-            x_min = int(w * 0.15)
-            x_max = int(w * 0.85)
+            # Scan full lower-to-middle region (20% to 98% of height) to catch red bar up-close
+            y_min = int(h * float(self._param_cache.get('cam_roi_y_min', 0.20)))
+            y_max = int(h * float(self._param_cache.get('cam_roi_y_max', 0.98)))
+            x_min = int(w * 0.05)
+            x_max = int(w * 0.95)
 
             roi = cv_img[y_min:y_max, x_min:x_max]
             hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
 
-            sat_min = int(self._param_cache.get('cam_red_sat_min', 70))
-            val_min = int(self._param_cache.get('cam_red_val_min', 70))
+            sat_min = int(self._param_cache.get('cam_red_sat_min', 50))
+            val_min = int(self._param_cache.get('cam_red_val_min', 50))
 
-            mask1 = cv2.inRange(hsv, np.array([0, sat_min, val_min]), np.array([12, 255, 255]))
-            mask2 = cv2.inRange(hsv, np.array([160, sat_min, val_min]), np.array([180, 255, 255]))
+            mask1 = cv2.inRange(hsv, np.array([0, sat_min, val_min]), np.array([15, 255, 255]))
+            mask2 = cv2.inRange(hsv, np.array([155, sat_min, val_min]), np.array([180, 255, 255]))
             mask = cv2.bitwise_or(mask1, mask2)
 
             # Morphological close with horizontal kernel to join red bar segments
@@ -158,17 +159,18 @@ class BoomGateDetector(Node):
 
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            min_w = int(self._param_cache.get('cam_red_min_width', 50))
+            min_w = int(self._param_cache.get('cam_red_min_width', 40))
             found_red_bar = False
             for cnt in contours:
                 x, y, cw, ch = cv2.boundingRect(cnt)
                 aspect = float(cw) / max(1.0, float(ch))
-                # Horizontal red bar spanning horizontally (aspect >= 2.0 and width >= min_w)
-                if cw >= min_w and aspect >= 2.0:
+                # Horizontal red bar spanning horizontally (aspect >= 1.8 and width >= min_w)
+                if cw >= min_w and aspect >= 1.8:
                     found_red_bar = True
                     break
 
             self.camera_blocked = found_red_bar
+            self._eval_and_publish()
 
         except Exception as e:
             self.get_logger().error(f"Camera boom gate processing error: {e}")
@@ -215,6 +217,9 @@ class BoomGateDetector(Node):
                 lidar_is_blocked = True
 
         self.lidar_blocked = lidar_is_blocked
+        self._eval_and_publish()
+
+    def _eval_and_publish(self) -> None:
         # Fused decision: gate is blocked if either LiDAR detects barrier OR Camera detects Red Bar
         is_blocked = self.lidar_blocked or self.camera_blocked
 

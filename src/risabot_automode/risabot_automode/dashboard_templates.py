@@ -1760,7 +1760,7 @@ function update() {
       }
 
       const gD=document.getElementById('dotGate'),gV=document.getElementById('valGate');
-      if(d.boom_gate===null){gD.className='dot dot-gray';gV.textContent='â€”';}
+      if(d.boom_gate===null||d.boom_gate===undefined){gD.className='dot dot-gray';gV.textContent='-';}
       else{gD.className=d.boom_gate?'dot dot-green':'dot dot-red';gV.textContent=d.boom_gate?'OPEN':'CLOSED';}
 
       // Lane
