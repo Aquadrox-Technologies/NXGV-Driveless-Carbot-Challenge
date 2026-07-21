@@ -743,6 +743,18 @@ class AutoDriver(Node):
             target_state = ChallengeState.EMERGENCY_STOP
             self.stop_reason = 'E-STOP ACTIVE'
 
+        # Priority 2.5: Traffic Light — Highest Priority Stop (Unconditional & Latched)
+        # Overrides Tunnel, Obstruction, Roundabout, Parking, and Lane Follow
+        elif self.traffic_light_state in ('red', 'yellow') or self._tl_red_latched:
+            # Update the latch
+            if self.traffic_light_state in ('red', 'yellow') and not self._tl_red_latched:
+                self.get_logger().info(
+                    f'Traffic light {self.traffic_light_state.upper()} detected — LATCHING stop')
+                self._tl_red_latched = True
+            target_state = ChallengeState.TRAFFIC_LIGHT
+            tl_label = self.traffic_light_state.upper() if self.traffic_light_state in ('red', 'yellow') else 'HELD'
+            self.stop_reason = f'TRAFFIC LIGHT {tl_label} [LATCHED]'
+
         # Priority 3: Obstruction — Challenge 1 (reactive)
         elif self.obstruction_active:
             target_state = ChallengeState.OBSTRUCTION
@@ -807,24 +819,6 @@ class AutoDriver(Node):
         elif self.tunnel_detected:
             target_state = ChallengeState.TUNNEL
             cmd = self.tunnel_cmd
-
-        # # Priority 7: Boom Gate — Challenge 4 (GATED: only after roundabout)
-        # # TODO: Enable when boom gate is on the test field
-        # elif not self.boom_gate_open and self._boom_gate_armed:
-        #     target_state = ChallengeState.BOOM_GATE
-        #     self.stop_reason = 'BOOM GATE CLOSED'
-
-        # Priority 8: Traffic Light — Challenge 5 (Unconditional)
-        # Latch on red/yellow; release on green OR generic (light off/unlit = keep moving).
-        elif self.traffic_light_state in ('red', 'yellow') or self._tl_red_latched:
-            # Update the latch
-            if self.traffic_light_state in ('red', 'yellow') and not self._tl_red_latched:
-                self.get_logger().info(
-                    f'Traffic light {self.traffic_light_state.upper()} detected — LATCHING stop')
-                self._tl_red_latched = True
-            target_state = ChallengeState.TRAFFIC_LIGHT
-            tl_label = self.traffic_light_state.upper() if self.traffic_light_state in ('red', 'yellow') else 'HELD'
-            self.stop_reason = f'TRAFFIC LIGHT {tl_label} [LATCHED]'
 
         # Priority 8.2: Hill Climb — adaptive speed proportional to pitch
         elif is_on_hill:
