@@ -107,11 +107,11 @@ class BoomGateDetector(Node):
             'hysteresis': int(self.get_parameter('hysteresis').value),
             'heartbeat_sec': float(self.get_parameter('heartbeat_sec').value),
             'enable_camera': bool(self.get_parameter('enable_camera').value),
-            'cam_roi_y_min': float(self.get_parameter('cam_roi_y_min', 0.20).value if hasattr(self.get_parameter('cam_roi_y_min'), 'value') else 0.20),
-            'cam_roi_y_max': float(self.get_parameter('cam_roi_y_max', 0.98).value if hasattr(self.get_parameter('cam_roi_y_max'), 'value') else 0.98),
-            'cam_red_min_width': int(self.get_parameter('cam_red_min_width', 40).value if hasattr(self.get_parameter('cam_red_min_width'), 'value') else 40),
-            'cam_red_sat_min': int(self.get_parameter('cam_red_sat_min', 50).value if hasattr(self.get_parameter('cam_red_sat_min'), 'value') else 50),
-            'cam_red_val_min': int(self.get_parameter('cam_red_val_min', 50).value if hasattr(self.get_parameter('cam_red_val_min'), 'value') else 50),
+            'cam_roi_y_min': float(self.get_parameter('cam_roi_y_min').value),
+            'cam_roi_y_max': float(self.get_parameter('cam_roi_y_max').value),
+            'cam_red_min_width': int(self.get_parameter('cam_red_min_width').value),
+            'cam_red_sat_min': int(self.get_parameter('cam_red_sat_min').value),
+            'cam_red_val_min': int(self.get_parameter('cam_red_val_min').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
