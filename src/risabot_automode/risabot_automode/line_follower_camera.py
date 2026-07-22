@@ -136,6 +136,7 @@ class LineFollowerCamera(Node):
         self.declare_parameter('road_patch_size', 20)        # patch size at bottom-center of crop
         self.declare_parameter('road_color_tolerance', 40)   # allowed intensity offset +/- Delta
         self.declare_parameter('color_memory_alpha', 0.10)   # EMA smoothing alpha for road intensity
+        self.declare_parameter('max_road_intensity_threshold', 110) # max intensity allowed for road sampler
         self.declare_parameter('invert_binary', True)     # True = detect dark lane, False = detect white borders
         # Morphological cleanup
         self.declare_parameter('morph_open_size', 3)     # erosion→dilation kernel to remove noise (0=disable)
@@ -232,6 +233,7 @@ class LineFollowerCamera(Node):
             'road_patch_size':       int(self.get_parameter('road_patch_size').value),
             'road_color_tolerance':  int(self.get_parameter('road_color_tolerance').value),
             'color_memory_alpha':    float(self.get_parameter('color_memory_alpha').value),
+            'max_road_intensity_threshold': int(self.get_parameter('max_road_intensity_threshold').value),
             'invert_binary':           bool(self.get_parameter('invert_binary').value),
             'morph_open_size':         int(self.get_parameter('morph_open_size').value),
             'morph_close_size':        int(self.get_parameter('morph_close_size').value),
@@ -579,18 +581,26 @@ class LineFollowerCamera(Node):
                 patch_x2 = min(w, (w // 2) + (patch_sz // 2))
                 road_patch = gray[patch_y1:crop_h, patch_x1:patch_x2]
 
+                max_road_thresh = float(self._param_cache.get('max_road_intensity_threshold', 110.0))
                 if road_patch.size > 0:
                     sampled_i = float(np.median(road_patch))
-                    if self.road_intensity_memory is None:
-                        self.road_intensity_memory = sampled_i
-                    else:
-                        alpha = float(self._param_cache['color_memory_alpha'])
-                        self.road_intensity_memory = alpha * sampled_i + (1.0 - alpha) * self.road_intensity_memory
+                    # Dark-anchored gating: ONLY update road color memory if the sampled patch
+                    # is actually dark (<= 110). If the robot drives over white tape/lines (> 110),
+                    # IGNORE the sample and retain the previous dark road memory!
+                    if sampled_i <= max_road_thresh:
+                        if self.road_intensity_memory is None:
+                            self.road_intensity_memory = sampled_i
+                        else:
+                            alpha = float(self._param_cache['color_memory_alpha'])
+                            self.road_intensity_memory = alpha * sampled_i + (1.0 - alpha) * self.road_intensity_memory
+                        # Hard upper ceiling to guarantee memory never drifts into light intensities
+                        self.road_intensity_memory = min(100.0, self.road_intensity_memory)
 
-                target_i = self.road_intensity_memory if self.road_intensity_memory is not None else 100.0
+                target_i = self.road_intensity_memory if self.road_intensity_memory is not None else 70.0
                 tol = int(self._param_cache['road_color_tolerance'])
                 lower_b = max(0, int(target_i - tol))
-                upper_b = min(255, int(target_i + tol))
+                # Upper bound capped at 115 so binarization range never encompasses white borders (>= 120)
+                upper_b = min(115, int(target_i + tol))
 
                 # Pixels matching remembered road color → 255 (white road region)
                 binary = cv2.inRange(gray, lower_b, upper_b)
