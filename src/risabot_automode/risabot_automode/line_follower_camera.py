@@ -129,9 +129,13 @@ class LineFollowerCamera(Node):
         # per room. Adaptive thresholding computes a local threshold per pixel neighborhood,
         # so it self-adjusts to brightness gradients/shadows within a single frame too.
         # Takes priority over use_otsu/white_threshold when enabled.
-        self.declare_parameter('use_adaptive_threshold', True)
+        self.declare_parameter('use_adaptive_threshold', False)
         self.declare_parameter('adaptive_block_size', 51)  # must be odd; bigger = smoother/slower to react
         self.declare_parameter('adaptive_c', 15)            # constant subtracted from local mean; higher = stricter
+        self.declare_parameter('use_color_sampler', True)     # True = dynamic road color memory sampler
+        self.declare_parameter('road_patch_size', 20)        # patch size at bottom-center of crop
+        self.declare_parameter('road_color_tolerance', 40)   # allowed intensity offset +/- Delta
+        self.declare_parameter('color_memory_alpha', 0.10)   # EMA smoothing alpha for road intensity
         self.declare_parameter('invert_binary', True)     # True = detect dark lane, False = detect white borders
         # Morphological cleanup
         self.declare_parameter('morph_open_size', 3)     # erosion→dilation kernel to remove noise (0=disable)
@@ -172,6 +176,7 @@ class LineFollowerCamera(Node):
         self.last_lane_widths: Dict[int, int] = {}
         self._expected_left: Optional[int] = None
         self._expected_right: Optional[int] = None
+        self.road_intensity_memory: Optional[float] = None
         self._last_frame_time = time.monotonic()
 
         # CLAHE object (reused across frames)
@@ -223,6 +228,10 @@ class LineFollowerCamera(Node):
             'use_adaptive_threshold':  bool(self.get_parameter('use_adaptive_threshold').value),
             'adaptive_block_size':     int(self.get_parameter('adaptive_block_size').value),
             'adaptive_c':              int(self.get_parameter('adaptive_c').value),
+            'use_color_sampler':     bool(self.get_parameter('use_color_sampler').value),
+            'road_patch_size':       int(self.get_parameter('road_patch_size').value),
+            'road_color_tolerance':  int(self.get_parameter('road_color_tolerance').value),
+            'color_memory_alpha':    float(self.get_parameter('color_memory_alpha').value),
             'invert_binary':           bool(self.get_parameter('invert_binary').value),
             'morph_open_size':         int(self.get_parameter('morph_open_size').value),
             'morph_close_size':        int(self.get_parameter('morph_close_size').value),
@@ -561,7 +570,32 @@ class LineFollowerCamera(Node):
             blurred = cv2.GaussianBlur(gray, (5, 5), 0)
             invert = self._param_cache.get('invert_binary', False)
 
-            if self._param_cache['use_adaptive_threshold']:
+            if self._param_cache.get('use_color_sampler', True):
+                # ── Dynamic Road Color Memory Sampler ───────────────────
+                # Sample a patch directly in front of the robot's front bumper
+                patch_sz = max(10, min(50, int(self._param_cache['road_patch_size'])))
+                patch_y1 = max(0, crop_h - patch_sz)
+                patch_x1 = max(0, (w // 2) - (patch_sz // 2))
+                patch_x2 = min(w, (w // 2) + (patch_sz // 2))
+                road_patch = gray[patch_y1:crop_h, patch_x1:patch_x2]
+
+                if road_patch.size > 0:
+                    sampled_i = float(np.median(road_patch))
+                    if self.road_intensity_memory is None:
+                        self.road_intensity_memory = sampled_i
+                    else:
+                        alpha = float(self._param_cache['color_memory_alpha'])
+                        self.road_intensity_memory = alpha * sampled_i + (1.0 - alpha) * self.road_intensity_memory
+
+                target_i = self.road_intensity_memory if self.road_intensity_memory is not None else 100.0
+                tol = int(self._param_cache['road_color_tolerance'])
+                lower_b = max(0, int(target_i - tol))
+                upper_b = min(255, int(target_i + tol))
+
+                # Pixels matching remembered road color → 255 (white road region)
+                binary = cv2.inRange(gray, lower_b, upper_b)
+
+            elif self._param_cache['use_adaptive_threshold']:
                 block_size = int(self._param_cache['adaptive_block_size'])
                 if block_size % 2 == 0:
                     block_size += 1  # cv2 requires odd block size
@@ -746,7 +780,8 @@ class LineFollowerCamera(Node):
                 )
                 ipm_str = 'IPM' if self._param_cache['ipm_enabled'] else 'RAW'
                 kf_str = 'KF' if self._param_cache['kalman_enabled'] else 'EMA'
-                put_text(debug, f'{status_str} [{ipm_str}|{kf_str}]', (10, 42), 0.45, (0, 255, 255))
+                r_int_str = f'R_INT={int(self.road_intensity_memory)}' if self.road_intensity_memory is not None else ''
+                put_text(debug, f'{status_str} [{ipm_str}|{kf_str}] {r_int_str}', (10, 42), 0.45, (0, 255, 255))
 
                 if len(self.last_lane_widths) > 0:
                     avg_w = sum(self.last_lane_widths.values()) / len(self.last_lane_widths)
