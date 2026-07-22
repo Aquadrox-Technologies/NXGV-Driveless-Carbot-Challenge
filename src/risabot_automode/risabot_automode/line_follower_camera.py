@@ -389,10 +389,11 @@ class LineFollowerCamera(Node):
                     # Reject blobs whose width is wildly different from the last
                     # confirmed width at this scanline (e.g. a wall panel edge or
                     # doorway briefly in frame is much wider/narrower than the lane).
-                    # Skipped on the very first lock (no expected_width yet).
+                    # Skipped on the very first lock or if the previous locked width
+                    # was too small (e.g. < 40px) to allow escaping a collapsed trap.
                     width_ok = (
                         expected_width is None
-                        or expected_width <= 0
+                        or expected_width <= 40
                         or 0.5 <= (cand_width / expected_width) <= 1.8
                     )
                     if width_ok:
@@ -518,6 +519,7 @@ class LineFollowerCamera(Node):
         if valid_count == 0:
             self._expected_left = None
             self._expected_right = None
+            self.last_lane_widths.clear()
 
         return left_points, right_points, center_points, scanline_weights, valid_count
 
