@@ -494,10 +494,10 @@ class LineFollowerCamera(Node):
             # Save the bottom-most valid row as the expectation for the NEXT frame
             # Use aggressive EMA smoothing to prevent frame-to-frame jumps
             if valid_count == 1:
-                smooth = 0.15  # low = very stable (slower to react but no flickering)
+                smooth = 0.50  # Responsive tracking (was 0.15, which caused lag on curves)
                 if self._expected_left is not None:
-                    # Clamp jump: don't allow expected to shift more than 15px/frame
-                    max_shift = 15
+                    # Clamp jump: allow expected to shift up to 40px/frame for sharp turns
+                    max_shift = 40
                     new_left = int(smooth * expected_left + (1 - smooth) * self._expected_left)
                     new_right = int(smooth * expected_right + (1 - smooth) * self._expected_right)
                     new_left = max(self._expected_left - max_shift, min(self._expected_left + max_shift, new_left))
