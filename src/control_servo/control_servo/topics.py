@@ -7,6 +7,7 @@ AUTO_CMD_VEL_TOPIC = '/cmd_vel_auto'
 ODOM_TOPIC = '/odom'
 JOY_TOPIC = '/joy'
 DASH_CTRL_TOPIC = '/dashboard_ctrl'
+DASH_STATE_TOPIC = '/dash_state'
 LOOP_STATS_TOPIC = '/loop_stats'
 IMU_PITCH_TOPIC = '/imu/pitch'
 IMU_DATA_TOPIC = '/imu/rpy'          # JSON: {"roll":0.0,"pitch":0.0,"yaw":0.0}
