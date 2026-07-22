@@ -124,6 +124,14 @@ class LineFollowerCamera(Node):
         # Thresholding
         self.declare_parameter('white_threshold', 100)   # gray threshold (inverted: pixels BELOW this = lane)
         self.declare_parameter('use_otsu', False)         # True = Otsu auto-threshold
+        # Adaptive local thresholding: since your lane is always black-with-white-borders
+        # and only room brightness changes, a single global threshold has to be re-tuned
+        # per room. Adaptive thresholding computes a local threshold per pixel neighborhood,
+        # so it self-adjusts to brightness gradients/shadows within a single frame too.
+        # Takes priority over use_otsu/white_threshold when enabled.
+        self.declare_parameter('use_adaptive_threshold', True)
+        self.declare_parameter('adaptive_block_size', 51)  # must be odd; bigger = smoother/slower to react
+        self.declare_parameter('adaptive_c', 15)            # constant subtracted from local mean; higher = stricter
         self.declare_parameter('invert_binary', True)     # True = detect dark lane, False = detect white borders
         # Morphological cleanup
         self.declare_parameter('morph_open_size', 3)     # erosion→dilation kernel to remove noise (0=disable)
@@ -212,6 +220,9 @@ class LineFollowerCamera(Node):
             'search_radius_px':        int(self.get_parameter('search_radius_px').value),
             'white_threshold':         int(self.get_parameter('white_threshold').value),
             'use_otsu':                bool(self.get_parameter('use_otsu').value),
+            'use_adaptive_threshold':  bool(self.get_parameter('use_adaptive_threshold').value),
+            'adaptive_block_size':     int(self.get_parameter('adaptive_block_size').value),
+            'adaptive_c':              int(self.get_parameter('adaptive_c').value),
             'invert_binary':           bool(self.get_parameter('invert_binary').value),
             'morph_open_size':         int(self.get_parameter('morph_open_size').value),
             'morph_close_size':        int(self.get_parameter('morph_close_size').value),
@@ -373,8 +384,20 @@ class LineFollowerCamera(Node):
                 best = min(raw_regions, key=lambda r: abs(r[0] - expected_center))
                 # Only accept if within search radius of expected center
                 if abs(best[0] - expected_center) < search_radius:
-                    left_x = best[1]   # left edge of lane
-                    right_x = best[2]  # right edge of lane
+                    cand_width = best[2] - best[1]
+                    expected_width = self.last_lane_widths.get(i, None)
+                    # Reject blobs whose width is wildly different from the last
+                    # confirmed width at this scanline (e.g. a wall panel edge or
+                    # doorway briefly in frame is much wider/narrower than the lane).
+                    # Skipped on the very first lock (no expected_width yet).
+                    width_ok = (
+                        expected_width is None
+                        or expected_width <= 0
+                        or 0.5 <= (cand_width / expected_width) <= 1.8
+                    )
+                    if width_ok:
+                        left_x = best[1]   # left edge of lane
+                        right_x = best[2]  # right edge of lane
 
             elif len(raw_regions) > 0:
                 # BORDER MODE (original): find left/right white border lines
@@ -396,17 +419,49 @@ class LineFollowerCamera(Node):
                         if regions[0] < w // 2: left_x = regions[0]
                         else: right_x = regions[0]
                 else:
-                    best_left = min(regions, key=lambda x: abs(x - expected_left))
-                    if abs(best_left - expected_left) < search_radius:
-                        left_x = best_left
-                    best_right = min(regions, key=lambda x: abs(x - expected_right))
-                    if abs(best_right - expected_right) < search_radius:
-                        right_x = best_right
-                    if left_x == right_x and left_x is not None:
-                        if abs(left_x - expected_left) < abs(right_x - expected_right):
-                            right_x = None
-                        else:
-                            left_x = None
+                    # Pair-based selection: score every plausible (left, right)
+                    # combination together, instead of picking left and right
+                    # independently. Independent nearest-neighbor picking is
+                    # what causes a lock onto a roundabout's inner hub ring —
+                    # the hub's two edges can each individually be "closest"
+                    # to expected_left/expected_right even though they don't
+                    # belong to the same lane at all.
+                    target_w = self.last_lane_widths.get(i, expected_right - expected_left)
+                    width_tol = max(20, int(target_w * 0.4))  # allow for curves
+
+                    best_pair = None
+                    best_score = None
+                    for a in range(len(regions)):
+                        for b in range(a + 1, len(regions)):
+                            cand_left, cand_right = regions[a], regions[b]
+                            cand_width = cand_right - cand_left
+                            if abs(cand_width - target_w) > width_tol:
+                                continue  # doesn't look like the real lane width
+                            score = (abs(cand_left - expected_left) +
+                                     abs(cand_right - expected_right))
+                            if score > 2 * search_radius:
+                                continue  # too far from where we expect the lane
+                            if best_score is None or score < best_score:
+                                best_score = score
+                                best_pair = (cand_left, cand_right)
+
+                    if best_pair is not None:
+                        left_x, right_x = best_pair
+                    else:
+                        # No width-consistent pair found — fall back to
+                        # single-side tracking rather than guessing a pair
+                        # that might span the wrong feature (e.g. the hub).
+                        best_left = min(regions, key=lambda x: abs(x - expected_left))
+                        if abs(best_left - expected_left) < search_radius:
+                            left_x = best_left
+                        best_right = min(regions, key=lambda x: abs(x - expected_right))
+                        if abs(best_right - expected_right) < search_radius:
+                            right_x = best_right
+                        if left_x == right_x and left_x is not None:
+                            if abs(left_x - expected_left) < abs(right_x - expected_right):
+                                right_x = None
+                            else:
+                                left_x = None
 
             # Determine lane center
             if left_x is not None and right_x is not None:
@@ -502,14 +557,28 @@ class LineFollowerCamera(Node):
                 gray = self._clahe.apply(gray)
 
             blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            invert = self._param_cache.get('invert_binary', False)
 
-            if self._param_cache['use_otsu']:
+            if self._param_cache['use_adaptive_threshold']:
+                block_size = int(self._param_cache['adaptive_block_size'])
+                if block_size % 2 == 0:
+                    block_size += 1  # cv2 requires odd block size
+                block_size = max(3, block_size)
+                adaptive_c = int(self._param_cache['adaptive_c'])
+                # invert=True (dark lane on light border) needs the INV variant so the
+                # darker-than-local-neighborhood pixels become the white "lane" blob.
+                thresh_type = cv2.THRESH_BINARY_INV if invert else cv2.THRESH_BINARY
+                binary = cv2.adaptiveThreshold(
+                    blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    thresh_type, block_size, adaptive_c
+                )
+            elif self._param_cache['use_otsu']:
                 _, binary = cv2.threshold(
                     blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
                 )
             else:
                 thresh_val = self._param_cache['white_threshold']
-                if self._param_cache.get('invert_binary', False):
+                if invert:
                     # INVERT: pixels BELOW threshold (dark lane) → white
                     _, binary = cv2.threshold(
                         blurred, thresh_val, 255, cv2.THRESH_BINARY_INV
@@ -579,8 +648,23 @@ class LineFollowerCamera(Node):
                     if abs(raw_error) >= self._param_cache['dead_zone']:
                         self._kalman.update(raw_error)
                     # else: let predict() carry the state forward (no update)
-                # When lane is lost, Kalman continues predicting using velocity
-                # This is much better than the old hold+decay approach
+                    self.current_hold_frames = self._param_cache['hold_error_frames']
+                else:
+                    # Lane is lost this frame. Coasting on a stale velocity
+                    # estimate indefinitely is what produced the false
+                    # "CENTERED" reading with zero scanline locks — decay the
+                    # velocity so the prediction settles rather than drifting
+                    # on outdated motion, and count down hold frames so HOLD
+                    # status is honest instead of being stuck at its last value.
+                    self._kalman.decay_velocity(0.85)
+                    if self.current_hold_frames > 0:
+                        self.current_hold_frames -= 1
+                    if self.frames_lost >= self._param_cache['hold_error_frames']:
+                        # Fully lost beyond the hold window: fade the position
+                        # estimate toward 0 too, so a long-lost lane doesn't
+                        # keep reporting a confident (and likely stale/wrong)
+                        # steering direction forever.
+                        self._kalman.x[0] *= self._param_cache['error_decay_rate']
 
                 self.filtered_error = self._kalman.position
                 self.lane_error = self.filtered_error
@@ -654,8 +738,8 @@ class LineFollowerCamera(Node):
                 status_str = (
                     f'LOCK({valid_count}/{self._param_cache["n_scanlines"]})'
                     if valid_count >= conf_min
-                    else (f'HOLD({self.current_hold_frames})'
-                          if self.current_hold_frames > 0
+                    else (f'HOLD({self._param_cache["hold_error_frames"] - self.frames_lost}f)'
+                          if self.frames_lost < self._param_cache['hold_error_frames']
                           else f'LOST({self.frames_lost}f)')
                 )
                 ipm_str = 'IPM' if self._param_cache['ipm_enabled'] else 'RAW'
