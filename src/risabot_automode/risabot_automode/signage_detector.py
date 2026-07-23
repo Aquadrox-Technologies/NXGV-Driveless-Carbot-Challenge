@@ -512,7 +512,7 @@ class SignageDetector(Node):
 
         if saw_parking:
             self.detected_parking_consecutive = min(10, self.detected_parking_consecutive + 1)
-            if self.detected_parking_consecutive >= 3:
+            if self.detected_parking_consecutive >= 1:
                 self.parking_sign_active = True
         else:
             self.detected_parking_consecutive = max(0, self.detected_parking_consecutive - 1)
@@ -546,7 +546,7 @@ class SignageDetector(Node):
 
         if saw_roundabout:
             self.detected_roundabout_consecutive = min(10, self.detected_roundabout_consecutive + 1)
-            if self.detected_roundabout_consecutive >= 3:
+            if self.detected_roundabout_consecutive >= 1:
                 self.roundabout_sign_active = True
         else:
             self.detected_roundabout_consecutive = max(0, self.detected_roundabout_consecutive - 1)
