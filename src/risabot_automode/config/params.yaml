@@ -115,11 +115,12 @@ cmd_safety_controller:
 #   error_decay_rate : 0.92 → held error halves every ~9 frames
 line_follower_camera:
   ros__parameters:
-    n_scanlines: 8
+    n_scanlines: 10
     min_valid_scanlines: 2
     min_line_width_px: 5
     crop_ratio_base: 0.4             # road crop ratio (0.4)
     search_radius_px: 80             # blob-to-expected match radius
+    scanline_outlier_px: 50          # max px from _expected_center before scanline is rejected as wall/floor
     # Thresholding — lane detection
     white_threshold: 100              # inverted mode: pixels BELOW this = lane (tune 80-120)
     use_otsu: false
@@ -136,7 +137,7 @@ line_follower_camera:
     # Kalman filter (MDPI-inspired)
     kalman_enabled: true
     kalman_process_noise: 0.01
-    kalman_measurement_noise: 0.1
+    kalman_measurement_noise: 0.05  # lowered from 0.1 — trusts valid measurements faster
     # Legacy EMA (fallback when kalman_enabled=false)
     smoothing_alpha: 0.3
     dead_zone: 0.05

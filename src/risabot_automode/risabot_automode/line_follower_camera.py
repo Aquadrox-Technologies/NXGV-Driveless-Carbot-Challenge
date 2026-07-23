@@ -551,12 +551,13 @@ class LineFollowerCamera(Node):
             left_points.append((int(left_x), y_in_crop))
             right_points.append((int(right_x), y_in_crop))
             center_points.append((int(center_x), y_in_crop))
-            # Weight: bottom scanlines (close to robot) are far more
-            # reliable than upper/far ones, especially mid-turn when far
-            # scanlines are most likely pointed off the actual track.
-            # Squared falloff so the top scanline counts ~7x less than the
-            # bottom one, vs. the previous ~3x linear falloff.
-            scanline_weights.append((1.0 - y_frac) ** 2 + 0.15)
+            # Weight: bottom scanlines (close to robot) are more
+            # reliable than upper/far ones. Sqrt falloff gives bottom ~2.4x
+            # advantage over top (was 6.9x squared) — enough to prefer close
+            # scanlines without letting 3 wrong bottom ones crush 4 correct
+            # middle ones during an overshoot when the camera tilts toward
+            # the outer wall.
+            scanline_weights.append((1.0 - y_frac) ** 0.5 + 0.15)
 
         # If completely lost, clear expectations so it resets next frame
         if valid_count == 0:
@@ -690,16 +691,29 @@ class LineFollowerCamera(Node):
             measurement_available = False
 
             if valid_count >= conf_min and len(center_pts) > 0:
-                # Outlier rejection: a scanline whose center is far from
-                # this frame's median center is very likely looking at
-                # something off-track (wall, floor past the lane edge)
-                # rather than the real lane. Exclude it entirely instead
-                # of letting distance-weighting only partially discount it.
-                xs = [pt[0] for pt in center_pts]
-                median_x = float(np.median(xs))
+                # Outlier rejection anchored to _expected_center (last-known
+                # lane position) rather than the frame's global median.
+                #
+                # WHY: global median is easily corrupted when the robot
+                # overshoots during a sharp turn and 5 of 10 scanlines pick up
+                # the outer wall. The median then lands between wall and lane,
+                # causing BOTH to exceed outlier_thresh — triggering the fallback
+                # unfiltered average, which then lets heavy bottom-weighted wall
+                # scanlines dominate and output the WRONG steering direction.
+                #
+                # With _expected_center as the anchor:
+                #   wall at x=80, lane expected at x=240:
+                #     |80 - 240| = 160 > thresh -> wall ZEROED
+                #     |240 - 240| = 0 <= thresh -> lane KEPT
+                # So even a 5-wall / 5-lane split is handled correctly.
                 outlier_thresh = self._param_cache['scanline_outlier_px']
+                if self._expected_left is not None and self._expected_right is not None:
+                    anchor_x = float(self._expected_left + self._expected_right) / 2.0
+                else:
+                    # Cold-start: no history yet, fall back to frame median
+                    anchor_x = float(np.median([pt[0] for pt in center_pts]))
                 filtered_weights = [
-                    wt if abs(pt[0] - median_x) <= outlier_thresh else 0.0
+                    wt if abs(pt[0] - anchor_x) <= outlier_thresh else 0.0
                     for pt, wt in zip(center_pts, scan_weights)
                 ]
                 total_weight = sum(filtered_weights)
@@ -708,14 +722,19 @@ class LineFollowerCamera(Node):
                         pt[0] * wt for pt, wt in zip(center_pts, filtered_weights)
                     ) / total_weight
                 else:
-                    # Every scanline looked like an outlier vs. the median
-                    # (rare — usually means the median itself was thrown
-                    # off by a majority-bad frame). Fall back to the
-                    # unfiltered weighted average rather than no signal.
-                    total_weight = sum(scan_weights)
+                    # Every scanline was an outlier vs expected_center — this
+                    # can happen on a full lane loss or a very wide swing.
+                    # Fall back to the frame median approach so we don't feed
+                    # an empty measurement.
+                    fallback_median = float(np.median([pt[0] for pt in center_pts]))
+                    fallback_weights = [
+                        wt if abs(pt[0] - fallback_median) <= outlier_thresh else 0.0
+                        for pt, wt in zip(center_pts, scan_weights)
+                    ]
+                    total_weight = sum(fallback_weights)
                     if total_weight > 0:
                         avg_center_x = sum(
-                            pt[0] * wt for pt, wt in zip(center_pts, scan_weights)
+                            pt[0] * wt for pt, wt in zip(center_pts, fallback_weights)
                         ) / total_weight
                     else:
                         avg_center_x = sum(pt[0] for pt in center_pts) / len(center_pts)
@@ -740,6 +759,17 @@ class LineFollowerCamera(Node):
                 self._kalman.predict(dt)
 
                 if measurement_available:
+                    # Velocity direction guard: if the Kalman filter has
+                    # accumulated a velocity in the OPPOSITE direction to the
+                    # new valid measurement, kill that velocity before the
+                    # update. Without this, stale coast (e.g. v=-0.76 from a
+                    # left-drift phase) fights new correct right-side detections
+                    # for several frames, producing the wrong steering output
+                    # even when scanlines are clearly showing the lane.
+                    vel = self._kalman.velocity
+                    if abs(vel) > 0.05 and (vel * raw_error) < 0:
+                        self._kalman.x[1] = 0.0
+
                     # Deadband: only update if error exceeds threshold.
                     # When within dead zone, SKIP the update entirely so the
                     # Kalman filter coasts on its prediction. Feeding 0.0 is
