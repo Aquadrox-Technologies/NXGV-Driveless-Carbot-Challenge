@@ -125,10 +125,11 @@ class AutoDriver(Node):
         self.roundabout_sign_detected = False
         self._roundabout_sign_latched = False
         self.lane_width_invalid = False
-        self._rb_stuck_consecutive = 0
+        self._rb_stuck_since = None        # monotonic() timestamp when non-improving condition started, or None
+        self._rb_stuck_baseline_error = 0.0  # |lane_error| at the start of the current stuck window
+        self._rb_last_stuck_steer_dir = -1.0 # -1.0 = left turn, +1.0 = right turn
         self._rb_recovering = False
         self._rb_recovery_start = 0.0
-        self._rb_last_stuck_steer_dir = -1.0  # -1.0 = left turn, +1.0 = right turn
 
         # PID controller state
         self._pid_prev_error = 0.0
@@ -206,17 +207,20 @@ class AutoDriver(Node):
         # Sharp-arc detection: trigger a brief reverse when the PID is
         # already commanding near-max steering AND the lane error still
         # isn't shrinking — i.e. the chassis genuinely can't turn tight
-        # enough for this arc in one continuous pass. This replaces
-        # lane_width_invalid, which measures lane-width sanity, not
-        # curvature, and rarely correlates with an actual sharp turn.
-        # NOTE: angular.z of 1.0 already equals steering_max_deg (full physical
-        # lock) — process_twist() clamps desired_wheel_deg at steering_max_deg,
-        # so anything above 1.0 is unreachable/wasted range. This threshold
-        # must therefore sit inside 0-1.0, not the PID's raw ±2.0 math clamp.
-        self.declare_parameter('rb_stuck_angular_thresh', 0.75)  # ~37.5° of 50° max — comfortably "hard lock"
-        self.declare_parameter('rb_stuck_error_thresh', 0.15)   # lane error still considered "not converging"
-        self.declare_parameter('rb_stuck_frames_trigger', 8)    # consecutive stuck ticks before triggering recovery
-        self.declare_parameter('rb_recovery_duration_sec', 0.6) # how long the reverse recovery maneuver runs
+        # enough for this arc in one continuous pass.
+        #
+        # A normal hard turn ALSO has near-max steering + nonzero error for
+        # a while — that alone isn't "stuck", it's just cornering. What
+        # actually distinguishes "stuck" is the error staying flat/getting
+        # WORSE despite max steering, sustained for a real amount of
+        # time (not a handful of 50Hz ticks). So this is duration-based
+        # (robust to loop-rate changes) and only counts time where the
+        # error hasn't meaningfully improved since the stuck window began.
+        self.declare_parameter('rb_stuck_angular_thresh', 0.85)   # ~42.5° of 50° max — only near TRUE full lock
+        self.declare_parameter('rb_stuck_error_thresh', 0.45)     # error must be well off-center, not just "mid-turn"
+        self.declare_parameter('rb_stuck_improve_margin', 0.05)   # error must drop by at least this much to count as "improving"
+        self.declare_parameter('rb_stuck_duration_sec', 1.2)      # how long the non-improving condition must persist
+        self.declare_parameter('rb_recovery_duration_sec', 0.6)   # how long the reverse recovery maneuver runs
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -381,7 +385,8 @@ class AutoDriver(Node):
             'rb_reverse_steer':    float(self.get_parameter('rb_reverse_steer').value),
             'rb_stuck_angular_thresh': float(self.get_parameter('rb_stuck_angular_thresh').value),
             'rb_stuck_error_thresh':   float(self.get_parameter('rb_stuck_error_thresh').value),
-            'rb_stuck_frames_trigger': int(self.get_parameter('rb_stuck_frames_trigger').value),
+            'rb_stuck_improve_margin': float(self.get_parameter('rb_stuck_improve_margin').value),
+            'rb_stuck_duration_sec':   float(self.get_parameter('rb_stuck_duration_sec').value),
             'rb_recovery_duration_sec': float(self.get_parameter('rb_recovery_duration_sec').value),
             # Hill Climb
             'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
@@ -591,9 +596,10 @@ class AutoDriver(Node):
         self._obs_cleared_time = 0.0
         self._obs_was_active = False
         self.roundabout_sign_detected = False
-        self._rb_stuck_consecutive = 0
-        self._rb_recovering = False
+        self._rb_stuck_since = None
+        self._rb_stuck_baseline_error = 0.0
         self._rb_last_stuck_steer_dir = -1.0
+        self._rb_recovering = False
         self.distance = 0.0
         self.distance_past_light = 0.0
         self.state_entry_time = time.monotonic()
@@ -872,32 +878,54 @@ class AutoDriver(Node):
                 self.stop_reason = f'ROUNDABOUT RECOVERY ({elapsed:.1f}s, steer={rev_steer:+.2f})'
                 if elapsed >= self._param_cache['rb_recovery_duration_sec']:
                     self._rb_recovering = False
-                    self._rb_stuck_consecutive = 0
+                    self._rb_stuck_since = None
             else:
                 # Phase 2b: Normal forward lane-follow through the arc —
                 # identical to LANE_FOLLOW, no artificial bias added.
                 cmd = self._lane_follow_cmd()
                 self.stop_reason = f'ROUNDABOUT FORWARD ({time_in_roundabout:.1f}s)'
 
-                # Sharp-arc detection: PID is pinned near max steering AND
-                # the lane error still isn't shrinking → the chassis is
-                # genuinely out of turning authority for this curve, not
-                # just mid-correction. Count consecutive ticks like this
-                # before triggering recovery, so a single noisy frame
-                # doesn't cause a false trigger.
+                # Sharp-arc detection: a normal hard turn ALSO has
+                # near-max steering + nonzero error for a while — that
+                # alone is just cornering, not "stuck". What actually
+                # means "the chassis can't turn tight enough here" is the
+                # error staying flat or getting WORSE despite max
+                # steering, sustained for a real amount of time (not a
+                # handful of ticks, which any ordinary turn crosses
+                # instantly). So: start a window the moment we're at
+                # near-max steering with substantial error; keep resetting
+                # the window (and its baseline) as long as error keeps
+                # improving by at least rb_stuck_improve_margin; only
+                # trigger once the window has run non-improving for
+                # rb_stuck_duration_sec straight.
                 stuck_thresh = self._param_cache['rb_stuck_angular_thresh']
                 error_thresh = self._param_cache['rb_stuck_error_thresh']
-                frames_needed = self._param_cache['rb_stuck_frames_trigger']
-                if abs(cmd.angular.z) >= stuck_thresh and abs(self.lane_error) > error_thresh:
-                    self._rb_stuck_consecutive += 1
-                else:
-                    self._rb_stuck_consecutive = 0
+                improve_margin = self._param_cache['rb_stuck_improve_margin']
+                duration_needed = self._param_cache['rb_stuck_duration_sec']
+                now = time.monotonic()
+                cur_error = abs(self.lane_error)
 
-                if self._rb_stuck_consecutive >= frames_needed:
-                    self._rb_recovering = True
-                    self._rb_recovery_start = time.monotonic()
+                at_limit = abs(cmd.angular.z) >= stuck_thresh and cur_error > error_thresh
+
+                if not at_limit:
+                    self._rb_stuck_since = None
+                elif self._rb_stuck_since is None:
+                    self._rb_stuck_since = now
+                    self._rb_stuck_baseline_error = cur_error
                     self._rb_last_stuck_steer_dir = 1.0 if cmd.angular.z >= 0 else -1.0
-                    self._rb_stuck_consecutive = 0
+                elif cur_error <= self._rb_stuck_baseline_error - improve_margin:
+                    # Error is genuinely improving even though still above
+                    # threshold — the turn is progressing normally.
+                    # Restart the window against the new, better baseline.
+                    self._rb_stuck_since = now
+                    self._rb_stuck_baseline_error = cur_error
+                    self._rb_last_stuck_steer_dir = 1.0 if cmd.angular.z >= 0 else -1.0
+
+                if (self._rb_stuck_since is not None
+                        and (now - self._rb_stuck_since) >= duration_needed):
+                    self._rb_recovering = True
+                    self._rb_recovery_start = now
+                    self._rb_stuck_since = None
 
             # Check exit: total roundabout time expired
             if self.state == ChallengeState.ROUNDABOUT:
@@ -907,7 +935,7 @@ class AutoDriver(Node):
                     self._boom_gate_armed = True
                     self._roundabout_sign_latched = False
                     self._rb_recovering = False
-                    self._rb_stuck_consecutive = 0
+                    self._rb_stuck_since = None
                     self._obs_cleared_time = 0.0  # prevent re-entry
                     self.get_logger().info('Roundabout complete → boom gate armed')
 

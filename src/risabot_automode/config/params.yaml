@@ -37,9 +37,10 @@ auto_driver:
     rb_initial_reverse_sec: 0.0  # duration (s) of initial micro-reverse upon entering roundabout (0.0 = disabled, direct forward)
     rb_reverse_speed: -0.10      # speed (m/s) during sharp arc micro-reverse recovery in roundabout
     rb_reverse_steer: -0.50      # steering rate (rad/s) during sharp arc micro-reverse
-    rb_stuck_angular_thresh: 0.75 # |angular.z| considered "pinned near max" (scale 0-1.0, 0.75 = ~37.5° of 50° max)
-    rb_stuck_error_thresh: 0.15   # lane error still considered "not converging"
-    rb_stuck_frames_trigger: 8    # consecutive stuck ticks before triggering recovery
+    rb_stuck_angular_thresh: 0.85 # |angular.z| considered "pinned near max" (~42.5° of 50° max)
+    rb_stuck_error_thresh: 0.45   # lane error threshold (must be well off-center)
+    rb_stuck_improve_margin: 0.05 # error improvement (abs delta) required to reset stuck timer
+    rb_stuck_duration_sec: 1.2    # duration (sec) non-improving condition must persist before recovery
     rb_recovery_duration_sec: 0.6 # how long the reverse recovery maneuver runs (sec)
     # ── Hill Climbing Mode (Challenge 5) ──────────────────────────────────
     # TUNING GUIDE:
