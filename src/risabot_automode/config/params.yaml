@@ -359,7 +359,8 @@ signage_detector:
     iou_threshold: 0.45
     show_debug: false             # OFF by default — dashboard auto-enables when signage view active
     heartbeat_sec: 0.5
-    min_parking_sign_width: 0     # set >0 to require minimum bounding-box width for parking
+    min_parking_sign_width: 0     # set >0 to require minimum bounding-box width for parking (px in 640x640)
+    min_parking_sign_height: 0    # set >0 to require minimum bounding-box height for parking (px in 640x640)
     min_roundabout_sign_width: 0  # set >0 to require minimum bounding-box width for roundabout (px in 640x640)
     min_roundabout_sign_height: 0 # set >0 to require minimum bounding-box height for roundabout (px in 640x640)
 

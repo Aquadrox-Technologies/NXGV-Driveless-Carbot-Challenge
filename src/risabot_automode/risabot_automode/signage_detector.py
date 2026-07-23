@@ -54,7 +54,8 @@ class SignageDetector(Node):
         self.declare_parameter('iou_threshold',          0.45)
         self.declare_parameter('show_debug',             False)
         self.declare_parameter('heartbeat_sec',          0.5)
-        self.declare_parameter('min_parking_sign_width', 0)
+        self.declare_parameter('min_parking_sign_width',  0)
+        self.declare_parameter('min_parking_sign_height', 0)
         self.declare_parameter('min_roundabout_sign_width', 0)
         self.declare_parameter('min_roundabout_sign_height', 0)
 
@@ -159,7 +160,8 @@ class SignageDetector(Node):
             'iou_threshold':          float(self.get_parameter('iou_threshold').value),
             'show_debug':             bool(self.get_parameter('show_debug').value),
             'heartbeat_sec':          float(self.get_parameter('heartbeat_sec').value),
-            'min_parking_sign_width': int(self.get_parameter('min_parking_sign_width').value),
+            'min_parking_sign_width':  int(self.get_parameter('min_parking_sign_width').value),
+            'min_parking_sign_height': int(self.get_parameter('min_parking_sign_height').value),
             'min_roundabout_sign_width': int(self.get_parameter('min_roundabout_sign_width').value),
             'min_roundabout_sign_height': int(self.get_parameter('min_roundabout_sign_height').value),
             # Per-class thresholds
@@ -494,19 +496,17 @@ class SignageDetector(Node):
                 self.hill_sign_active = False
 
         # 2. Parking sign (Class 3: ParallelP_signboard OR Class 4: PerpendP_signboard)
-        # Optional: check if the bounding box meets minimum width constraints
+        # Check if the bounding box meets minimum width and height constraints
         saw_parking = False
-        min_width = int(self._param_cache['min_parking_sign_width'])
+        min_p_width = int(self._param_cache['min_parking_sign_width'])
+        min_p_height = int(self._param_cache['min_parking_sign_height'])
 
         for idx, cid in enumerate(class_ids):
             if cid in (3, 4):  # ParallelP_signboard or PerpendP_signboard
-                if min_width > 0:
-                    box = boxes[idx]
-                    box_w = box[2] - box[0]
-                    if box_w >= min_width:
-                        saw_parking = True
-                        break
-                else:
+                box = boxes[idx]
+                box_w = box[2] - box[0]
+                box_h = box[3] - box[1]
+                if (min_p_width == 0 or box_w >= min_p_width) and (min_p_height == 0 or box_h >= min_p_height):
                     saw_parking = True
                     break
 

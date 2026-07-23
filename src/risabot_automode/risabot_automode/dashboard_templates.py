@@ -1404,25 +1404,48 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <h3>⚙️ Parameter Tuning</h3>
   <div class="note">💡 Changes apply instantly to nodes but revert to defaults upon restart.</div>
   
-  <!-- Quick Tuner for Roundabout Bounding Box Size -->
+  <!-- Quick Tuner for Roundabout & Parking Bounding Box Sizes -->
   <div class="quick-tune-box" style="background:rgba(30,102,245,0.06); border:1px solid rgba(30,102,245,0.2); border-radius:8px; padding:12px; margin-bottom:14px;">
-    <div style="font-size:0.85em; font-weight:700; color:var(--accent); margin-bottom:8px;">🎯 Roundabout Bounding Box Quick-Tuner</div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:0.78em;">
+    <div style="font-size:0.85em; font-weight:700; color:var(--accent); margin-bottom:8px;">🎯 Signboard Size Quick-Tuner</div>
+    
+    <!-- Roundabout Sign Section -->
+    <div style="font-size:0.75em; font-weight:700; color:var(--text); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">🔄 Roundabout Sign</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.75em; margin-bottom:10px;">
       <div>
-        <label style="display:block; color:var(--muted); margin-bottom:3px; font-weight:600;">Min Width (px)</label>
+        <label style="display:block; color:var(--muted); margin-bottom:2px;">Min Width (px)</label>
         <div style="display:flex; gap:4px;">
-          <input type="number" id="quick_min_w" value="0" placeholder="e.g. 80" style="width:100%; padding:5px 8px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.9em; background:var(--card); color:var(--text);" />
-          <button onclick="setParam('signage_detector','min_roundabout_sign_width', document.getElementById('quick_min_w').value)" style="padding:5px 12px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
+          <input type="number" id="quick_rb_min_w" value="0" placeholder="e.g. 80" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
+          <button onclick="setParam('signage_detector','min_roundabout_sign_width', document.getElementById('quick_rb_min_w').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
         </div>
       </div>
       <div>
-        <label style="display:block; color:var(--muted); margin-bottom:3px; font-weight:600;">Min Height (px)</label>
+        <label style="display:block; color:var(--muted); margin-bottom:2px;">Min Height (px)</label>
         <div style="display:flex; gap:4px;">
-          <input type="number" id="quick_min_h" value="0" placeholder="e.g. 80" style="width:100%; padding:5px 8px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.9em; background:var(--card); color:var(--text);" />
-          <button onclick="setParam('signage_detector','min_roundabout_sign_height', document.getElementById('quick_min_h').value)" style="padding:5px 12px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
+          <input type="number" id="quick_rb_min_h" value="0" placeholder="e.g. 80" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
+          <button onclick="setParam('signage_detector','min_roundabout_sign_height', document.getElementById('quick_rb_min_h').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
         </div>
       </div>
     </div>
+
+    <!-- Parking Sign Section -->
+    <div style="font-size:0.75em; font-weight:700; color:var(--text); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">🅿️ Parking Sign</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.75em;">
+      <div>
+        <label style="display:block; color:var(--muted); margin-bottom:2px;">Min Width (px)</label>
+        <div style="display:flex; gap:4px;">
+          <input type="number" id="quick_park_min_w" value="0" placeholder="e.g. 80" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
+          <button onclick="setParam('signage_detector','min_parking_sign_width', document.getElementById('quick_park_min_w').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
+        </div>
+      </div>
+      <div>
+        <label style="display:block; color:var(--muted); margin-bottom:2px;">Min Height (px)</label>
+        <div style="display:flex; gap:4px;">
+          <input type="number" id="quick_park_min_h" value="0" placeholder="e.g. 80" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
+          <button onclick="setParam('signage_detector','min_parking_sign_height', document.getElementById('quick_park_min_h').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
+        </div>
+      </div>
+    </div>
+
     <div id="quickTuneStatus" style="font-size:0.75em; margin-top:6px; min-height:16px; font-weight:600;"></div>
   </div>
 
@@ -2038,6 +2061,7 @@ const PARAM_TIPS = {
   conf_threshold:'Global YOLO confidence fallback (0.0–1.0)',
   iou_threshold:'NMS IoU threshold (0.0–1.0)',
   min_parking_sign_width:'Min pixel width for parking sign trigger (0 = disabled)',
+  min_parking_sign_height:'Min pixel height for parking sign trigger (0 = disabled)',
   min_roundabout_sign_width:'Min pixel width for roundabout sign trigger (0 = disabled)',
   min_roundabout_sign_height:'Min pixel height for roundabout sign trigger (0 = disabled)',
   // Per-class confidence thresholds
@@ -2142,7 +2166,8 @@ const PARAM_GROUPS = [
   ]},
   { node: 'signage_detector', label: 'Signage Detector (BPU)', params: [
     'model_path','conf_threshold','iou_threshold',
-    'min_parking_sign_width','min_roundabout_sign_width','min_roundabout_sign_height',
+    'min_parking_sign_width','min_parking_sign_height',
+    'min_roundabout_sign_width','min_roundabout_sign_height',
     'heartbeat_sec','show_debug',
     'thresh_bumper','thresh_hill','thresh_obstacle',
     'thresh_parallelp','thresh_perpendp','thresh_roundabout',
@@ -2209,8 +2234,10 @@ async function getParam(node, param, isInitialLoad=false) {
           }
         }
       }
-      if (param === 'min_roundabout_sign_width') { const q = document.getElementById('quick_min_w'); if(q) q.value = d.value; }
-      if (param === 'min_roundabout_sign_height') { const q = document.getElementById('quick_min_h'); if(q) q.value = d.value; }
+      if (param === 'min_roundabout_sign_width') { const q = document.getElementById('quick_rb_min_w'); if(q) q.value = d.value; }
+      if (param === 'min_roundabout_sign_height') { const q = document.getElementById('quick_rb_min_h'); if(q) q.value = d.value; }
+      if (param === 'min_parking_sign_width') { const q = document.getElementById('quick_park_min_w'); if(q) q.value = d.value; }
+      if (param === 'min_parking_sign_height') { const q = document.getElementById('quick_park_min_h'); if(q) q.value = d.value; }
       if (status && !isInitialLoad) { status.className = 'param-status ok'; status.textContent = '✓'; }
     } else {
       if (status && !isInitialLoad) { status.className = 'param-status err'; status.textContent = d.error || 'Not found'; }
@@ -2234,7 +2261,7 @@ async function setParam(node, param, customVal=null) {
     return; 
   }
   if (status) { status.className = 'param-status'; status.textContent = '...'; }
-  if (qStatus && param.includes('roundabout')) { qStatus.style.color='var(--accent)'; qStatus.textContent='Setting ' + param + ' to ' + val + '...'; }
+  if (qStatus && (param.includes('roundabout') || param.includes('parking'))) { qStatus.style.color='var(--accent)'; qStatus.textContent='Setting ' + param + ' to ' + val + '...'; }
   try {
     const r = await fetch('/api/set_param', {
       method: 'POST',
@@ -2244,19 +2271,19 @@ async function setParam(node, param, customVal=null) {
     const d = await r.json();
     if (d.ok) {
       if (status) { status.className = 'param-status ok'; status.textContent = '✓ Set'; }
-      if (qStatus && param.includes('roundabout')) { qStatus.style.color='var(--success)'; qStatus.textContent='✓ ' + param + ' set to ' + val; }
+      if (qStatus && (param.includes('roundabout') || param.includes('parking'))) { qStatus.style.color='var(--success)'; qStatus.textContent='✓ ' + param + ' set to ' + val; }
       if (input) input.value = val;
     } else {
       if (status) { status.className = 'param-status err'; status.textContent = d.error || 'Failed'; }
-      if (qStatus && param.includes('roundabout')) { qStatus.style.color='var(--danger)'; qStatus.textContent='❌ ' + (d.error || 'Failed'); }
+      if (qStatus && (param.includes('roundabout') || param.includes('parking'))) { qStatus.style.color='var(--danger)'; qStatus.textContent='❌ ' + (d.error || 'Failed'); }
     }
   } catch(e) {
     if (status) { status.className = 'param-status err'; status.textContent = 'Error'; }
-    if (qStatus && param.includes('roundabout')) { qStatus.style.color='var(--danger)'; qStatus.textContent='❌ Network Error'; }
+    if (qStatus && (param.includes('roundabout') || param.includes('parking'))) { qStatus.style.color='var(--danger)'; qStatus.textContent='❌ Network Error'; }
   }
   setTimeout(() => { 
     if(status) status.textContent = ''; 
-    if(qStatus && param.includes('roundabout')) qStatus.textContent = '';
+    if(qStatus && (param.includes('roundabout') || param.includes('parking'))) qStatus.textContent = '';
   }, 3000);
 }
 
