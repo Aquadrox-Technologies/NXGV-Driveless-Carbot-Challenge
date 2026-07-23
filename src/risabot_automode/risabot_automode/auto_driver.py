@@ -123,6 +123,7 @@ class AutoDriver(Node):
         self._hill_sign_last_time = 0.0  # monotonic time of last hill sign detection
         self._hill_primed = False         # True during the prime window after sign detection
         self.roundabout_sign_detected = False
+        self._roundabout_sign_latched = False
         self.lane_width_invalid = False
 
         # PID controller state
@@ -422,6 +423,10 @@ class AutoDriver(Node):
         """Store tunnel detection flag with timestamp."""
         self.tunnel_detected = msg.data
         self.tunnel_last_time = time.monotonic()
+        if msg.data and self._roundabout_sign_latched:
+            self._roundabout_sign_latched = False
+            self._boom_gate_armed = True
+            self.get_logger().info('Tunnel detected → unlatched Roundabout mode')
 
     def tunnel_cmd_callback(self, msg: Twist) -> None:
         """Store tunnel follower command."""
@@ -453,6 +458,10 @@ class AutoDriver(Node):
     def signboard_callback(self, msg: Bool) -> None:
         """Store parking signboard detection flag."""
         self.signboard_detected = msg.data
+        if msg.data and self._roundabout_sign_latched:
+            self._roundabout_sign_latched = False
+            self._boom_gate_armed = True
+            self.get_logger().info('Parking sign detected → unlatched Roundabout mode')
 
     def parking_status_callback(self, msg: String) -> None:
         """Track parking stage completion."""
@@ -499,7 +508,9 @@ class AutoDriver(Node):
         """Receive roundabout sign detection from signage_detector."""
         self.roundabout_sign_detected = msg.data
         if msg.data and not self._boom_gate_armed:
-            self.get_logger().info('🔄 Roundabout sign detected')
+            if not self._roundabout_sign_latched:
+                self._roundabout_sign_latched = True
+                self.get_logger().info('🔄 Roundabout sign detected — ROUNDABOUT mode LATCHED')
 
     def lane_width_invalid_callback(self, msg: Bool) -> None:
         """Receive lane width invalid flag from line_follower_camera."""
@@ -579,6 +590,7 @@ class AutoDriver(Node):
         self.parking_sequence_active = False
         self._parking_done = False
         self._boom_gate_armed = False
+        self._roundabout_sign_latched = False
         self._tl_armed = False
         self._tl_red_latched = False
         self._obs_cleared_time = 0.0
@@ -799,7 +811,7 @@ class AutoDriver(Node):
 
         # Priority 4: Roundabout — Challenge 2 (signboard-triggered or time-gated)
         elif not self._boom_gate_armed and (
-            self.roundabout_sign_detected or (
+            self._roundabout_sign_latched or (
                 self._obs_cleared_time > 0 and (time.monotonic() - self._obs_cleared_time) >= self._param_cache['t_post_obstacle_sec']
             )
         ):
@@ -822,6 +834,7 @@ class AutoDriver(Node):
                     target_state = ChallengeState.LANE_FOLLOW
                     cmd = self._lane_follow_cmd()
                     self._boom_gate_armed = True
+                    self._roundabout_sign_latched = False
                     self._obs_cleared_time = 0.0  # prevent re-entry
                     self.get_logger().info('Roundabout complete → boom gate armed')
 

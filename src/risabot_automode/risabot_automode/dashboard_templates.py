@@ -1410,19 +1410,35 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     
     <!-- Roundabout Sign Section -->
     <div style="font-size:0.75em; font-weight:700; color:var(--text); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">🔄 Roundabout Sign</div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.75em; margin-bottom:10px;">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.75em; margin-bottom:6px;">
       <div>
         <label style="display:block; color:var(--muted); margin-bottom:2px;">Min Width (px)</label>
         <div style="display:flex; gap:4px;">
-          <input type="number" id="quick_rb_min_w" value="0" placeholder="e.g. 80" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
+          <input type="number" id="quick_rb_min_w" value="0" placeholder="e.g. 70" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
           <button onclick="setParam('signage_detector','min_roundabout_sign_width', document.getElementById('quick_rb_min_w').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
         </div>
       </div>
       <div>
+        <label style="display:block; color:var(--muted); margin-bottom:2px;">Max Width (px)</label>
+        <div style="display:flex; gap:4px;">
+          <input type="number" id="quick_rb_max_w" value="0" placeholder="e.g. 130" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
+          <button onclick="setParam('signage_detector','max_roundabout_sign_width', document.getElementById('quick_rb_max_w').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
+        </div>
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.75em; margin-bottom:10px;">
+      <div>
         <label style="display:block; color:var(--muted); margin-bottom:2px;">Min Height (px)</label>
         <div style="display:flex; gap:4px;">
-          <input type="number" id="quick_rb_min_h" value="0" placeholder="e.g. 80" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
+          <input type="number" id="quick_rb_min_h" value="0" placeholder="e.g. 70" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
           <button onclick="setParam('signage_detector','min_roundabout_sign_height', document.getElementById('quick_rb_min_h').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
+        </div>
+      </div>
+      <div>
+        <label style="display:block; color:var(--muted); margin-bottom:2px;">Max Height (px)</label>
+        <div style="display:flex; gap:4px;">
+          <input type="number" id="quick_rb_max_h" value="0" placeholder="e.g. 130" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
+          <button onclick="setParam('signage_detector','max_roundabout_sign_height', document.getElementById('quick_rb_max_h').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
         </div>
       </div>
     </div>
@@ -2066,7 +2082,9 @@ const PARAM_TIPS = {
   min_parking_sign_width:'Min pixel width for parking sign trigger (0 = disabled)',
   min_parking_sign_height:'Min pixel height for parking sign trigger (0 = disabled)',
   min_roundabout_sign_width:'Min pixel width for roundabout sign trigger (0 = disabled)',
+  max_roundabout_sign_width:'Max pixel width for roundabout sign trigger (0 = no max cap)',
   min_roundabout_sign_height:'Min pixel height for roundabout sign trigger (0 = disabled)',
+  max_roundabout_sign_height:'Max pixel height for roundabout sign trigger (0 = no max cap)',
   // Per-class confidence thresholds
   thresh_bumper:'Confidence threshold for Bumper_signboard (class 0)',
   thresh_hill:'Confidence threshold for Hill_signboard (class 1)',
@@ -2171,7 +2189,8 @@ const PARAM_GROUPS = [
   { node: 'signage_detector', label: 'Signage Detector (BPU)', params: [
     'model_path','conf_threshold','iou_threshold',
     'min_parking_sign_width','min_parking_sign_height',
-    'min_roundabout_sign_width','min_roundabout_sign_height',
+    'min_roundabout_sign_width','max_roundabout_sign_width',
+    'min_roundabout_sign_height','max_roundabout_sign_height',
     'heartbeat_sec','show_debug',
     'thresh_bumper','thresh_hill','thresh_obstacle',
     'thresh_parallelp','thresh_perpendp','thresh_roundabout',
@@ -2239,7 +2258,9 @@ async function getParam(node, param, isInitialLoad=false) {
         }
       }
       if (param === 'min_roundabout_sign_width') { const q = document.getElementById('quick_rb_min_w'); if(q) q.value = d.value; }
+      if (param === 'max_roundabout_sign_width') { const q = document.getElementById('quick_rb_max_w'); if(q) q.value = d.value; }
       if (param === 'min_roundabout_sign_height') { const q = document.getElementById('quick_rb_min_h'); if(q) q.value = d.value; }
+      if (param === 'max_roundabout_sign_height') { const q = document.getElementById('quick_rb_max_h'); if(q) q.value = d.value; }
       if (param === 'min_parking_sign_width') { const q = document.getElementById('quick_park_min_w'); if(q) q.value = d.value; }
       if (param === 'min_parking_sign_height') { const q = document.getElementById('quick_park_min_h'); if(q) q.value = d.value; }
       if (status && !isInitialLoad) { status.className = 'param-status ok'; status.textContent = '✓'; }

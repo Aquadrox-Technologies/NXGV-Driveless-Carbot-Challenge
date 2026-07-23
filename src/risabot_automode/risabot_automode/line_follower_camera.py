@@ -161,8 +161,8 @@ class LineFollowerCamera(Node):
         self.declare_parameter('hold_error_frames', 15)
         self.declare_parameter('error_decay_rate', 0.92)
         # Nominal Lane Width bounds (for detecting invalid/shadow/floor lane width)
-        self.declare_parameter('nominal_lane_width_min', 45)
-        self.declare_parameter('nominal_lane_width_max', 140)
+        self.declare_parameter('nominal_lane_width_min', 35)
+        self.declare_parameter('nominal_lane_width_max', 0)
         # Display / debug
         self.declare_parameter('show_debug', False)
         self.declare_parameter('resize_width', 320)
@@ -177,6 +177,7 @@ class LineFollowerCamera(Node):
         # ── Internal state ──────────────────────────────────────────────────
         self.frames_lost = 0
         self.current_hold_frames = 0
+        self.invalid_width_consecutive = 0
         self.last_lane_widths: Dict[int, int] = {}
         self._expected_left: Optional[int] = None
         self._expected_right: Optional[int] = None
@@ -750,14 +751,19 @@ class LineFollowerCamera(Node):
             avg_width = sum(self.last_lane_widths.values()) / len(self.last_lane_widths) if len(self.last_lane_widths) > 0 else 0
             w_min = int(self._param_cache['nominal_lane_width_min'])
             w_max = int(self._param_cache['nominal_lane_width_max'])
-            lane_width_invalid = False
+            saw_invalid_width = False
             if valid_count > 0 and len(self.last_lane_widths) > 0:
                 if w_min > 0 and avg_width < w_min:
-                    lane_width_invalid = True
+                    saw_invalid_width = True
                 elif w_max > 0 and avg_width > w_max:
-                    lane_width_invalid = True
+                    saw_invalid_width = True
+
+            if saw_invalid_width:
+                self.invalid_width_consecutive = min(10, self.invalid_width_consecutive + 1)
             else:
-                lane_width_invalid = True
+                self.invalid_width_consecutive = max(0, self.invalid_width_consecutive - 1)
+
+            lane_width_invalid = (self.invalid_width_consecutive >= 5)
             self.lane_width_invalid_pub.publish(Bool(data=lane_width_invalid))
 
             # ── 9. Debug visualisation ──────────────────────────────────────
