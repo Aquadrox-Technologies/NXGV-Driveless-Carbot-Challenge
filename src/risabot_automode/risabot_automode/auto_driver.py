@@ -36,6 +36,7 @@ from .topics import (
     CMD_SAFETY_STATUS_TOPIC,
     DASH_STATE_TOPIC,
     HILL_SIGN_TOPIC,
+    ROUNDABOUT_SIGN_TOPIC,
     LANE_ERROR_TOPIC,
     LANE_LOST_TOPIC,
     IMU_PITCH_TOPIC,
@@ -116,10 +117,11 @@ class AutoDriver(Node):
         self.cmd_safety_estop = False
         self.cmd_safety_last_time = 0.0
 
-        # Hill sign state
+        # Hill & Roundabout sign states
         self.hill_sign_detected = False
         self._hill_sign_last_time = 0.0  # monotonic time of last hill sign detection
         self._hill_primed = False         # True during the prime window after sign detection
+        self.roundabout_sign_detected = False
 
         # PID controller state
         self._pid_prev_error = 0.0
@@ -298,9 +300,12 @@ class AutoDriver(Node):
             String, RECORD_PLAYBACK_STATE_TOPIC, self.record_playback_state_callback, 10
         )
 
-        # Hill sign detection from signage_detector
+        # Hill & Roundabout sign detection from signage_detector
         self.create_subscription(
             Bool, HILL_SIGN_TOPIC, self.hill_sign_callback, 10
+        )
+        self.create_subscription(
+            Bool, ROUNDABOUT_SIGN_TOPIC, self.roundabout_sign_callback, 10
         )
         
         # Subscribe to Odometry (from servo_controller)
@@ -483,6 +488,12 @@ class AutoDriver(Node):
                 self._hill_primed = True
                 self.get_logger().info('⛰ Hill sign detected — hill mode PRIMED')
 
+    def roundabout_sign_callback(self, msg: Bool) -> None:
+        """Receive roundabout sign detection from signage_detector."""
+        self.roundabout_sign_detected = msg.data
+        if msg.data and not self._boom_gate_armed:
+            self.get_logger().info('🔄 Roundabout sign detected')
+
     def _publish_loop_stats(self) -> None:
         """Publish loop timing stats for diagnostics."""
         if not self._param_cache['publish_loop_stats']:
@@ -534,6 +545,7 @@ class AutoDriver(Node):
         self._tl_red_latched = False
         self._obs_cleared_time = 0.0
         self._obs_was_active = False
+        self.roundabout_sign_detected = False
         self.distance = 0.0
         self.distance_past_light = 0.0
         self.state_entry_time = time.monotonic()
@@ -774,10 +786,12 @@ class AutoDriver(Node):
             cmd.linear.x = -self._param_cache['forward_speed'] * 0.8
             cmd.angular.z = 0.0
 
-        # Priority 4: Roundabout — Challenge 2 (time-gated)
-        elif (self._obs_cleared_time > 0
-              and not self._boom_gate_armed
-              and (time.monotonic() - self._obs_cleared_time) >= self._param_cache['t_post_obstacle_sec']):
+        # Priority 4: Roundabout — Challenge 2 (signboard-triggered or time-gated)
+        elif not self._boom_gate_armed and (
+            self.roundabout_sign_detected or (
+                self._obs_cleared_time > 0 and (time.monotonic() - self._obs_cleared_time) >= self._param_cache['t_post_obstacle_sec']
+            )
+        ):
             target_state = ChallengeState.ROUNDABOUT
             cmd = self._lane_follow_cmd()  # Roundabout has painted lane lines
             # Check exit: dwell time expired

@@ -58,6 +58,7 @@ from .topics import (
     TRAFFIC_LIGHT_TOPIC,
     TUNNEL_DETECTED_TOPIC,
     PARKING_SIGN_TOPIC,
+    ROUNDABOUT_SIGN_TOPIC,
     RECORD_PLAYBACK_STATE_TOPIC,
     RECORD_PLAYBACK_CMD_TOPIC,
 )
@@ -388,6 +389,7 @@ class DashboardNode(Node):
             'rp_active_parking': '',
             'rp_saved_recordings': [],
             'parking_sign_detected': None,
+            'roundabout_sign_detected': None,
             # IMU
             'imu_roll':  0.0,
             'imu_pitch': 0.0,
@@ -416,6 +418,7 @@ class DashboardNode(Node):
             'loop_stats': 0.0,
             'record_playback_state': 0.0,
             'parking_sign': 0.0,
+            'roundabout_sign': 0.0,
             'imu_rpy': 0.0,
         }
         self.data_lock = threading.Lock()
@@ -460,8 +463,9 @@ class DashboardNode(Node):
         self.create_subscription(Image, SIGNAGE_DEBUG_TOPIC, lambda msg: self._image_cb(msg, 'signage'), qos)
         self.create_subscription(Image, CAMERA_DEBUG_OBS_TOPIC, lambda msg: self._image_cb(msg, 'obstacle'), qos)
 
-        # Parking signboard detection flag
+        # Parking & Roundabout signboard detection flags
         self.create_subscription(Bool, PARKING_SIGN_TOPIC, self._parking_sign_cb, 10)
+        self.create_subscription(Bool, ROUNDABOUT_SIGN_TOPIC, self._roundabout_sign_cb, 10)
 
         # IMU full RPY data
         self.create_subscription(String, IMU_DATA_TOPIC, self._imu_cb, 10)
@@ -767,6 +771,10 @@ class DashboardNode(Node):
     def _parking_sign_cb(self, msg: Bool) -> None:
         """Update parking signboard detection flag."""
         self._set('parking_sign_detected', msg.data, 'parking_sign')
+
+    def _roundabout_sign_cb(self, msg: Bool) -> None:
+        """Update roundabout signboard detection flag."""
+        self._set('roundabout_sign_detected', msg.data, 'roundabout_sign')
 
     def _imu_cb(self, msg: String) -> None:
         """Update IMU roll/pitch/yaw from /imu/rpy JSON payload."""

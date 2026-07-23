@@ -360,12 +360,15 @@ signage_detector:
     show_debug: false             # OFF by default — dashboard auto-enables when signage view active
     heartbeat_sec: 0.5
     min_parking_sign_width: 0     # set >0 to require minimum bounding-box width for parking
+    min_roundabout_sign_width: 0  # set >0 to require minimum bounding-box width for roundabout (px in 640x640)
+    min_roundabout_sign_height: 0 # set >0 to require minimum bounding-box height for roundabout (px in 640x640)
 
     # ── Per-class confidence thresholds ────────────────────────────────────
     # CRUCIAL classes — tuned for reliable detection without false positives
     thresh_hill:       0.06       # Hill_signboard  — tested working value
     thresh_parallelp:  0.05       # ParallelP_signboard — tested working value
     thresh_perpendp:   0.05       # PerpendP_signboard  — tested working value
+    thresh_roundabout: 0.15       # Roundabout_signboard — enabled for distance-gated trigger
     thresh_tl_green:   0.25       # Traffic_Green
     thresh_tl_red:     0.25       # Traffic_Red
     thresh_tl_generic: 0.20       # Trafficlight_signboard (CV re-classifies to green/red)
@@ -373,7 +376,6 @@ signage_detector:
     # DISABLED classes — threshold set to 0.99 so they never fire
     thresh_bumper:     0.99       # Bumper_signboard    ← not used
     thresh_obstacle:   0.99       # Obstacle_signboard  ← not used
-    thresh_roundabout: 0.50       # Roundabout_signboard← fires high spuriously, 0.5 suppresses false triggers
 
     # ── Per-class bounding-box colors (BGR) for debug overlay ─────────────
     color_hill:       '180,0,255'   # Pink/Purple

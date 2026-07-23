@@ -26,6 +26,7 @@ from .topics import (
     HILL_SIGN_TOPIC,
     OBSTACLE_CAMERA_TOPIC,
     PARKING_SIGN_TOPIC,
+    ROUNDABOUT_SIGN_TOPIC,
     SIGNAGE_DEBUG_TOPIC,
     TRAFFIC_LIGHT_TOPIC,
 )
@@ -54,6 +55,8 @@ class SignageDetector(Node):
         self.declare_parameter('show_debug',             False)
         self.declare_parameter('heartbeat_sec',          0.5)
         self.declare_parameter('min_parking_sign_width', 0)
+        self.declare_parameter('min_roundabout_sign_width', 0)
+        self.declare_parameter('min_roundabout_sign_height', 0)
 
         # ── Per-class confidence thresholds (ROS2 params — tunable from dashboard) ─
         self.declare_parameter('thresh_bumper',      0.15)   # Class 0 Bumper_signboard
@@ -92,11 +95,13 @@ class SignageDetector(Node):
         self.hill_sign_active = False
         self.parking_sign_active = False
         self.obstacle_sign_active = False
+        self.roundabout_sign_active = False
         self.traffic_light_active = 'unknown'
 
         self.detected_hill_consecutive = 0
         self.detected_parking_consecutive = 0
         self.detected_obstacle_consecutive = 0
+        self.detected_roundabout_consecutive = 0
         self.detected_tl_red_consecutive = 0
         self.detected_tl_green_consecutive = 0
         self.detected_tl_yellow_consecutive = 0
@@ -106,6 +111,7 @@ class SignageDetector(Node):
         self.parking_pub = self.create_publisher(Bool, PARKING_SIGN_TOPIC, 10)
         self.traffic_light_pub = self.create_publisher(String, TRAFFIC_LIGHT_TOPIC, 10)
         self.hill_pub = self.create_publisher(Bool, HILL_SIGN_TOPIC, 10)
+        self.roundabout_pub = self.create_publisher(Bool, ROUNDABOUT_SIGN_TOPIC, 10)
         self.obstacle_pub = self.create_publisher(Bool, OBSTACLE_CAMERA_TOPIC, 10)
         self.debug_pub = self.create_publisher(Image, SIGNAGE_DEBUG_TOPIC, 10)
 
@@ -154,6 +160,8 @@ class SignageDetector(Node):
             'show_debug':             bool(self.get_parameter('show_debug').value),
             'heartbeat_sec':          float(self.get_parameter('heartbeat_sec').value),
             'min_parking_sign_width': int(self.get_parameter('min_parking_sign_width').value),
+            'min_roundabout_sign_width': int(self.get_parameter('min_roundabout_sign_width').value),
+            'min_roundabout_sign_height': int(self.get_parameter('min_roundabout_sign_height').value),
             # Per-class thresholds
             'thresh_bumper':     float(self.get_parameter('thresh_bumper').value),
             'thresh_hill':       float(self.get_parameter('thresh_hill').value),
@@ -269,6 +277,7 @@ class SignageDetector(Node):
         self.parking_pub.publish(Bool(data=self.parking_sign_active))
         self.traffic_light_pub.publish(String(data=self.traffic_light_active))
         self.hill_pub.publish(Bool(data=self.hill_sign_active))
+        self.roundabout_pub.publish(Bool(data=self.roundabout_sign_active))
         self.obstacle_pub.publish(Bool(data=self.obstacle_sign_active))
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -424,10 +433,22 @@ class SignageDetector(Node):
             now = time.time()
             if now - self._last_log_time > 1.0:
                 max_score_val = float(np.max(max_scores)) if len(max_scores) > 0 else 0.0
-                self.get_logger().info(
-                    f"BPU Inference: received frame | max_score={max_score_val:.4f} | raw_det={len(filtered_boxes)} | post_nms={len(final_boxes)} | "
-                    f"classes={list(final_class_ids)}"
-                )
+                if len(final_boxes) > 0:
+                    dets_info = []
+                    for idx, cid in enumerate(final_class_ids):
+                        box = final_boxes[idx]
+                        w_px = int(round(box[2] - box[0]))
+                        h_px = int(round(box[3] - box[1]))
+                        score = final_scores[idx]
+                        dets_info.append(f"cls{cid}:{score:.2f}[w={w_px},h={h_px}]")
+                    dets_str = ", ".join(dets_info)
+                    self.get_logger().info(
+                        f"BPU Inference: max_score={max_score_val:.4f} | post_nms={len(final_boxes)} | dets=[{dets_str}]"
+                    )
+                else:
+                    self.get_logger().info(
+                        f"BPU Inference: max_score={max_score_val:.4f} | raw_det={len(filtered_boxes)} | post_nms=0"
+                    )
                 self._last_log_time = now
 
             # Update detection states and publish updates
@@ -508,6 +529,29 @@ class SignageDetector(Node):
             self.detected_obstacle_consecutive = max(0, self.detected_obstacle_consecutive - 1)
             if self.detected_obstacle_consecutive == 0:
                 self.obstacle_sign_active = False
+
+        # 3.5. Roundabout sign (Class 5: Roundabout_signboard)
+        saw_roundabout = False
+        min_r_width = int(self._param_cache['min_roundabout_sign_width'])
+        min_r_height = int(self._param_cache['min_roundabout_sign_height'])
+
+        for idx, cid in enumerate(class_ids):
+            if cid == 5:  # Roundabout_signboard
+                box = boxes[idx]
+                box_w = box[2] - box[0]
+                box_h = box[3] - box[1]
+                if (min_r_width == 0 or box_w >= min_r_width) and (min_r_height == 0 or box_h >= min_r_height):
+                    saw_roundabout = True
+                    break
+
+        if saw_roundabout:
+            self.detected_roundabout_consecutive = min(10, self.detected_roundabout_consecutive + 1)
+            if self.detected_roundabout_consecutive >= 3:
+                self.roundabout_sign_active = True
+        else:
+            self.detected_roundabout_consecutive = max(0, self.detected_roundabout_consecutive - 1)
+            if self.detected_roundabout_consecutive == 0:
+                self.roundabout_sign_active = False
 
         # 4. Traffic light states
         # Class 8: Trafficlight_signboard (generic) — CV-reclassified in image_callback to 6 or 7

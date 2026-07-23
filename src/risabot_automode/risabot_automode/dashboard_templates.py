@@ -1398,12 +1398,34 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 </div>
 
-<!-- ===== PARAMETER TUNING ===== -->
 <!-- ===== PARAMETER TUNING DRAWER ===== -->
 <div class="param-popout-tab" onclick="toggleParamDrawer()">⚙️ Parameters</div>
 <div class="param-drawer" id="paramDrawer">
   <h3>⚙️ Parameter Tuning</h3>
   <div class="note">💡 Changes apply instantly to nodes but revert to defaults upon restart.</div>
+  
+  <!-- Quick Tuner for Roundabout Bounding Box Size -->
+  <div class="quick-tune-box" style="background:rgba(30,102,245,0.06); border:1px solid rgba(30,102,245,0.2); border-radius:8px; padding:12px; margin-bottom:14px;">
+    <div style="font-size:0.85em; font-weight:700; color:var(--accent); margin-bottom:8px;">🎯 Roundabout Bounding Box Quick-Tuner</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:0.78em;">
+      <div>
+        <label style="display:block; color:var(--muted); margin-bottom:3px; font-weight:600;">Min Width (px)</label>
+        <div style="display:flex; gap:4px;">
+          <input type="number" id="quick_min_w" value="0" placeholder="e.g. 80" style="width:100%; padding:5px 8px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.9em; background:var(--card); color:var(--text);" />
+          <button onclick="setParam('signage_detector','min_roundabout_sign_width', document.getElementById('quick_min_w').value)" style="padding:5px 12px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
+        </div>
+      </div>
+      <div>
+        <label style="display:block; color:var(--muted); margin-bottom:3px; font-weight:600;">Min Height (px)</label>
+        <div style="display:flex; gap:4px;">
+          <input type="number" id="quick_min_h" value="0" placeholder="e.g. 80" style="width:100%; padding:5px 8px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.9em; background:var(--card); color:var(--text);" />
+          <button onclick="setParam('signage_detector','min_roundabout_sign_height', document.getElementById('quick_min_h').value)" style="padding:5px 12px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
+        </div>
+      </div>
+    </div>
+    <div id="quickTuneStatus" style="font-size:0.75em; margin-top:6px; min-height:16px; font-weight:600;"></div>
+  </div>
+
   <div id="paramContainer"></div>
   <button class="param-save-defaults-btn" id="saveDefaultsBtn" onclick="saveDefaults()">💾 Save Current as Default</button>
   <div id="saveDefaultsStatus" style="text-align:center;font-size:0.78em;margin-top:6px;min-height:20px;"></div>
@@ -2016,6 +2038,8 @@ const PARAM_TIPS = {
   conf_threshold:'Global YOLO confidence fallback (0.0–1.0)',
   iou_threshold:'NMS IoU threshold (0.0–1.0)',
   min_parking_sign_width:'Min pixel width for parking sign trigger (0 = disabled)',
+  min_roundabout_sign_width:'Min pixel width for roundabout sign trigger (0 = disabled)',
+  min_roundabout_sign_height:'Min pixel height for roundabout sign trigger (0 = disabled)',
   // Per-class confidence thresholds
   thresh_bumper:'Confidence threshold for Bumper_signboard (class 0)',
   thresh_hill:'Confidence threshold for Hill_signboard (class 1)',
@@ -2118,7 +2142,8 @@ const PARAM_GROUPS = [
   ]},
   { node: 'signage_detector', label: 'Signage Detector (BPU)', params: [
     'model_path','conf_threshold','iou_threshold',
-    'min_parking_sign_width','heartbeat_sec','show_debug',
+    'min_parking_sign_width','min_roundabout_sign_width','min_roundabout_sign_height',
+    'heartbeat_sec','show_debug',
     'thresh_bumper','thresh_hill','thresh_obstacle',
     'thresh_parallelp','thresh_perpendp','thresh_roundabout',
     'thresh_tl_green','thresh_tl_red','thresh_tl_generic',
@@ -2184,7 +2209,9 @@ async function getParam(node, param, isInitialLoad=false) {
           }
         }
       }
-      if (status && !isInitialLoad) { status.className = 'param-status ok'; status.textContent = 'âœ“'; }
+      if (param === 'min_roundabout_sign_width') { const q = document.getElementById('quick_min_w'); if(q) q.value = d.value; }
+      if (param === 'min_roundabout_sign_height') { const q = document.getElementById('quick_min_h'); if(q) q.value = d.value; }
+      if (status && !isInitialLoad) { status.className = 'param-status ok'; status.textContent = '✓'; }
     } else {
       if (status && !isInitialLoad) { status.className = 'param-status err'; status.textContent = d.error || 'Not found'; }
     }
@@ -2196,27 +2223,41 @@ async function getParam(node, param, isInitialLoad=false) {
   }
 }
 
-async function setParam(node, param) {
+async function setParam(node, param, customVal=null) {
   const input = document.getElementById('pv_' + node + '_' + param);
   const status = document.getElementById('ps_' + node + '_' + param);
-  if (!input || !input.value) { if(status){status.className='param-status err';status.textContent='Empty';} return; }
+  const val = (customVal !== null && customVal !== undefined) ? customVal : (input ? input.value : '');
+  const qStatus = document.getElementById('quickTuneStatus');
+  if (val === '' || val === null) { 
+    if(status){status.className='param-status err';status.textContent='Empty';} 
+    if(qStatus && param.includes('roundabout')){qStatus.style.color='var(--danger)'; qStatus.textContent='⚠️ Empty value';}
+    return; 
+  }
   if (status) { status.className = 'param-status'; status.textContent = '...'; }
+  if (qStatus && param.includes('roundabout')) { qStatus.style.color='var(--accent)'; qStatus.textContent='Setting ' + param + ' to ' + val + '...'; }
   try {
     const r = await fetch('/api/set_param', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({node: node, param: param, value: input.value})
+      body: JSON.stringify({node: node, param: param, value: String(val)})
     });
     const d = await r.json();
     if (d.ok) {
-      if (status) { status.className = 'param-status ok'; status.textContent = 'âœ“ Set'; }
+      if (status) { status.className = 'param-status ok'; status.textContent = '✓ Set'; }
+      if (qStatus && param.includes('roundabout')) { qStatus.style.color='var(--success)'; qStatus.textContent='✓ ' + param + ' set to ' + val; }
+      if (input) input.value = val;
     } else {
       if (status) { status.className = 'param-status err'; status.textContent = d.error || 'Failed'; }
+      if (qStatus && param.includes('roundabout')) { qStatus.style.color='var(--danger)'; qStatus.textContent='❌ ' + (d.error || 'Failed'); }
     }
   } catch(e) {
     if (status) { status.className = 'param-status err'; status.textContent = 'Error'; }
+    if (qStatus && param.includes('roundabout')) { qStatus.style.color='var(--danger)'; qStatus.textContent='❌ Network Error'; }
   }
-  setTimeout(() => { if(status) status.textContent = ''; }, 3000);
+  setTimeout(() => { 
+    if(status) status.textContent = ''; 
+    if(qStatus && param.includes('roundabout')) qStatus.textContent = '';
+  }, 3000);
 }
 
 async function saveDefaults() {

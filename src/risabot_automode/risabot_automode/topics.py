@@ -37,6 +37,7 @@ PARKING_VEL_TOPIC = '/parking_cmd_vel'
 PARKING_COMPLETE_TOPIC = '/parking_complete'
 PARKING_SIGN_TOPIC = '/parking_signboard_detected'
 HILL_SIGN_TOPIC = '/hill_sign_detected'
+ROUNDABOUT_SIGN_TOPIC = '/roundabout_sign_detected'
 PARKING_STATUS_TOPIC = '/parking_status'
 
 
