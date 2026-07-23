@@ -2032,6 +2032,9 @@ const PARAM_TIPS = {
   // Challenge sequencing
   t_post_obstacle_sec:'Lane-follow delay after obstacle clears before entering roundabout (sec)',
   t_roundabout_sec:'Time to traverse the roundabout arc before exiting (sec)',
+  rb_reverse_speed:'Speed (m/s) during micro-reverse recovery when lane width is invalid in roundabout',
+  nominal_lane_width_min:'Minimum valid lane width (px in 320x240 frame). Below this flags invalid lane.',
+  nominal_lane_width_max:'Maximum valid lane width (px in 320x240 frame). Above this flags invalid lane (e.g. dark floor/shadow).',
   // Hill Climb
   hill_pitch_threshold:'Nose-up pitch (deg) to enter HILL climb mode',
   hill_pitch_hysteresis:'Hysteresis band (deg) - exits HILL when pitch drops below threshold minus this',
@@ -2095,6 +2098,7 @@ const PARAM_GROUPS = [
     'ipm_enabled','ipm_top_width_ratio','ipm_bottom_width_ratio',
     'kalman_enabled','kalman_process_noise','kalman_measurement_noise',
     'smoothing_alpha','dead_zone','hold_error_frames','error_decay_rate',
+    'nominal_lane_width_min','nominal_lane_width_max',
     'resize_width','print_debug','debug_print_rate','show_debug'
   ]},
   { node: 'auto_driver', label: 'Auto Driver', params: [
@@ -2103,7 +2107,7 @@ const PARAM_GROUPS = [
     'min_state_dwell_sec','publish_loop_stats',
     'pid_kp','pid_ki','pid_kd','pid_integral_max',
     'speed_error_scale','min_turn_speed','lane_steer_slew',
-    't_post_obstacle_sec','t_roundabout_sec'
+    't_post_obstacle_sec','t_roundabout_sec','rb_reverse_speed'
   ]},
   { node: 'auto_driver', label: '⛰ Hill Climb', params: [
     'hill_pitch_threshold','hill_pitch_hysteresis',

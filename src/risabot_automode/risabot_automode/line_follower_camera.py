@@ -38,7 +38,7 @@ from rclpy.qos import QoSPresetProfiles
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, Float32
 
-from .topics import CAMERA_DEBUG_LINE_TOPIC, CAMERA_IMAGE_TOPIC, LANE_ERROR_TOPIC, LANE_LOST_TOPIC
+from .topics import CAMERA_DEBUG_LINE_TOPIC, CAMERA_IMAGE_TOPIC, LANE_ERROR_TOPIC, LANE_LOST_TOPIC, LANE_WIDTH_INVALID_TOPIC
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -160,6 +160,9 @@ class LineFollowerCamera(Node):
         # Steering persistence on lane loss
         self.declare_parameter('hold_error_frames', 15)
         self.declare_parameter('error_decay_rate', 0.92)
+        # Nominal Lane Width bounds (for detecting invalid/shadow/floor lane width)
+        self.declare_parameter('nominal_lane_width_min', 45)
+        self.declare_parameter('nominal_lane_width_max', 140)
         # Display / debug
         self.declare_parameter('show_debug', False)
         self.declare_parameter('resize_width', 320)
@@ -200,6 +203,7 @@ class LineFollowerCamera(Node):
         # ── ROS publishers / subscribers ────────────────────────────────────
         self.error_pub = self.create_publisher(Float32, LANE_ERROR_TOPIC, 10)
         self.lane_lost_pub = self.create_publisher(Bool, LANE_LOST_TOPIC, 10)
+        self.lane_width_invalid_pub = self.create_publisher(Bool, LANE_WIDTH_INVALID_TOPIC, 10)
         self.debug_pub = self.create_publisher(Image, CAMERA_DEBUG_LINE_TOPIC, 10)
         self.bridge = CvBridge()
         self.color_sub = self.create_subscription(
@@ -249,6 +253,8 @@ class LineFollowerCamera(Node):
             'dead_zone':               float(self.get_parameter('dead_zone').value),
             'hold_error_frames':       int(self.get_parameter('hold_error_frames').value),
             'error_decay_rate':        float(self.get_parameter('error_decay_rate').value),
+            'nominal_lane_width_min':  int(self.get_parameter('nominal_lane_width_min').value),
+            'nominal_lane_width_max':  int(self.get_parameter('nominal_lane_width_max').value),
             'show_debug':              bool(self.get_parameter('show_debug').value),
             'resize_width':            int(self.get_parameter('resize_width').value),
             'print_debug':             bool(self.get_parameter('print_debug').value),
@@ -739,6 +745,20 @@ class LineFollowerCamera(Node):
 
             # ── 8. Publish ──────────────────────────────────────────────────
             self.error_pub.publish(Float32(data=self.lane_error))
+
+            # ── Check lane width validity against nominal bounds ─────────────
+            avg_width = sum(self.last_lane_widths.values()) / len(self.last_lane_widths) if len(self.last_lane_widths) > 0 else 0
+            w_min = int(self._param_cache['nominal_lane_width_min'])
+            w_max = int(self._param_cache['nominal_lane_width_max'])
+            lane_width_invalid = False
+            if valid_count > 0 and len(self.last_lane_widths) > 0:
+                if w_min > 0 and avg_width < w_min:
+                    lane_width_invalid = True
+                elif w_max > 0 and avg_width > w_max:
+                    lane_width_invalid = True
+            else:
+                lane_width_invalid = True
+            self.lane_width_invalid_pub.publish(Bool(data=lane_width_invalid))
 
             # ── 9. Debug visualisation ──────────────────────────────────────
             if self._param_cache['show_debug']:

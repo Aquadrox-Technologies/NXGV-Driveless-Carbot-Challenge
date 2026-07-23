@@ -39,6 +39,7 @@ from .topics import (
     ROUNDABOUT_SIGN_TOPIC,
     LANE_ERROR_TOPIC,
     LANE_LOST_TOPIC,
+    LANE_WIDTH_INVALID_TOPIC,
     IMU_PITCH_TOPIC,
     LOOP_STATS_TOPIC,
     OBSTACLE_CAMERA_TOPIC,
@@ -122,6 +123,7 @@ class AutoDriver(Node):
         self._hill_sign_last_time = 0.0  # monotonic time of last hill sign detection
         self._hill_primed = False         # True during the prime window after sign detection
         self.roundabout_sign_detected = False
+        self.lane_width_invalid = False
 
         # PID controller state
         self._pid_prev_error = 0.0
@@ -190,9 +192,10 @@ class AutoDriver(Node):
         # How much lane-follow steering to retain on descent (0 = go straight)
         self.declare_parameter('descent_steer_scale', 0.5)
 
-        # Challenge sequencing — time-based gating
+        # Challenge sequencing — time-based gating & roundabout recovery
         self.declare_parameter('t_post_obstacle_sec', 1.5)  # delay after obstacle clears before entering roundabout
         self.declare_parameter('t_roundabout_sec', 8.0)      # time to traverse roundabout arc
+        self.declare_parameter('rb_reverse_speed', -0.08)   # speed when micro-reversing to recover roundabout lane
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -307,6 +310,9 @@ class AutoDriver(Node):
         self.create_subscription(
             Bool, ROUNDABOUT_SIGN_TOPIC, self.roundabout_sign_callback, 10
         )
+        self.create_subscription(
+            Bool, LANE_WIDTH_INVALID_TOPIC, self.lane_width_invalid_callback, 10
+        )
         
         # Subscribe to Odometry (from servo_controller)
         self.odom_sub = self.create_subscription(
@@ -352,6 +358,7 @@ class AutoDriver(Node):
             # Challenge sequencing
             't_post_obstacle_sec': float(self.get_parameter('t_post_obstacle_sec').value),
             't_roundabout_sec':    float(self.get_parameter('t_roundabout_sec').value),
+            'rb_reverse_speed':    float(self.get_parameter('rb_reverse_speed').value),
             # Hill Climb
             'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
             'hill_pitch_hysteresis':          float(self.get_parameter('hill_pitch_hysteresis').value),
@@ -493,6 +500,10 @@ class AutoDriver(Node):
         self.roundabout_sign_detected = msg.data
         if msg.data and not self._boom_gate_armed:
             self.get_logger().info('🔄 Roundabout sign detected')
+
+    def lane_width_invalid_callback(self, msg: Bool) -> None:
+        """Receive lane width invalid flag from line_follower_camera."""
+        self.lane_width_invalid = msg.data
 
     def _publish_loop_stats(self) -> None:
         """Publish loop timing stats for diagnostics."""
@@ -793,7 +804,17 @@ class AutoDriver(Node):
             )
         ):
             target_state = ChallengeState.ROUNDABOUT
-            cmd = self._lane_follow_cmd()  # Roundabout has painted lane lines
+            if self.lane_width_invalid:
+                # Inconsistent lane width (e.g. locked onto dark floor/shadow) -> reverse micro-recovery
+                rev_spd = float(self._param_cache.get('rb_reverse_speed', -0.08))
+                cmd = Twist()
+                cmd.linear.x = rev_spd
+                # Reverse-steer opposite to current error direction to regain lane
+                cmd.angular.z = -0.4 if self.lane_error >= 0 else 0.4
+                self.stop_reason = 'ROUNDABOUT RECOVERY (INVALID LANE WIDTH)'
+            else:
+                cmd = self._lane_follow_cmd()  # Roundabout has painted lane lines
+
             # Check exit: dwell time expired
             if self.state == ChallengeState.ROUNDABOUT:
                 time_in_roundabout = time.monotonic() - self.state_entry_time

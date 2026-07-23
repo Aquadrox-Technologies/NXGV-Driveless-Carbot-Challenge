@@ -31,9 +31,10 @@ auto_driver:
     speed_error_scale: 1.5
     min_turn_speed: 0.4
     lane_steer_slew: 3.0         # max angular.z change per second (Cytron acceleration limit)
-    # Challenge 1→2 sequencing (time-based gating)
+    # Challenge 1→2 sequencing (time-based gating & recovery)
     t_post_obstacle_sec: 1.5     # re-center delay after obstacle clears (before roundabout)
     t_roundabout_sec: 8.0        # time inside roundabout before exiting
+    rb_reverse_speed: -0.08      # speed (m/s) during micro-reverse recovery when lane width is invalid in roundabout
     # ── Hill Climbing Mode (Challenge 5) ──────────────────────────────────
     # TUNING GUIDE:
     #   hill_pitch_threshold   : IMU pitch (deg) to enter HILL state. Start at 8-10°.
@@ -134,6 +135,9 @@ line_follower_camera:
     dead_zone: 0.05
     hold_error_frames: 15
     error_decay_rate: 0.92
+    # Nominal Lane Width Bounds (px in 320x240 frame)
+    nominal_lane_width_min: 45
+    nominal_lane_width_max: 140
     show_debug: false             # OFF by default — dashboard auto-enables for active view
     resize_width: 320
     print_debug: false
