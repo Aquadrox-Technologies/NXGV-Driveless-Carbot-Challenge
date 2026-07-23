@@ -34,9 +34,9 @@ auto_driver:
     # Challenge 1→2 sequencing (time-based gating & recovery)
     t_post_obstacle_sec: 1.5     # re-center delay after obstacle clears (before roundabout)
     t_roundabout_sec: 8.0        # time inside roundabout before exiting
-    rb_initial_reverse_sec: 1.0  # duration (s) of initial micro-reverse to gain turning space upon entering roundabout (0 = disabled)
-    rb_reverse_speed: -0.10      # speed (m/s) during micro-reverse in roundabout
-    rb_reverse_steer: -0.50      # steering rate (rad/s) during initial micro-reverse (outward turn)
+    rb_initial_reverse_sec: 0.0  # duration (s) of initial micro-reverse upon entering roundabout (0.0 = disabled, direct forward)
+    rb_reverse_speed: -0.10      # speed (m/s) during sharp arc micro-reverse recovery in roundabout
+    rb_reverse_steer: -0.50      # steering rate (rad/s) during sharp arc micro-reverse
     roundabout_steer_bias: 0.35  # steering curve bias (rad/s) added during roundabout forward arc
     # ── Hill Climbing Mode (Challenge 5) ──────────────────────────────────
     # TUNING GUIDE:

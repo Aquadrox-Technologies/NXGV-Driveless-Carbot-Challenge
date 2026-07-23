@@ -196,9 +196,9 @@ class AutoDriver(Node):
         # Challenge sequencing — time-based gating & roundabout recovery
         self.declare_parameter('t_post_obstacle_sec', 1.5)  # delay after obstacle clears before entering roundabout
         self.declare_parameter('t_roundabout_sec', 8.0)      # time to traverse roundabout arc
-        self.declare_parameter('rb_initial_reverse_sec', 1.0) # initial reverse duration on entering roundabout
-        self.declare_parameter('rb_reverse_speed', -0.10)   # speed when micro-reversing in roundabout
-        self.declare_parameter('rb_reverse_steer', -0.50)   # steering rate during initial reverse (rad/s)
+        self.declare_parameter('rb_initial_reverse_sec', 0.0) # initial reverse duration on entering roundabout (0.0 = disabled, direct forward)
+        self.declare_parameter('rb_reverse_speed', -0.10)   # speed when micro-reversing in sharp arc recovery
+        self.declare_parameter('rb_reverse_steer', -0.50)   # steering rate during sharp arc micro-reverse (rad/s)
         self.declare_parameter('roundabout_steer_bias', 0.35) # steering curve bias (rad/s) added during roundabout
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
