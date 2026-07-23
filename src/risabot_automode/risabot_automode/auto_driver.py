@@ -196,7 +196,9 @@ class AutoDriver(Node):
         # Challenge sequencing — time-based gating & roundabout recovery
         self.declare_parameter('t_post_obstacle_sec', 1.5)  # delay after obstacle clears before entering roundabout
         self.declare_parameter('t_roundabout_sec', 8.0)      # time to traverse roundabout arc
-        self.declare_parameter('rb_reverse_speed', -0.08)   # speed when micro-reversing to recover roundabout lane
+        self.declare_parameter('rb_initial_reverse_sec', 1.0) # initial reverse duration on entering roundabout
+        self.declare_parameter('rb_reverse_speed', -0.10)   # speed when micro-reversing in roundabout
+        self.declare_parameter('rb_reverse_steer', -0.50)   # steering rate during initial reverse (rad/s)
         self.declare_parameter('roundabout_steer_bias', 0.35) # steering curve bias (rad/s) added during roundabout
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
@@ -360,7 +362,9 @@ class AutoDriver(Node):
             # Challenge sequencing
             't_post_obstacle_sec': float(self.get_parameter('t_post_obstacle_sec').value),
             't_roundabout_sec':    float(self.get_parameter('t_roundabout_sec').value),
+            'rb_initial_reverse_sec': float(self.get_parameter('rb_initial_reverse_sec').value),
             'rb_reverse_speed':    float(self.get_parameter('rb_reverse_speed').value),
+            'rb_reverse_steer':    float(self.get_parameter('rb_reverse_steer').value),
             'roundabout_steer_bias': float(self.get_parameter('roundabout_steer_bias').value),
             # Hill Climb
             'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
@@ -818,23 +822,33 @@ class AutoDriver(Node):
             )
         ):
             target_state = ChallengeState.ROUNDABOUT
-            if self.lane_width_invalid:
-                # Inconsistent lane width (e.g. locked onto dark floor/shadow) -> reverse micro-recovery
-                rev_spd = float(self._param_cache.get('rb_reverse_speed', -0.08))
+            time_in_roundabout = time.monotonic() - self.state_entry_time if self.state == ChallengeState.ROUNDABOUT else 0.0
+            init_rev_sec = float(self._param_cache.get('rb_initial_reverse_sec', 1.0))
+
+            if time_in_roundabout < init_rev_sec:
+                # Phase 1: Initial micro-reverse to gain turning clearance for sharp roundabout entry
+                rev_spd = float(self._param_cache.get('rb_reverse_speed', -0.10))
+                rev_steer = float(self._param_cache.get('rb_reverse_steer', -0.50))
                 cmd = Twist()
                 cmd.linear.x = rev_spd
-                # Reverse-steer opposite to current error direction to regain lane
+                cmd.angular.z = rev_steer
+                self.stop_reason = f'ROUNDABOUT ENTRY REVERSE ({time_in_roundabout:.1f}s/{init_rev_sec:.1f}s)'
+            elif self.lane_width_invalid:
+                # Phase 2a: Micro-recovery if lane width is narrow/invalid (e.g. tight curb lock)
+                rev_spd = float(self._param_cache.get('rb_reverse_speed', -0.10))
+                cmd = Twist()
+                cmd.linear.x = rev_spd
                 cmd.angular.z = -0.4 if self.lane_error >= 0 else 0.4
-                self.stop_reason = 'ROUNDABOUT RECOVERY (INVALID LANE WIDTH)'
+                self.stop_reason = 'ROUNDABOUT RECOVERY (NARROW LANE)'
             else:
-                cmd = self._lane_follow_cmd()  # Roundabout has painted lane lines
-                # Apply curve steering bias so robot actively turns into the roundabout arc!
+                # Phase 2b: Forward arc navigation with curve steer bias
+                cmd = self._lane_follow_cmd()
                 rb_bias = float(self._param_cache.get('roundabout_steer_bias', 0.35))
                 cmd.angular.z += rb_bias
+                self.stop_reason = f'ROUNDABOUT FORWARD ({time_in_roundabout:.1f}s)'
 
-            # Check exit: dwell time expired
+            # Check exit: total roundabout time expired
             if self.state == ChallengeState.ROUNDABOUT:
-                time_in_roundabout = time.monotonic() - self.state_entry_time
                 if time_in_roundabout >= self._param_cache['t_roundabout_sec']:
                     target_state = ChallengeState.LANE_FOLLOW
                     cmd = self._lane_follow_cmd()
