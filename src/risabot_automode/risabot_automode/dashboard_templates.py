@@ -3821,3 +3821,9 @@ refreshLogSessions();
 </body>
 </html>"""
 
+TEACH_HTML = """<!DOCTYPE html>
+<html>
+<head><title>Teach Mode</title></head>
+<body><h1>Teach Mode</h1></body>
+</html>"""
+
