@@ -598,6 +598,17 @@ class SignageDetector(Node):
                     self.detected_tl_generic_consecutive == 0):
                 self.traffic_light_active = 'unknown'
 
+        # Immediately publish updated states
+        self.publish_states()
+
+    def publish_states(self) -> None:
+        """Publish filtered detection states to ROS2 topics."""
+        self.parking_pub.publish(Bool(data=self.parking_sign_active))
+        self.hill_pub.publish(Bool(data=self.hill_sign_active))
+        self.roundabout_pub.publish(Bool(data=self.roundabout_sign_active))
+        self.obstacle_pub.publish(Bool(data=self.obstacle_sign_active))
+        self.traffic_light_pub.publish(String(data=self.traffic_light_active))
+
     def classify_traffic_light_color(self, crop: np.ndarray) -> int:
         """Analyze cropped traffic light region in HSV to identify the active state.
 
@@ -700,6 +711,7 @@ class SignageDetector(Node):
         summary_text = (
             f"HILL: {'ACTIVE' if self.hill_sign_active else 'OFF'} "
             f"| PARK: {'ACTIVE' if self.parking_sign_active else 'OFF'} "
+            f"| RB: {'ACTIVE' if self.roundabout_sign_active else 'OFF'} "
             f"| TL: {self.traffic_light_active.upper()}"
         )
         cv2.putText(
@@ -708,7 +720,7 @@ class SignageDetector(Node):
             (10, 25),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
-            (0, 255, 0) if self.parking_sign_active or self.hill_sign_active else (255, 255, 255),
+            (0, 255, 0) if self.parking_sign_active or self.hill_sign_active or self.roundabout_sign_active else (255, 255, 255),
             2,
             lineType=cv2.LINE_AA
         )
