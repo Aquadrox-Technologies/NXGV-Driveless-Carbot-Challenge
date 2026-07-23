@@ -128,6 +128,7 @@ class AutoDriver(Node):
         self._rb_stuck_consecutive = 0
         self._rb_recovering = False
         self._rb_recovery_start = 0.0
+        self._rb_last_stuck_steer_dir = -1.0  # -1.0 = left turn, +1.0 = right turn
 
         # PID controller state
         self._pid_prev_error = 0.0
@@ -592,6 +593,7 @@ class AutoDriver(Node):
         self.roundabout_sign_detected = False
         self._rb_stuck_consecutive = 0
         self._rb_recovering = False
+        self._rb_last_stuck_steer_dir = -1.0
         self.distance = 0.0
         self.distance_past_light = 0.0
         self.state_entry_time = time.monotonic()
@@ -853,17 +855,21 @@ class AutoDriver(Node):
                 self.stop_reason = f'ROUNDABOUT ENTRY REVERSE ({time_in_roundabout:.1f}s/{init_rev_sec:.1f}s)'
             elif self._rb_recovering:
                 # Phase 2a: Actively backing off because the chassis hit its
-                # steering limit and the lane error wasn't converging —
-                # i.e. it physically can't turn tight enough for this arc
-                # in one continuous pass. Reverse briefly to regain room,
-                # then let it re-attempt the turn from Phase 2b.
+                # steering limit and the lane error wasn't converging.
+                # To swing the camera/nose TOWARDS the turn lane while backing
+                # up, reverse steering MUST be OPPOSITE to forward steering!
+                #   - Turning LEFT (cmd.angular.z < 0): reverse with RIGHT steer (>0) -> tail right, nose swings LEFT to see left lane!
+                #   - Turning RIGHT (cmd.angular.z > 0): reverse with LEFT steer (<0) -> tail left, nose swings RIGHT to see right lane!
                 rev_spd = float(self._param_cache.get('rb_reverse_speed', -0.10))
-                rev_steer = float(self._param_cache.get('rb_reverse_steer', -0.50))
+                rev_steer_mag = abs(float(self._param_cache.get('rb_reverse_steer', 0.50)))
+                stuck_dir = getattr(self, '_rb_last_stuck_steer_dir', -1.0)
+                rev_steer = -stuck_dir * rev_steer_mag
+
                 cmd = Twist()
                 cmd.linear.x = rev_spd
                 cmd.angular.z = rev_steer
                 elapsed = time.monotonic() - self._rb_recovery_start
-                self.stop_reason = f'ROUNDABOUT RECOVERY ({elapsed:.1f}s)'
+                self.stop_reason = f'ROUNDABOUT RECOVERY ({elapsed:.1f}s, steer={rev_steer:+.2f})'
                 if elapsed >= self._param_cache['rb_recovery_duration_sec']:
                     self._rb_recovering = False
                     self._rb_stuck_consecutive = 0
@@ -890,6 +896,7 @@ class AutoDriver(Node):
                 if self._rb_stuck_consecutive >= frames_needed:
                     self._rb_recovering = True
                     self._rb_recovery_start = time.monotonic()
+                    self._rb_last_stuck_steer_dir = 1.0 if cmd.angular.z >= 0 else -1.0
                     self._rb_stuck_consecutive = 0
 
             # Check exit: total roundabout time expired
