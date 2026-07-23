@@ -125,6 +125,9 @@ class AutoDriver(Node):
         self.roundabout_sign_detected = False
         self._roundabout_sign_latched = False
         self.lane_width_invalid = False
+        self._rb_stuck_consecutive = 0
+        self._rb_recovering = False
+        self._rb_recovery_start = 0.0
 
         # PID controller state
         self._pid_prev_error = 0.0
@@ -199,7 +202,16 @@ class AutoDriver(Node):
         self.declare_parameter('rb_initial_reverse_sec', 0.0) # initial reverse duration on entering roundabout (0.0 = disabled, direct forward)
         self.declare_parameter('rb_reverse_speed', -0.10)   # speed when micro-reversing in sharp arc recovery
         self.declare_parameter('rb_reverse_steer', -0.50)   # steering rate during sharp arc micro-reverse (rad/s)
-        self.declare_parameter('roundabout_steer_bias', 0.35) # steering curve bias (rad/s) added during roundabout
+        # Sharp-arc detection: trigger a brief reverse when the PID is
+        # already commanding near-max steering AND the lane error still
+        # isn't shrinking — i.e. the chassis genuinely can't turn tight
+        # enough for this arc in one continuous pass. This replaces
+        # lane_width_invalid, which measures lane-width sanity, not
+        # curvature, and rarely correlates with an actual sharp turn.
+        self.declare_parameter('rb_stuck_angular_thresh', 1.6)  # |angular.z| considered "pinned near max" (clamp is ±2.0)
+        self.declare_parameter('rb_stuck_error_thresh', 0.15)   # lane error still considered "not converging"
+        self.declare_parameter('rb_stuck_frames_trigger', 8)    # consecutive stuck ticks before triggering recovery
+        self.declare_parameter('rb_recovery_duration_sec', 0.6) # how long the reverse recovery maneuver runs
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -323,7 +335,6 @@ class AutoDriver(Node):
             Odometry, ODOM_TOPIC, self.odom_callback, 10
         )
 
-
         # Manual state override (for testing)
         self.create_subscription(
             String, SET_CHALLENGE_TOPIC, self.set_challenge_callback, 10
@@ -334,8 +345,6 @@ class AutoDriver(Node):
 
         self.get_logger().info(f'State: {self.state.name}')
         self.create_timer(1.0, self._publish_loop_stats)
-
-
 
     def _update_param_cache(self) -> None:
         """Cache frequently used parameters to avoid per-loop lookups."""
@@ -365,7 +374,10 @@ class AutoDriver(Node):
             'rb_initial_reverse_sec': float(self.get_parameter('rb_initial_reverse_sec').value),
             'rb_reverse_speed':    float(self.get_parameter('rb_reverse_speed').value),
             'rb_reverse_steer':    float(self.get_parameter('rb_reverse_steer').value),
-            'roundabout_steer_bias': float(self.get_parameter('roundabout_steer_bias').value),
+            'rb_stuck_angular_thresh': float(self.get_parameter('rb_stuck_angular_thresh').value),
+            'rb_stuck_error_thresh':   float(self.get_parameter('rb_stuck_error_thresh').value),
+            'rb_stuck_frames_trigger': int(self.get_parameter('rb_stuck_frames_trigger').value),
+            'rb_recovery_duration_sec': float(self.get_parameter('rb_recovery_duration_sec').value),
             # Hill Climb
             'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
             'hill_pitch_hysteresis':          float(self.get_parameter('hill_pitch_hysteresis').value),
@@ -574,6 +586,8 @@ class AutoDriver(Node):
         self._obs_cleared_time = 0.0
         self._obs_was_active = False
         self.roundabout_sign_detected = False
+        self._rb_stuck_consecutive = 0
+        self._rb_recovering = False
         self.distance = 0.0
         self.distance_past_light = 0.0
         self.state_entry_time = time.monotonic()
@@ -823,29 +837,56 @@ class AutoDriver(Node):
         ):
             target_state = ChallengeState.ROUNDABOUT
             time_in_roundabout = time.monotonic() - self.state_entry_time if self.state == ChallengeState.ROUNDABOUT else 0.0
-            init_rev_sec = float(self._param_cache.get('rb_initial_reverse_sec', 1.0))
+            init_rev_sec = float(self._param_cache.get('rb_initial_reverse_sec', 0.0))
 
             if time_in_roundabout < init_rev_sec:
-                # Phase 1: Initial micro-reverse to gain turning clearance for sharp roundabout entry
+                # Phase 1: Optional initial micro-reverse on entry (0.0 = disabled)
                 rev_spd = float(self._param_cache.get('rb_reverse_speed', -0.10))
                 rev_steer = float(self._param_cache.get('rb_reverse_steer', -0.50))
                 cmd = Twist()
                 cmd.linear.x = rev_spd
                 cmd.angular.z = rev_steer
                 self.stop_reason = f'ROUNDABOUT ENTRY REVERSE ({time_in_roundabout:.1f}s/{init_rev_sec:.1f}s)'
-            elif self.lane_width_invalid:
-                # Phase 2a: Micro-recovery if lane width is narrow/invalid (e.g. tight curb lock)
+            elif self._rb_recovering:
+                # Phase 2a: Actively backing off because the chassis hit its
+                # steering limit and the lane error wasn't converging —
+                # i.e. it physically can't turn tight enough for this arc
+                # in one continuous pass. Reverse briefly to regain room,
+                # then let it re-attempt the turn from Phase 2b.
                 rev_spd = float(self._param_cache.get('rb_reverse_speed', -0.10))
+                rev_steer = float(self._param_cache.get('rb_reverse_steer', -0.50))
                 cmd = Twist()
                 cmd.linear.x = rev_spd
-                cmd.angular.z = -0.4 if self.lane_error >= 0 else 0.4
-                self.stop_reason = 'ROUNDABOUT RECOVERY (NARROW LANE)'
+                cmd.angular.z = rev_steer
+                elapsed = time.monotonic() - self._rb_recovery_start
+                self.stop_reason = f'ROUNDABOUT RECOVERY ({elapsed:.1f}s)'
+                if elapsed >= self._param_cache['rb_recovery_duration_sec']:
+                    self._rb_recovering = False
+                    self._rb_stuck_consecutive = 0
             else:
-                # Phase 2b: Forward arc navigation with curve steer bias
+                # Phase 2b: Normal forward lane-follow through the arc —
+                # identical to LANE_FOLLOW, no artificial bias added.
                 cmd = self._lane_follow_cmd()
-                rb_bias = float(self._param_cache.get('roundabout_steer_bias', 0.35))
-                cmd.angular.z += rb_bias
                 self.stop_reason = f'ROUNDABOUT FORWARD ({time_in_roundabout:.1f}s)'
+
+                # Sharp-arc detection: PID is pinned near max steering AND
+                # the lane error still isn't shrinking → the chassis is
+                # genuinely out of turning authority for this curve, not
+                # just mid-correction. Count consecutive ticks like this
+                # before triggering recovery, so a single noisy frame
+                # doesn't cause a false trigger.
+                stuck_thresh = self._param_cache['rb_stuck_angular_thresh']
+                error_thresh = self._param_cache['rb_stuck_error_thresh']
+                frames_needed = self._param_cache['rb_stuck_frames_trigger']
+                if abs(cmd.angular.z) >= stuck_thresh and abs(self.lane_error) > error_thresh:
+                    self._rb_stuck_consecutive += 1
+                else:
+                    self._rb_stuck_consecutive = 0
+
+                if self._rb_stuck_consecutive >= frames_needed:
+                    self._rb_recovering = True
+                    self._rb_recovery_start = time.monotonic()
+                    self._rb_stuck_consecutive = 0
 
             # Check exit: total roundabout time expired
             if self.state == ChallengeState.ROUNDABOUT:
@@ -854,6 +895,8 @@ class AutoDriver(Node):
                     cmd = self._lane_follow_cmd()
                     self._boom_gate_armed = True
                     self._roundabout_sign_latched = False
+                    self._rb_recovering = False
+                    self._rb_stuck_consecutive = 0
                     self._obs_cleared_time = 0.0  # prevent re-entry
                     self.get_logger().info('Roundabout complete → boom gate armed')
 

@@ -1989,8 +1989,11 @@ const PARAM_TIPS = {
   t_roundabout_sec:'Time to traverse the roundabout arc before exiting (sec)',
   rb_initial_reverse_sec:'Duration (sec) of initial micro-reverse maneuver to gain turning clearance upon entering roundabout (0 = disabled)',
   rb_reverse_speed:'Speed (m/s) during micro-reverse in roundabout',
-  rb_reverse_steer:'Steering rate (rad/s) during initial micro-reverse (outward turn)',
-  roundabout_steer_bias:'Steering curve bias (rad/s) added during roundabout state so robot curves into roundabout loop',
+  rb_reverse_steer:'Steering rate (rad/s) during sharp-arc micro-reverse (outward turn)',
+  rb_stuck_angular_thresh:'Steering angular velocity threshold (rad/s) considered pinned near max steering clamp',
+  rb_stuck_error_thresh:'Lane error threshold considered not converging',
+  rb_stuck_frames_trigger:'Consecutive stuck ticks required before triggering reverse recovery',
+  rb_recovery_duration_sec:'Duration (sec) of the reverse recovery maneuver',
   nominal_lane_width_min:'Minimum valid lane width (px in 320x240 frame). Below this flags invalid lane.',
   nominal_lane_width_max:'Maximum valid lane width (px in 320x240 frame). Above this flags invalid lane (e.g. dark floor/shadow).',
   // Hill Climb
@@ -2065,7 +2068,8 @@ const PARAM_GROUPS = [
     'min_state_dwell_sec','publish_loop_stats',
     'pid_kp','pid_ki','pid_kd','pid_integral_max',
     'speed_error_scale','min_turn_speed','lane_steer_slew',
-    't_post_obstacle_sec','t_roundabout_sec','rb_initial_reverse_sec','rb_reverse_speed','rb_reverse_steer','roundabout_steer_bias'
+    't_post_obstacle_sec','t_roundabout_sec','rb_initial_reverse_sec','rb_reverse_speed','rb_reverse_steer',
+    'rb_stuck_angular_thresh','rb_stuck_error_thresh','rb_stuck_frames_trigger','rb_recovery_duration_sec'
   ]},
   { node: 'auto_driver', label: '⛰ Hill Climb', params: [
     'hill_pitch_threshold','hill_pitch_hysteresis',
