@@ -208,7 +208,11 @@ class AutoDriver(Node):
         # enough for this arc in one continuous pass. This replaces
         # lane_width_invalid, which measures lane-width sanity, not
         # curvature, and rarely correlates with an actual sharp turn.
-        self.declare_parameter('rb_stuck_angular_thresh', 1.6)  # |angular.z| considered "pinned near max" (clamp is ±2.0)
+        # NOTE: angular.z of 1.0 already equals steering_max_deg (full physical
+        # lock) — process_twist() clamps desired_wheel_deg at steering_max_deg,
+        # so anything above 1.0 is unreachable/wasted range. This threshold
+        # must therefore sit inside 0-1.0, not the PID's raw ±2.0 math clamp.
+        self.declare_parameter('rb_stuck_angular_thresh', 0.75)  # ~37.5° of 50° max — comfortably "hard lock"
         self.declare_parameter('rb_stuck_error_thresh', 0.15)   # lane error still considered "not converging"
         self.declare_parameter('rb_stuck_frames_trigger', 8)    # consecutive stuck ticks before triggering recovery
         self.declare_parameter('rb_recovery_duration_sec', 0.6) # how long the reverse recovery maneuver runs

@@ -529,9 +529,9 @@ class LineFollowerCamera(Node):
             left_points.append((int(left_x), y_in_crop))
             right_points.append((int(right_x), y_in_crop))
             center_points.append((int(center_x), y_in_crop))
-            # Weight: bottom scanlines (close to robot) are more reliable
-            # y_frac goes from 0.5/n (bottom) to ~1.0 (top), invert for weight
-            scanline_weights.append(1.0 - y_frac + 0.5)
+            # Weight: bottom scanlines (close to robot) are much more reliable on curves.
+            # Use steep decay so far-away scanlines looking off-track/at walls have negligible impact.
+            scanline_weights.append((1.0 - y_frac) ** 2.5)
 
         # If completely lost, clear expectations so it resets next frame
         if valid_count == 0:
