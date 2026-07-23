@@ -35,6 +35,7 @@ auto_driver:
     t_post_obstacle_sec: 1.5     # re-center delay after obstacle clears (before roundabout)
     t_roundabout_sec: 8.0        # time inside roundabout before exiting
     rb_reverse_speed: -0.08      # speed (m/s) during micro-reverse recovery when lane width is invalid in roundabout
+    roundabout_steer_bias: 0.35  # steering curve bias (rad/s) added during roundabout
     # ── Hill Climbing Mode (Challenge 5) ──────────────────────────────────
     # TUNING GUIDE:
     #   hill_pitch_threshold   : IMU pitch (deg) to enter HILL state. Start at 8-10°.

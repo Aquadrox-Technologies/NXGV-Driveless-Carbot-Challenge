@@ -1988,6 +1988,7 @@ const PARAM_TIPS = {
   t_post_obstacle_sec:'Lane-follow delay after obstacle clears before entering roundabout (sec)',
   t_roundabout_sec:'Time to traverse the roundabout arc before exiting (sec)',
   rb_reverse_speed:'Speed (m/s) during micro-reverse recovery when lane width is invalid in roundabout',
+  roundabout_steer_bias:'Steering curve bias (rad/s) added during roundabout state so robot curves into roundabout loop',
   nominal_lane_width_min:'Minimum valid lane width (px in 320x240 frame). Below this flags invalid lane.',
   nominal_lane_width_max:'Maximum valid lane width (px in 320x240 frame). Above this flags invalid lane (e.g. dark floor/shadow).',
   // Hill Climb
@@ -2062,7 +2063,7 @@ const PARAM_GROUPS = [
     'min_state_dwell_sec','publish_loop_stats',
     'pid_kp','pid_ki','pid_kd','pid_integral_max',
     'speed_error_scale','min_turn_speed','lane_steer_slew',
-    't_post_obstacle_sec','t_roundabout_sec','rb_reverse_speed'
+    't_post_obstacle_sec','t_roundabout_sec','rb_reverse_speed','roundabout_steer_bias'
   ]},
   { node: 'auto_driver', label: '⛰ Hill Climb', params: [
     'hill_pitch_threshold','hill_pitch_hysteresis',

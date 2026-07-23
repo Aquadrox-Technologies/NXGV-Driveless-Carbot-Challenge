@@ -197,6 +197,7 @@ class AutoDriver(Node):
         self.declare_parameter('t_post_obstacle_sec', 1.5)  # delay after obstacle clears before entering roundabout
         self.declare_parameter('t_roundabout_sec', 8.0)      # time to traverse roundabout arc
         self.declare_parameter('rb_reverse_speed', -0.08)   # speed when micro-reversing to recover roundabout lane
+        self.declare_parameter('roundabout_steer_bias', 0.35) # steering curve bias (rad/s) added during roundabout
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -360,6 +361,7 @@ class AutoDriver(Node):
             't_post_obstacle_sec': float(self.get_parameter('t_post_obstacle_sec').value),
             't_roundabout_sec':    float(self.get_parameter('t_roundabout_sec').value),
             'rb_reverse_speed':    float(self.get_parameter('rb_reverse_speed').value),
+            'roundabout_steer_bias': float(self.get_parameter('roundabout_steer_bias').value),
             # Hill Climb
             'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
             'hill_pitch_hysteresis':          float(self.get_parameter('hill_pitch_hysteresis').value),
@@ -826,6 +828,9 @@ class AutoDriver(Node):
                 self.stop_reason = 'ROUNDABOUT RECOVERY (INVALID LANE WIDTH)'
             else:
                 cmd = self._lane_follow_cmd()  # Roundabout has painted lane lines
+                # Apply curve steering bias so robot actively turns into the roundabout arc!
+                rb_bias = float(self._param_cache.get('roundabout_steer_bias', 0.35))
+                cmd.angular.z += rb_bias
 
             # Check exit: dwell time expired
             if self.state == ChallengeState.ROUNDABOUT:
