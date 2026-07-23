@@ -1996,6 +1996,7 @@ const PARAM_TIPS = {
   rb_recovery_duration_sec:'Duration (sec) of the reverse recovery maneuver',
   nominal_lane_width_min:'Minimum valid lane width (px in 320x240 frame). Below this flags invalid lane.',
   nominal_lane_width_max:'Maximum valid lane width (px in 320x240 frame). Above this flags invalid lane (e.g. dark floor/shadow).',
+  scanline_outlier_px:'Max x-distance (px) from median frame center before scanline is rejected as wall/floor outlier',
   // Hill Climb
   hill_pitch_threshold:'Nose-up pitch (deg) to enter HILL climb mode',
   hill_pitch_hysteresis:'Hysteresis band (deg) - exits HILL when pitch drops below threshold minus this',
@@ -2059,7 +2060,7 @@ const PARAM_GROUPS = [
     'ipm_enabled','ipm_top_width_ratio','ipm_bottom_width_ratio',
     'kalman_enabled','kalman_process_noise','kalman_measurement_noise',
     'smoothing_alpha','dead_zone','hold_error_frames','error_decay_rate',
-    'nominal_lane_width_min','nominal_lane_width_max',
+    'nominal_lane_width_min','nominal_lane_width_max','scanline_outlier_px',
     'resize_width','print_debug','debug_print_rate','show_debug'
   ]},
   { node: 'auto_driver', label: 'Auto Driver', params: [
