@@ -57,9 +57,7 @@ class SignageDetector(Node):
         self.declare_parameter('min_parking_sign_width',  0)
         self.declare_parameter('min_parking_sign_height', 0)
         self.declare_parameter('min_roundabout_sign_width',  0)
-        self.declare_parameter('max_roundabout_sign_width',  0)
         self.declare_parameter('min_roundabout_sign_height', 0)
-        self.declare_parameter('max_roundabout_sign_height', 0)
 
         # ── Per-class confidence thresholds (ROS2 params — tunable from dashboard) ─
         self.declare_parameter('thresh_bumper',      0.15)   # Class 0 Bumper_signboard
@@ -165,9 +163,7 @@ class SignageDetector(Node):
             'min_parking_sign_width':  int(self.get_parameter('min_parking_sign_width').value),
             'min_parking_sign_height': int(self.get_parameter('min_parking_sign_height').value),
             'min_roundabout_sign_width':  int(self.get_parameter('min_roundabout_sign_width').value),
-            'max_roundabout_sign_width':  int(self.get_parameter('max_roundabout_sign_width').value),
             'min_roundabout_sign_height': int(self.get_parameter('min_roundabout_sign_height').value),
-            'max_roundabout_sign_height': int(self.get_parameter('max_roundabout_sign_height').value),
             # Per-class thresholds
             'thresh_bumper':     float(self.get_parameter('thresh_bumper').value),
             'thresh_hill':       float(self.get_parameter('thresh_hill').value),
@@ -537,18 +533,14 @@ class SignageDetector(Node):
         # 3.5. Roundabout sign (Class 5: Roundabout_signboard)
         saw_roundabout = False
         min_r_width = int(self._param_cache['min_roundabout_sign_width'])
-        max_r_width = int(self._param_cache['max_roundabout_sign_width'])
         min_r_height = int(self._param_cache['min_roundabout_sign_height'])
-        max_r_height = int(self._param_cache['max_roundabout_sign_height'])
 
         for idx, cid in enumerate(class_ids):
             if cid == 5:  # Roundabout_signboard
                 box = boxes[idx]
                 box_w = box[2] - box[0]
                 box_h = box[3] - box[1]
-                w_ok = (min_r_width == 0 or box_w >= min_r_width) and (max_r_width == 0 or box_w <= max_r_width)
-                h_ok = (min_r_height == 0 or box_h >= min_r_height) and (max_r_height == 0 or box_h <= max_r_height)
-                if w_ok and h_ok:
+                if (min_r_width == 0 or box_w >= min_r_width) and (min_r_height == 0 or box_h >= min_r_height):
                     saw_roundabout = True
                     break
 

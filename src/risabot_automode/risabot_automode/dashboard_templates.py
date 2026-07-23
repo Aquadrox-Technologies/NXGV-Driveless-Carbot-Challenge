@@ -2021,9 +2021,7 @@ const PARAM_TIPS = {
   min_parking_sign_width:'Min pixel width for parking sign trigger (0 = disabled)',
   min_parking_sign_height:'Min pixel height for parking sign trigger (0 = disabled)',
   min_roundabout_sign_width:'Min pixel width for roundabout sign trigger (0 = disabled)',
-  max_roundabout_sign_width:'Max pixel width for roundabout sign trigger (0 = no max cap)',
   min_roundabout_sign_height:'Min pixel height for roundabout sign trigger (0 = disabled)',
-  max_roundabout_sign_height:'Max pixel height for roundabout sign trigger (0 = no max cap)',
   // Per-class confidence thresholds
   thresh_bumper:'Confidence threshold for Bumper_signboard (class 0)',
   thresh_hill:'Confidence threshold for Hill_signboard (class 1)',
@@ -2128,8 +2126,7 @@ const PARAM_GROUPS = [
   { node: 'signage_detector', label: 'Signage Detector (BPU)', params: [
     'model_path','conf_threshold','iou_threshold',
     'min_parking_sign_width','min_parking_sign_height',
-    'min_roundabout_sign_width','max_roundabout_sign_width',
-    'min_roundabout_sign_height','max_roundabout_sign_height',
+    'min_roundabout_sign_width','min_roundabout_sign_height',
     'heartbeat_sec','show_debug',
     'thresh_bumper','thresh_hill','thresh_obstacle',
     'thresh_parallelp','thresh_perpendp','thresh_roundabout',
