@@ -1404,67 +1404,6 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <h3>⚙️ Parameter Tuning</h3>
   <div class="note">💡 Changes apply instantly to nodes but revert to defaults upon restart.</div>
   
-  <!-- Quick Tuner for Roundabout & Parking Bounding Box Sizes -->
-  <div class="quick-tune-box" style="background:rgba(30,102,245,0.06); border:1px solid rgba(30,102,245,0.2); border-radius:8px; padding:12px; margin-bottom:14px;">
-    <div style="font-size:0.85em; font-weight:700; color:var(--accent); margin-bottom:8px;">🎯 Signboard Size Quick-Tuner</div>
-    
-    <!-- Roundabout Sign Section -->
-    <div style="font-size:0.75em; font-weight:700; color:var(--text); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">🔄 Roundabout Sign</div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.75em; margin-bottom:6px;">
-      <div>
-        <label style="display:block; color:var(--muted); margin-bottom:2px;">Min Width (px)</label>
-        <div style="display:flex; gap:4px;">
-          <input type="number" id="quick_rb_min_w" value="0" placeholder="e.g. 70" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
-          <button onclick="setParam('signage_detector','min_roundabout_sign_width', document.getElementById('quick_rb_min_w').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
-        </div>
-      </div>
-      <div>
-        <label style="display:block; color:var(--muted); margin-bottom:2px;">Max Width (px)</label>
-        <div style="display:flex; gap:4px;">
-          <input type="number" id="quick_rb_max_w" value="0" placeholder="e.g. 130" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
-          <button onclick="setParam('signage_detector','max_roundabout_sign_width', document.getElementById('quick_rb_max_w').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
-        </div>
-      </div>
-    </div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.75em; margin-bottom:10px;">
-      <div>
-        <label style="display:block; color:var(--muted); margin-bottom:2px;">Min Height (px)</label>
-        <div style="display:flex; gap:4px;">
-          <input type="number" id="quick_rb_min_h" value="0" placeholder="e.g. 70" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
-          <button onclick="setParam('signage_detector','min_roundabout_sign_height', document.getElementById('quick_rb_min_h').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
-        </div>
-      </div>
-      <div>
-        <label style="display:block; color:var(--muted); margin-bottom:2px;">Max Height (px)</label>
-        <div style="display:flex; gap:4px;">
-          <input type="number" id="quick_rb_max_h" value="0" placeholder="e.g. 130" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
-          <button onclick="setParam('signage_detector','max_roundabout_sign_height', document.getElementById('quick_rb_max_h').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Parking Sign Section -->
-    <div style="font-size:0.75em; font-weight:700; color:var(--text); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;">🅿️ Parking Sign</div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:0.75em;">
-      <div>
-        <label style="display:block; color:var(--muted); margin-bottom:2px;">Min Width (px)</label>
-        <div style="display:flex; gap:4px;">
-          <input type="number" id="quick_park_min_w" value="0" placeholder="e.g. 80" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
-          <button onclick="setParam('signage_detector','min_parking_sign_width', document.getElementById('quick_park_min_w').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
-        </div>
-      </div>
-      <div>
-        <label style="display:block; color:var(--muted); margin-bottom:2px;">Min Height (px)</label>
-        <div style="display:flex; gap:4px;">
-          <input type="number" id="quick_park_min_h" value="0" placeholder="e.g. 80" style="width:100%; padding:4px 6px; border-radius:4px; border:1px solid rgba(0,0,0,0.15); font-size:0.85em; background:var(--card); color:var(--text);" />
-          <button onclick="setParam('signage_detector','min_parking_sign_height', document.getElementById('quick_park_min_h').value)" style="padding:4px 10px; border-radius:4px; background:var(--accent); color:#fff; border:none; font-weight:700; cursor:pointer;">Set</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="quickTuneStatus" style="font-size:0.75em; margin-top:6px; min-height:16px; font-weight:600;"></div>
-  </div>
-
   <div id="paramContainer"></div>
   <button class="param-save-defaults-btn" id="saveDefaultsBtn" onclick="saveDefaults()">💾 Save Current as Default</button>
   <div id="saveDefaultsStatus" style="text-align:center;font-size:0.78em;margin-top:6px;min-height:20px;"></div>
