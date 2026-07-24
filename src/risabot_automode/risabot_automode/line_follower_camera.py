@@ -189,17 +189,6 @@ class LineFollowerCamera(Node):
         self.declare_parameter('resize_width', 320)
         self.declare_parameter('print_debug', False)
         self.declare_parameter('debug_print_rate', 0.5)
-        # ── Upper-scanline cap ──────────────────────────────────────────────
-        # Restricts how far up (far-field) scanlines reach inside the crop.
-        # 0.60 = only the bottom 60% of the crop is sampled, keeping all
-        # scanlines close enough to the robot that perspective distortion and
-        # off-track features (walls, roundabout hub, floor) are avoided.
-        # Lower values = safer but shorter look-ahead. Range: 0.40–1.0.
-        self.declare_parameter('max_scanline_frac', 0.60)
-        # Hard minimum pixel width for any accepted lane blob.
-        # Rejects tiny spurious blobs (tile cracks, shadow edges) that cause
-        # the reported lane width to collapse to abnormal values (e.g. 18cm).
-        self.declare_parameter('min_lane_width_px', 30)
 
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -293,8 +282,6 @@ class LineFollowerCamera(Node):
             'resize_width':            int(self.get_parameter('resize_width').value),
             'print_debug':             bool(self.get_parameter('print_debug').value),
             'debug_print_rate':        float(self.get_parameter('debug_print_rate').value),
-            'max_scanline_frac':        float(self.get_parameter('max_scanline_frac').value),
-            'min_lane_width_px':        int(self.get_parameter('min_lane_width_px').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -419,12 +406,8 @@ class LineFollowerCamera(Node):
             expected_left = self._expected_left
             expected_right = self._expected_right
 
-        # FIX-1: Cap scanlines to the bottom fraction of the crop.
-        # Prevents upper/far-field scanlines from locking onto walls, the
-        # roundabout hub ring, or the floor boundary during a curve.
-        max_frac = self._param_cache.get('max_scanline_frac', 0.60)
         for i in range(n_scanlines):
-            y_frac = (i + 0.5) / n_scanlines * max_frac
+            y_frac = (i + 0.5) / n_scanlines
             y_in_crop = int(crop_h * (1.0 - y_frac))
             y_in_crop = max(0, min(crop_h - 1, y_in_crop))
 
@@ -448,22 +431,11 @@ class LineFollowerCamera(Node):
                     # doorway briefly in frame is much wider/narrower than the lane).
                     # Skipped on the very first lock or if the previous locked width
                     # was too small (e.g. < 40px) to allow escaping a collapsed trap.
-                    # FIX-2a: Tighter width consistency gate.
-                    # Previous tolerance (0.5–1.8) allowed width to halve or nearly
-                    # double in a single frame, letting narrow spurious blobs pass.
-                    # New tolerance (0.65–1.50) still handles real curves but rejects
-                    # sudden collapses (e.g. 60 cm → 18 cm in one frame).
                     width_ok = (
                         expected_width is None
                         or expected_width <= 40
-                        or 0.65 <= (cand_width / expected_width) <= 1.50
+                        or 0.5 <= (cand_width / expected_width) <= 1.8
                     )
-                    # FIX-2b: Hard minimum pixel width gate.
-                    # No matter what the history says, never accept a blob that is
-                    # physically narrower than min_lane_width_px pixels.
-                    min_w_px = self._param_cache.get('min_lane_width_px', 30)
-                    if width_ok and cand_width < min_w_px:
-                        width_ok = False
                     if width_ok:
                         left_x = best[1]   # left edge of lane
                         right_x = best[2]  # right edge of lane
@@ -579,13 +551,13 @@ class LineFollowerCamera(Node):
             left_points.append((int(left_x), y_in_crop))
             right_points.append((int(right_x), y_in_crop))
             center_points.append((int(center_x), y_in_crop))
-            # FIX-3: Steeper weight falloff for upper scanlines.
-            # Exponent raised from 0.5 → 2.0 (quadratic dropoff).
-            # Bottom scanline weight: (0.95)^2 + 0.05 ≈ 0.95  (essentially unchanged)
-            # Top  scanline weight:   (0.05)^2 + 0.05 ≈ 0.053 (was 0.37 — 7× reduction)
-            # This makes a single far-field wall lock far less able to corrupt
-            # the weighted average even without the outlier filter firing.
-            scanline_weights.append((1.0 - y_frac) ** 2.0 + 0.05)
+            # Weight: bottom scanlines (close to robot) are more
+            # reliable than upper/far ones. Sqrt falloff gives bottom ~2.4x
+            # advantage over top (was 6.9x squared) — enough to prefer close
+            # scanlines without letting 3 wrong bottom ones crush 4 correct
+            # middle ones during an overshoot when the camera tilts toward
+            # the outer wall.
+            scanline_weights.append((1.0 - y_frac) ** 0.5 + 0.15)
 
         # If completely lost, clear expectations so it resets next frame
         if valid_count == 0:

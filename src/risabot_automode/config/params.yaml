@@ -160,20 +160,6 @@ line_follower_camera:
     resize_width: 320
     print_debug: false
     debug_print_rate: 0.5
-    # ── Scanline reach cap (FIX-1) ────────────────────────────────────────────
-    # Limits how far up into the crop scanlines are placed.
-    # 1.0 = full crop height used (original behaviour, most false-lock risk)
-    # 0.75 = only bottom 75% used — good balance: avoids far-field walls/floor
-    #         while still giving enough look-ahead to detect curves
-    # 0.60 = more conservative; use if upper scanlines still grab walls
-    # 0.40 = very conservative; short look-ahead, good for slow tight-corner runs
-    # Tune UP if the robot cuts corners; tune DOWN if upper scanlines grab walls.
-    max_scanline_frac: 0.75
-    # ── Hard minimum lane-blob width (FIX-2b) ────────────────────────────────
-    # Any detected blob narrower than this (pixels) is rejected as noise/seam.
-    # 30px ≈ ~4 cm in the bottom of the crop at 320px width.
-    # Raise to 40 if thin floor seams are still causing W-collapse.
-    min_lane_width_px: 30
 
 # --- Traffic Light Detector ---
 # TUNING GUIDE:
