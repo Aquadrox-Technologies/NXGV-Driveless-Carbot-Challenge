@@ -42,16 +42,11 @@ auto_driver:
     rb_stuck_improve_margin: 0.05 # error improvement (abs delta) required to reset stuck timer
     rb_stuck_duration_sec: 1.2    # duration (sec) non-improving condition must persist before recovery
     rb_recovery_duration_sec: 0.6 # how long the reverse recovery maneuver runs (sec)
-    # ── Roundabout left-lane preference ─────────────────────────────────────
-    # Constant offset added to lane_error when in ROUNDABOUT state.
-    # Negative = robot perceives itself as too far RIGHT → steers LEFT.
-    # When two lanes appear (exit lane on left, through-lane on right),
-    # this bias makes the PID choose and follow the left lane.
-    # TUNING:
-    #   -0.25 — gentle pull left (start here)
-    #   -0.40 — stronger pull (if robot keeps taking right lane)
-    #   -0.15 — very subtle (if robot overshoots left)
-    rb_lane_bias: -0.25
+    # ── Roundabout Speed Cap ────────────────────────────────────────────────
+    # Maximum forward speed (m/s) while inside the roundabout.
+    # Prevents high-speed forward shoot-outs when transitioning between
+    # turn angles around the circular track.
+    rb_speed: 0.12
     # ── Hill Climbing Mode (Challenge 5) ──────────────────────────────────
     # TUNING GUIDE:
     #   hill_pitch_threshold   : IMU pitch (deg) to enter HILL state. Start at 8-10°.

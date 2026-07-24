@@ -221,14 +221,10 @@ class AutoDriver(Node):
         self.declare_parameter('rb_stuck_improve_margin', 0.05)   # error must drop by at least this much to count as "improving"
         self.declare_parameter('rb_stuck_duration_sec', 1.2)      # how long the non-improving condition must persist
         self.declare_parameter('rb_recovery_duration_sec', 0.6)   # how long the reverse recovery maneuver runs
-        # Left-bias applied to lane error while in the roundabout arc.
-        # When two lanes are visible (the exit lane to the left and the
-        # through-lane straight ahead), adding a negative offset shifts the
-        # PID's "ideal center" leftward so it naturally gravitates to and
-        # follows the left lane rather than the right one.
-        # Negative = steer left. Start at -0.25 and increase magnitude
-        # (e.g. -0.40) if the robot still tends to take the right lane.
-        self.declare_parameter('rb_lane_bias', -0.25)  # lane error offset in roundabout (-1..+1 range)
+        # Controlled forward speed limit while navigating the roundabout.
+        # Keeps speed capped (default 0.12 m/s) so the robot doesn't shoot forward
+        # into outer walls during turn transitions.
+        self.declare_parameter('rb_speed', 0.12)  # m/s max speed in roundabout
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -396,7 +392,7 @@ class AutoDriver(Node):
             'rb_stuck_improve_margin': float(self.get_parameter('rb_stuck_improve_margin').value),
             'rb_stuck_duration_sec':   float(self.get_parameter('rb_stuck_duration_sec').value),
             'rb_recovery_duration_sec': float(self.get_parameter('rb_recovery_duration_sec').value),
-            'rb_lane_bias':              float(self.get_parameter('rb_lane_bias').value),
+            'rb_speed':                  float(self.get_parameter('rb_speed').value),
             # Hill Climb
             'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
             'hill_pitch_hysteresis':          float(self.get_parameter('hill_pitch_hysteresis').value),
@@ -894,16 +890,14 @@ class AutoDriver(Node):
                     self._rb_recovering = False
                     self._rb_stuck_since = None
             else:
-                # Phase 2b: Lane-follow with a left-bias offset.
-                # rb_lane_bias (negative value) shifts the PID's perceived
-                # lane center leftward. When two lanes are visible (roundabout
-                # exit on the left vs. through-lane on the right), the biased
-                # error makes the robot treat the left lane as "centered" and
-                # the right lane as "too far right", so it follows the left one.
-                # When only one lane is visible, it simply hugs the left side.
-                rb_bias = float(self._param_cache.get('rb_lane_bias', -0.25))
-                cmd = self._lane_follow_cmd(error_bias=rb_bias)
-                self.stop_reason = f'ROUNDABOUT LANE-LEFT ({time_in_roundabout:.1f}s bias={rb_bias:+.2f})'
+                # Phase 2b: Lane-follow around the circular roundabout track.
+                # No artificial left bias (error_bias=0.0) so right turns around
+                # the hub are followed naturally. Speed is capped at rb_speed
+                # (default 0.12 m/s) to prevent high-speed forward shoot-outs.
+                rb_speed = float(self._param_cache.get('rb_speed', 0.12))
+                cmd = self._lane_follow_cmd(error_bias=0.0)
+                cmd.linear.x = min(cmd.linear.x, rb_speed)
+                self.stop_reason = f'ROUNDABOUT LANE-FOLLOW ({time_in_roundabout:.1f}s spd={cmd.linear.x:.2f})'
 
                 # Sharp-arc stuck detection: trigger a brief reverse recovery when
                 # the PID is commanding near-max steering AND the lane error isn't
