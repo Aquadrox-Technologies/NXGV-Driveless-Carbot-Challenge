@@ -1368,11 +1368,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <input type="text" id="loggerLabelInput" placeholder="Session Label (e.g. pid_test_kp1.2)" style="padding:6px 10px; border-radius:6px; border:1px solid rgba(0,0,0,0.1); font-size:0.8em; flex:1; min-width:180px;" />
-      <button id="startLoggerBtn" onclick="startLogger()" style="padding:8px 16px; border-radius:8px; font-size:0.8em; font-weight:700; cursor:pointer; background:var(--accent); color:#fff; border:none; transition:all 0.2s;">
+      <button id="startLoggerBtn" onclick="toggleLogger()" style="padding:8px 16px; border-radius:8px; font-size:0.8em; font-weight:700; cursor:pointer; background:var(--accent); color:#fff; border:none; transition:all 0.2s;">
         ▶ Start Data Logger
-      </button>
-      <button id="stopLoggerBtn" onclick="stopLogger()" style="padding:8px 16px; border-radius:8px; font-size:0.8em; font-weight:700; cursor:pointer; background:rgba(210,15,57,0.15); color:var(--danger); border:1px solid rgba(210,15,57,0.3); transition:all 0.2s; opacity:0.4;" disabled>
-        ⏹ Stop &amp; Save Log
       </button>
       <button onclick="refreshLogSessions()" style="padding:8px 12px; border-radius:8px; font-size:0.78em; font-weight:600; cursor:pointer; background:rgba(0,0,0,0.05); color:var(--text); border:1px solid rgba(0,0,0,0.1);">
         📂 Refresh Saved Logs
@@ -1401,12 +1398,12 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 </div>
 
+<!-- ===== PARAMETER TUNING ===== -->
 <!-- ===== PARAMETER TUNING DRAWER ===== -->
 <div class="param-popout-tab" onclick="toggleParamDrawer()">⚙️ Parameters</div>
 <div class="param-drawer" id="paramDrawer">
   <h3>⚙️ Parameter Tuning</h3>
   <div class="note">💡 Changes apply instantly to nodes but revert to defaults upon restart.</div>
-  
   <div id="paramContainer"></div>
   <button class="param-save-defaults-btn" id="saveDefaultsBtn" onclick="saveDefaults()">💾 Save Current as Default</button>
   <div id="saveDefaultsStatus" style="text-align:center;font-size:0.78em;margin-top:6px;min-height:20px;"></div>
@@ -1990,17 +1987,6 @@ const PARAM_TIPS = {
   // Challenge sequencing
   t_post_obstacle_sec:'Lane-follow delay after obstacle clears before entering roundabout (sec)',
   t_roundabout_sec:'Time to traverse the roundabout arc before exiting (sec)',
-  rb_initial_reverse_sec:'Duration (sec) of initial micro-reverse maneuver to gain turning clearance upon entering roundabout (0 = disabled)',
-  rb_reverse_speed:'Speed (m/s) during micro-reverse in roundabout',
-  rb_reverse_steer:'Steering rate (rad/s) during sharp-arc micro-reverse (outward turn)',
-  rb_stuck_angular_thresh:'Steering angular velocity threshold (rad/s) considered pinned near max steering clamp',
-  rb_stuck_error_thresh:'Lane error threshold considered well off-center',
-  rb_stuck_improve_margin:'Lane error reduction (abs delta) required to reset the stuck timer window',
-  rb_stuck_duration_sec:'Sustained duration (sec) of non-improving stuck state required before triggering recovery',
-  rb_recovery_duration_sec:'Duration (sec) of the reverse recovery maneuver',
-  nominal_lane_width_min:'Minimum valid lane width (px in 320x240 frame). Below this flags invalid lane.',
-  nominal_lane_width_max:'Maximum valid lane width (px in 320x240 frame). Above this flags invalid lane (e.g. dark floor/shadow).',
-  scanline_outlier_px:'Max x-distance (px) from median frame center before scanline is rejected as wall/floor outlier',
   // Hill Climb
   hill_pitch_threshold:'Nose-up pitch (deg) to enter HILL climb mode',
   hill_pitch_hysteresis:'Hysteresis band (deg) - exits HILL when pitch drops below threshold minus this',
@@ -2030,9 +2016,6 @@ const PARAM_TIPS = {
   conf_threshold:'Global YOLO confidence fallback (0.0–1.0)',
   iou_threshold:'NMS IoU threshold (0.0–1.0)',
   min_parking_sign_width:'Min pixel width for parking sign trigger (0 = disabled)',
-  min_parking_sign_height:'Min pixel height for parking sign trigger (0 = disabled)',
-  min_roundabout_sign_width:'Min pixel width for roundabout sign trigger (0 = disabled)',
-  min_roundabout_sign_height:'Min pixel height for roundabout sign trigger (0 = disabled)',
   // Per-class confidence thresholds
   thresh_bumper:'Confidence threshold for Bumper_signboard (class 0)',
   thresh_hill:'Confidence threshold for Hill_signboard (class 1)',
@@ -2064,7 +2047,6 @@ const PARAM_GROUPS = [
     'ipm_enabled','ipm_top_width_ratio','ipm_bottom_width_ratio',
     'kalman_enabled','kalman_process_noise','kalman_measurement_noise',
     'smoothing_alpha','dead_zone','hold_error_frames','error_decay_rate',
-    'nominal_lane_width_min','nominal_lane_width_max','scanline_outlier_px',
     'resize_width','print_debug','debug_print_rate','show_debug'
   ]},
   { node: 'auto_driver', label: 'Auto Driver', params: [
@@ -2073,8 +2055,7 @@ const PARAM_GROUPS = [
     'min_state_dwell_sec','publish_loop_stats',
     'pid_kp','pid_ki','pid_kd','pid_integral_max',
     'speed_error_scale','min_turn_speed','lane_steer_slew',
-    't_post_obstacle_sec','t_roundabout_sec','rb_initial_reverse_sec','rb_reverse_speed','rb_reverse_steer',
-    'rb_stuck_angular_thresh','rb_stuck_error_thresh','rb_stuck_improve_margin','rb_stuck_duration_sec','rb_recovery_duration_sec'
+    't_post_obstacle_sec','t_roundabout_sec'
   ]},
   { node: 'auto_driver', label: '⛰ Hill Climb', params: [
     'hill_pitch_threshold','hill_pitch_hysteresis',
@@ -2137,9 +2118,7 @@ const PARAM_GROUPS = [
   ]},
   { node: 'signage_detector', label: 'Signage Detector (BPU)', params: [
     'model_path','conf_threshold','iou_threshold',
-    'min_parking_sign_width','min_parking_sign_height',
-    'min_roundabout_sign_width','min_roundabout_sign_height',
-    'heartbeat_sec','show_debug',
+    'min_parking_sign_width','heartbeat_sec','show_debug',
     'thresh_bumper','thresh_hill','thresh_obstacle',
     'thresh_parallelp','thresh_perpendp','thresh_roundabout',
     'thresh_tl_green','thresh_tl_red','thresh_tl_generic',
@@ -2205,13 +2184,7 @@ async function getParam(node, param, isInitialLoad=false) {
           }
         }
       }
-      if (param === 'min_roundabout_sign_width') { const q = document.getElementById('quick_rb_min_w'); if(q) q.value = d.value; }
-      if (param === 'max_roundabout_sign_width') { const q = document.getElementById('quick_rb_max_w'); if(q) q.value = d.value; }
-      if (param === 'min_roundabout_sign_height') { const q = document.getElementById('quick_rb_min_h'); if(q) q.value = d.value; }
-      if (param === 'max_roundabout_sign_height') { const q = document.getElementById('quick_rb_max_h'); if(q) q.value = d.value; }
-      if (param === 'min_parking_sign_width') { const q = document.getElementById('quick_park_min_w'); if(q) q.value = d.value; }
-      if (param === 'min_parking_sign_height') { const q = document.getElementById('quick_park_min_h'); if(q) q.value = d.value; }
-      if (status && !isInitialLoad) { status.className = 'param-status ok'; status.textContent = '✓'; }
+      if (status && !isInitialLoad) { status.className = 'param-status ok'; status.textContent = 'âœ“'; }
     } else {
       if (status && !isInitialLoad) { status.className = 'param-status err'; status.textContent = d.error || 'Not found'; }
     }
@@ -2223,41 +2196,27 @@ async function getParam(node, param, isInitialLoad=false) {
   }
 }
 
-async function setParam(node, param, customVal=null) {
+async function setParam(node, param) {
   const input = document.getElementById('pv_' + node + '_' + param);
   const status = document.getElementById('ps_' + node + '_' + param);
-  const val = (customVal !== null && customVal !== undefined) ? customVal : (input ? input.value : '');
-  const qStatus = document.getElementById('quickTuneStatus');
-  if (val === '' || val === null) { 
-    if(status){status.className='param-status err';status.textContent='Empty';} 
-    if(qStatus && param.includes('roundabout')){qStatus.style.color='var(--danger)'; qStatus.textContent='⚠️ Empty value';}
-    return; 
-  }
+  if (!input || !input.value) { if(status){status.className='param-status err';status.textContent='Empty';} return; }
   if (status) { status.className = 'param-status'; status.textContent = '...'; }
-  if (qStatus && (param.includes('roundabout') || param.includes('parking'))) { qStatus.style.color='var(--accent)'; qStatus.textContent='Setting ' + param + ' to ' + val + '...'; }
   try {
     const r = await fetch('/api/set_param', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({node: node, param: param, value: String(val)})
+      body: JSON.stringify({node: node, param: param, value: input.value})
     });
     const d = await r.json();
     if (d.ok) {
-      if (status) { status.className = 'param-status ok'; status.textContent = '✓ Set'; }
-      if (qStatus && (param.includes('roundabout') || param.includes('parking'))) { qStatus.style.color='var(--success)'; qStatus.textContent='✓ ' + param + ' set to ' + val; }
-      if (input) input.value = val;
+      if (status) { status.className = 'param-status ok'; status.textContent = 'âœ“ Set'; }
     } else {
       if (status) { status.className = 'param-status err'; status.textContent = d.error || 'Failed'; }
-      if (qStatus && (param.includes('roundabout') || param.includes('parking'))) { qStatus.style.color='var(--danger)'; qStatus.textContent='❌ ' + (d.error || 'Failed'); }
     }
   } catch(e) {
     if (status) { status.className = 'param-status err'; status.textContent = 'Error'; }
-    if (qStatus && (param.includes('roundabout') || param.includes('parking'))) { qStatus.style.color='var(--danger)'; qStatus.textContent='❌ Network Error'; }
   }
-  setTimeout(() => { 
-    if(status) status.textContent = ''; 
-    if(qStatus && (param.includes('roundabout') || param.includes('parking'))) qStatus.textContent = '';
-  }, 3000);
+  setTimeout(() => { if(status) status.textContent = ''; }, 3000);
 }
 
 async function saveDefaults() {
@@ -2302,79 +2261,57 @@ buildParamUI();
 
 let isLoggingActive = false;
 
-async function startLogger() {
+async function toggleLogger() {
+  const btn = document.getElementById('startLoggerBtn');
   const labelInput = document.getElementById('loggerLabelInput');
-  const label = labelInput ? labelInput.value.trim() : '';
-  try {
-    const r = await fetch('/api/logger/start', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({label: label})
-    });
-    const d = await r.json();
-    if (d.ok) {
-      isLoggingActive = true;
-      if (typeof addLogEntry === 'function') addLogEntry('Data logger started — session: ' + (d.session_name || ''));
-      updateLoggerUI(true, d.session_name, 0, 0);
-    } else {
-      alert('Failed to start logger: ' + (d.error || 'Unknown error'));
+  
+  if (!isLoggingActive) {
+    const label = labelInput ? labelInput.value : '';
+    try {
+      const r = await fetch('/api/logger/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({label: label})
+      });
+      const d = await r.json();
+      if (d.ok) {
+        isLoggingActive = true;
+        updateLoggerUI(true, d.session_name, 0, 0);
+      } else {
+        alert('Failed to start logger: ' + (d.error || 'Unknown error'));
+      }
+    } catch(e) {
+      alert('Network error starting data logger');
     }
-  } catch(e) {
-    alert('Network error starting data logger');
-  }
-}
-
-async function stopLogger() {
-  try {
-    const r = await fetch('/api/logger/stop', {method: 'POST'});
-    const d = await r.json();
-    if (d.ok) {
-      isLoggingActive = false;
-      if (typeof addLogEntry === 'function') addLogEntry('Data logger stopped — session: ' + (d.data && d.data.session_name || ''));
-      updateLoggerUI(false, '', 0, 0);
-      refreshLogSessions();
-      alert(`Log saved successfully!\nSession: ${d.data.session_name}\nSamples: ${d.data.samples}\nLocation: ${d.data.dir}`);
-    } else {
-      alert('Logger stop error: ' + (d.error || 'Not logging'));
-    }
-  } catch(e) {
-    alert('Network error stopping data logger');
-  }
-}
-
-function toggleLogger() {
-  if (isLoggingActive) {
-    stopLogger();
   } else {
-    startLogger();
+    try {
+      const r = await fetch('/api/logger/stop', {method: 'POST'});
+      const d = await r.json();
+      if (d.ok) {
+        isLoggingActive = false;
+        updateLoggerUI(false, '', 0, 0);
+        refreshLogSessions();
+        alert(`Log saved successfully!\nSession: ${d.data.session_name}\nSamples: ${d.data.samples}\nLocation: ${d.data.dir}`);
+      }
+    } catch(e) {
+      alert('Network error stopping data logger');
+    }
   }
 }
 
 function updateLoggerUI(logging, sessionName, dur, samples) {
-  if (typeof logging === 'object' && logging !== null) {
-    sessionName = logging.session_name;
-    dur = logging.duration_sec || 0;
-    samples = logging.sample_count || 0;
-    logging = !!logging.is_logging;
-  }
-  isLoggingActive = !!logging;
-  
-  const startBtn = document.getElementById('startLoggerBtn');
-  const stopBtn = document.getElementById('stopLoggerBtn');
+  const btn = document.getElementById('startLoggerBtn');
   const badge = document.getElementById('loggerStatusBadge');
   const info = document.getElementById('loggerActiveInfo');
   
-  if (startBtn) {
-    startBtn.disabled = !!logging;
-    startBtn.style.opacity = logging ? '0.4' : '1.0';
-    startBtn.style.cursor = logging ? 'not-allowed' : 'pointer';
-  }
-  if (stopBtn) {
-    stopBtn.disabled = !logging;
-    stopBtn.style.opacity = logging ? '1.0' : '0.4';
-    stopBtn.style.cursor = logging ? 'pointer' : 'not-allowed';
-    stopBtn.style.background = logging ? 'var(--danger)' : 'rgba(210,15,57,0.15)';
-    stopBtn.style.color = logging ? '#fff' : 'var(--danger)';
+  if (btn) {
+    if (logging) {
+      btn.textContent = '⏹ Stop & Save Log';
+      btn.style.background = 'var(--danger)';
+    } else {
+      btn.textContent = '▶ Start Data Logger';
+      btn.style.background = 'var(--accent)';
+    }
   }
   if (badge) {
     badge.className = logging ? 'logger-badge recording' : 'logger-badge idle';
@@ -2383,12 +2320,9 @@ function updateLoggerUI(logging, sessionName, dur, samples) {
   if (info) {
     info.style.display = logging ? 'flex' : 'none';
     if (logging) {
-      const nameEl = document.getElementById('loggerSessionName');
-      const durEl = document.getElementById('loggerDuration');
-      const samEl = document.getElementById('loggerSamples');
-      if (nameEl) nameEl.textContent = sessionName || '—';
-      if (durEl) durEl.textContent = (dur || 0).toFixed(1) + 's';
-      if (samEl) samEl.textContent = samples || 0;
+      document.getElementById('loggerSessionName').textContent = sessionName || '—';
+      document.getElementById('loggerDuration').textContent = dur + 's';
+      document.getElementById('loggerSamples').textContent = samples;
     }
   }
 }
@@ -3700,95 +3634,67 @@ update();
 // ===== DATA LOGGER FUNCTIONS =====
 let _loggerIsRecording = false;
 
-function startLogger() {
-  const labelInput = document.getElementById('loggerLabelInput');
-  const label = labelInput ? labelInput.value.trim() : '';
-  fetch('/api/logger/start', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({label: label})
-  })
-    .then(r => r.json())
-    .then(res => {
-      if (res.ok) {
-        _loggerIsRecording = true;
-        addLogEntry('Data logger started — session: ' + (res.session_name || ''));
-        updateLoggerUI({is_logging: true, session_name: res.session_name, duration_sec: 0, sample_count: 0});
-      } else {
-        alert('Failed to start logger: ' + (res.error || 'Unknown error'));
-      }
-    })
-    .catch(e => addLogEntry('Logger start failed: ' + e));
-}
-
-function stopLogger() {
-  fetch('/api/logger/stop', {method: 'POST'})
-    .then(r => r.json())
-    .then(res => {
-      if (res.ok) {
-        _loggerIsRecording = false;
-        addLogEntry('Data logger stopped — session: ' + (res.data && res.data.session_name || ''));
-        updateLoggerUI({is_logging: false});
-        refreshLogSessions();
-        alert(`Log saved successfully!\nSession: ${res.data.session_name}\nSamples: ${res.data.samples}\nLocation: ${res.data.dir}`);
-      } else {
-        alert('Logger stop error: ' + (res.error || 'Not logging'));
-      }
-    })
-    .catch(e => addLogEntry('Logger stop failed: ' + e));
-}
-
 function toggleLogger() {
+  const btn = document.getElementById('startLoggerBtn');
   if (_loggerIsRecording) {
-    stopLogger();
+    // Stop logging
+    fetch('/api/logger/stop', {method: 'POST'})
+      .then(r => r.json())
+      .then(res => {
+        if (res.ok) {
+          addLogEntry('Data logger stopped — session: ' + (res.data && res.data.session_name || ''));
+          refreshLogSessions();
+        } else {
+          addLogEntry('Logger stop error: ' + (res.error || 'unknown'));
+        }
+      })
+      .catch(e => addLogEntry('Logger stop failed: ' + e));
   } else {
-    startLogger();
+    // Start logging
+    const label = document.getElementById('loggerLabelInput').value.trim();
+    fetch('/api/logger/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({label: label})
+    })
+      .then(r => r.json())
+      .then(res => {
+        if (res.ok) {
+          addLogEntry('Data logger started — session: ' + (res.session_name || ''));
+        } else {
+          addLogEntry('Logger start error: ' + (res.error || 'unknown'));
+        }
+      })
+      .catch(e => addLogEntry('Logger start failed: ' + e));
   }
 }
 
 function updateLoggerUI(loggerStatus) {
   if (!loggerStatus) return;
-  if (typeof loggerStatus === 'boolean') {
-    loggerStatus = { is_logging: loggerStatus };
-  }
   const badge = document.getElementById('loggerStatusBadge');
-  const startBtn = document.getElementById('startLoggerBtn');
-  const stopBtn = document.getElementById('stopLoggerBtn');
+  const btn = document.getElementById('startLoggerBtn');
   const activeInfo = document.getElementById('loggerActiveInfo');
   const sessionNameEl = document.getElementById('loggerSessionName');
   const durationEl = document.getElementById('loggerDuration');
   const samplesEl = document.getElementById('loggerSamples');
 
-  _loggerIsRecording = !!loggerStatus.is_logging;
+  _loggerIsRecording = loggerStatus.is_logging;
 
-  if (startBtn) {
-    startBtn.disabled = _loggerIsRecording;
-    startBtn.style.opacity = _loggerIsRecording ? '0.4' : '1.0';
-    startBtn.style.cursor = _loggerIsRecording ? 'not-allowed' : 'pointer';
-  }
-  if (stopBtn) {
-    stopBtn.disabled = !_loggerIsRecording;
-    stopBtn.style.opacity = _loggerIsRecording ? '1.0' : '0.4';
-    stopBtn.style.cursor = _loggerIsRecording ? 'pointer' : 'not-allowed';
-    stopBtn.style.background = _loggerIsRecording ? 'var(--danger)' : 'rgba(210,15,57,0.15)';
-    stopBtn.style.color = _loggerIsRecording ? '#fff' : 'var(--danger)';
-  }
-
-  if (_loggerIsRecording) {
-    if (badge) {
-      badge.textContent = 'REC 🔴';
-      badge.className = 'logger-badge recording';
-    }
-    if (activeInfo) activeInfo.style.display = 'flex';
+  if (loggerStatus.is_logging) {
+    badge.textContent = 'RECORDING';
+    badge.className = 'logger-badge recording';
+    btn.textContent = '⏹ Stop Data Logger';
+    btn.style.background = 'var(--danger)';
+    activeInfo.style.display = 'flex';
     if (sessionNameEl) sessionNameEl.textContent = loggerStatus.session_name || '—';
     if (durationEl) durationEl.textContent = (loggerStatus.duration_sec || 0).toFixed(1) + 's';
     if (samplesEl) samplesEl.textContent = loggerStatus.sample_count || 0;
   } else {
-    if (badge) {
-      badge.textContent = 'IDLE';
-      badge.className = 'logger-badge idle';
-    }
-    if (activeInfo) activeInfo.style.display = 'none';
+    badge.textContent = 'IDLE';
+    badge.className = 'logger-badge idle';
+    btn.textContent = '▶ Start Data Logger';
+    btn.style.background = 'var(--accent)';
+    activeInfo.style.display = 'none';
   }
 }
 
@@ -3820,11 +3726,5 @@ function refreshLogSessions() {
 refreshLogSessions();
 </script>
 </body>
-</html>"""
-
-TEACH_HTML = """<!DOCTYPE html>
-<html>
-<head><title>Teach Mode</title></head>
-<body><h1>Teach Mode</h1></body>
 </html>"""
 

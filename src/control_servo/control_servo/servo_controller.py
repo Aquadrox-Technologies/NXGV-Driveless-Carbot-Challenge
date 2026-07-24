@@ -27,7 +27,6 @@ import os
 import time
 from typing import Dict
 
-import numpy as np
 import rclpy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
@@ -43,7 +42,6 @@ from .topics import (
     BASE_FRAME,
     CMD_VEL_TOPIC,
     DASH_CTRL_TOPIC,
-    DASH_STATE_TOPIC,
     JOY_TOPIC,
     LOOP_STATS_TOPIC,
     ODOM_FRAME,
@@ -155,41 +153,10 @@ class ServoControllerV9(Node):
         self.declare_parameter('imu_roll_scale', 1.0)
         self.declare_parameter('imu_pitch_scale', 1.0)
         self.declare_parameter('imu_yaw_scale', 1.0)
-        # --- Steering calibration (replaces the old single "boost" multiplier) ---
-        # Measured mapping: commanded servo angle (delta from center, degrees)
-        # -> actual physical wheel steering angle (degrees), per side.
-        # HOW TO MEASURE: point the front wheel straight (servo_center), then command
-        # a few servo deltas (e.g. 12, 25, 37, 50 on each side) and physically measure
-        # the wheel angle with a protractor/phone level app against the chassis centerline.
-        # Fill the matching '..._wheel_deg' list with what you actually measured.
-        # Until measured, these default to an identity mapping (servo delta == wheel angle),
-        # i.e. no correction — same as the raw pre-hack behavior.
-        self.declare_parameter('steer_calib_servo_deg_left', [0.0, 12.5, 25.0, 37.5, 50.0])
-        self.declare_parameter('steer_calib_wheel_deg_left', [0.0, 12.5, 25.0, 37.5, 50.0])
-        self.declare_parameter('steer_calib_servo_deg_right', [0.0, 12.5, 25.0, 37.5, 50.0])
-        self.declare_parameter('steer_calib_wheel_deg_right', [0.0, 12.5, 25.0, 37.5, 50.0])
-
-        # --- Sharp-turn speed scaling (Ackermann-consistent) ---
-        # Reduces auto-mode drive PWM as the commanded wheel steering angle grows,
-        # to reduce wheel slip/skid on tight turns. 1.0 = no reduction at 0 deg,
-        # sharp_turn_min_speed_scale = reduction factor applied at max steering angle.
-        #
-        # STATE-SCOPED: auto_driver already reduces speed for turns in LANE_FOLLOW
-        # (PID adaptive speed) and ROUNDABOUT (calls the same lane-follow function),
-        # and HILL/HILL_DESCENT set their own explicitly-tuned climbing/descent
-        # speed. Applying this on top of those would stack and could stall the
-        # robot on a hill mid-turn. So this only activates for states NOT in the
-        # exclude list below — by default that leaves it active mainly for TUNNEL
-        # (LiDAR-driven, no confirmed speed-vs-turn logic of its own) and anything
-        # else with real steering and no existing scaling. It requires knowing the
-        # current state, so it only ever activates once servo_controller has heard
-        # at least one state broadcast from auto_driver (see dash_state_callback).
-        self.declare_parameter('sharp_turn_speed_scaling_enabled', True)
-        self.declare_parameter('sharp_turn_min_speed_scale', 0.6)
-        self.declare_parameter('sharp_turn_speed_scaling_exclude_states', [
-            'LANE_FOLLOW', 'ROUNDABOUT', 'HILL', 'HILL_DESCENT',
-            'MANUAL', 'PARKING_IDLE', 'PARKING_PLAYBACK',
-        ])
+        # Auto steering asymmetry correction
+        # Multiplier applied ONLY to right-turn servo angle in auto mode.
+        # Increase above 1.0 to make right turns sharper (compensates for Ackermann geometry).
+        self.declare_parameter('auto_right_steer_boost', 1.3)
         
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -230,12 +197,6 @@ class ServoControllerV9(Node):
         self.create_subscription(Twist, AUTO_CMD_VEL_TOPIC, self.cmd_vel_auto_callback, 10)
         self.create_subscription(String, RECORD_PLAYBACK_CMD_TOPIC, self._record_playback_cmd_cb, 10)
         self.create_subscription(String, IMU_CALIBRATE_TOPIC, self._imu_calibrate_cb, 10)
-        # Tracks auto_driver's current challenge state (parsed from DASH_STATE_TOPIC)
-        # so process_twist knows whether sharp-turn speed scaling is safe to apply.
-        # Starts as '' (unknown) — unknown state is treated as excluded (fail-safe:
-        # no scaling until we've actually heard a real state from auto_driver).
-        self._current_challenge_state = ''
-        self.create_subscription(String, DASH_STATE_TOPIC, self._dash_state_callback, 10)
 
         # State
         self.manual_mode = True
@@ -258,11 +219,6 @@ class ServoControllerV9(Node):
         # Using a default scaling factor for now
         self.wheel_base = float(self._param_cache['wheel_base'])
         self.ticks_per_meter = float(self._param_cache['ticks_per_meter'])
-
-        # Steering calibration tables (servo-degree <-> wheel-degree), per side.
-        # Kept as numpy arrays for fast np.interp lookups; rebuilt whenever the
-        # underlying parameters change (see _on_params).
-        self._rebuild_steer_calibration()
 
         self.last_odom_time = time.monotonic()
         self.odom_x = 0.0
@@ -379,13 +335,7 @@ class ServoControllerV9(Node):
             'imu_roll_scale': float(self.get_parameter('imu_roll_scale').value),
             'imu_pitch_scale': float(self.get_parameter('imu_pitch_scale').value),
             'imu_yaw_scale': float(self.get_parameter('imu_yaw_scale').value),
-            'steer_calib_servo_deg_left': list(self.get_parameter('steer_calib_servo_deg_left').value),
-            'steer_calib_wheel_deg_left': list(self.get_parameter('steer_calib_wheel_deg_left').value),
-            'steer_calib_servo_deg_right': list(self.get_parameter('steer_calib_servo_deg_right').value),
-            'steer_calib_wheel_deg_right': list(self.get_parameter('steer_calib_wheel_deg_right').value),
-            'sharp_turn_speed_scaling_enabled': bool(self.get_parameter('sharp_turn_speed_scaling_enabled').value),
-            'sharp_turn_min_speed_scale': float(self.get_parameter('sharp_turn_min_speed_scale').value),
-            'sharp_turn_speed_scaling_exclude_states': list(self.get_parameter('sharp_turn_speed_scaling_exclude_states').value),
+            'auto_right_steer_boost': float(self.get_parameter('auto_right_steer_boost').value),
         }
 
     def _on_params(self, params) -> SetParametersResult:
@@ -428,66 +378,8 @@ class ServoControllerV9(Node):
                 elif p.name == 'imu_roll_scale': self.imu_roll_scale = float(p.value)
                 elif p.name == 'imu_pitch_scale': self.imu_pitch_scale = float(p.value)
                 elif p.name == 'imu_yaw_scale': self.imu_yaw_scale = float(p.value)
-                elif p.name in ('steer_calib_servo_deg_left', 'steer_calib_wheel_deg_left',
-                                'steer_calib_servo_deg_right', 'steer_calib_wheel_deg_right'):
-                    self._rebuild_steer_calibration()
+                # auto_right_steer_boost is read directly from _param_cache each call
         return SetParametersResult(successful=True)
-
-    def _rebuild_steer_calibration(self) -> None:
-        """(Re)build sorted numpy calibration arrays from the current parameters.
-
-        Each table maps servo-delta-degrees (from center) <-> physical wheel
-        angle-degrees, for one side. np.interp requires the x-array to be
-        monotonically increasing, so we sort both sides together and de-dupe.
-        """
-        def _prep(servo_pts, wheel_pts, label):
-            servo_pts = [float(v) for v in servo_pts]
-            wheel_pts = [float(v) for v in wheel_pts]
-            if len(servo_pts) != len(wheel_pts) or len(servo_pts) < 2:
-                self.get_logger().warn(
-                    f'Steering calibration "{label}" is malformed (needs >=2 matching '
-                    f'points) — falling back to identity mapping.'
-                )
-                servo_pts, wheel_pts = [0.0, 50.0], [0.0, 50.0]
-            pairs = sorted(zip(servo_pts, wheel_pts), key=lambda p: p[0])
-            servo_sorted = np.array([p[0] for p in pairs], dtype=float)
-            wheel_sorted = np.array([p[1] for p in pairs], dtype=float)
-            # np.interp needs strictly increasing x; nudge exact duplicates apart.
-            for i in range(1, len(servo_sorted)):
-                if servo_sorted[i] <= servo_sorted[i - 1]:
-                    servo_sorted[i] = servo_sorted[i - 1] + 1e-6
-            return servo_sorted, wheel_sorted
-
-        self._calib_servo_left, self._calib_wheel_left = _prep(
-            self._param_cache['steer_calib_servo_deg_left'],
-            self._param_cache['steer_calib_wheel_deg_left'], 'left')
-        self._calib_servo_right, self._calib_wheel_right = _prep(
-            self._param_cache['steer_calib_servo_deg_right'],
-            self._param_cache['steer_calib_wheel_deg_right'], 'right')
-
-    def wheel_deg_to_servo_delta(self, desired_wheel_deg: float, side: str) -> float:
-        """Invert the calibration: given a desired physical wheel angle (deg),
-        return the servo command delta (deg from center) that achieves it.
-        `side` is 'left' or 'right' (magnitude only is expected in desired_wheel_deg)."""
-        if side == 'left':
-            servo_tab, wheel_tab = self._calib_servo_left, self._calib_wheel_left
-        else:
-            servo_tab, wheel_tab = self._calib_servo_right, self._calib_wheel_right
-        # np.interp(x, xp, fp) requires xp increasing — here xp is wheel_tab (the measured
-        # response), which should be increasing if the mechanism is well-behaved.
-        if wheel_tab[0] > wheel_tab[-1]:
-            wheel_tab = wheel_tab[::-1]
-            servo_tab = servo_tab[::-1]
-        return float(np.interp(abs(desired_wheel_deg), wheel_tab, servo_tab))
-
-    def servo_delta_to_wheel_deg(self, servo_delta_deg: float, side: str) -> float:
-        """Forward lookup: given a commanded servo delta (deg from center),
-        return the actual physical wheel angle (deg) per the calibration."""
-        if side == 'left':
-            servo_tab, wheel_tab = self._calib_servo_left, self._calib_wheel_left
-        else:
-            servo_tab, wheel_tab = self._calib_servo_right, self._calib_wheel_right
-        return float(np.interp(abs(servo_delta_deg), servo_tab, wheel_tab))
 
     def _update_dash(self) -> None:
         """Publish controller state to dashboard (speed|index|state)."""
@@ -715,69 +607,29 @@ class ServoControllerV9(Node):
         if not self.manual_mode and self.rp_state != 'PLAYBACK':
             self.process_twist(msg)
 
-    def _dash_state_callback(self, msg: String) -> None:
-        """Parse the current challenge state name out of auto_driver's dashboard
-        state broadcast ('STATE_NAME|lap|distance|reason'), published ~5Hz.
-        Used to gate sharp-turn speed scaling so it doesn't stack with states
-        that already manage their own speed-vs-turn behavior."""
-        try:
-            self._current_challenge_state = msg.data.split('|', 1)[0].strip()
-        except Exception:
-            pass
-
     def process_twist(self, msg: Twist) -> None:
-        """Convert Twist message to hardware PWM + servo angle.
-
-        Steering pipeline:
-          1. angular.z (from the lane-follow PID, same normalized domain as before)
-             is mapped to a *desired physical wheel angle* using steering_max_deg —
-             this is the quantity that actually determines the turning radius.
-          2. That desired wheel angle is inverted through the measured per-side
-             calibration table to find the servo command that actually achieves it.
-             This replaces the old fixed 1.3x "boost" guess with real measured
-             mechanical response, and applies smoothly across the whole range
-             instead of a single flat multiplier.
-        """
+        """Convert Twist message to hardware PWM + servo angle."""
+        # Auto Mode Driving
         pwm_val = int(msg.linear.x * 255.0)
-
-        # angular_z > 0 → physical right, angular_z < 0 → physical left
-        side = 'right' if msg.angular.z >= 0 else 'left'
-        steering_max_deg = float(self._param_cache['steering_max_deg'])
-        desired_wheel_deg = abs(msg.angular.z) * steering_max_deg
-        desired_wheel_deg = min(desired_wheel_deg, steering_max_deg)
-
-        servo_delta = self.wheel_deg_to_servo_delta(desired_wheel_deg, side)
-        # Never let a calibration table push us past the physically configured range.
-        max_range = self.servo_range_right if side == 'right' else self.servo_range_left
-        servo_delta = max(0.0, min(float(max_range), servo_delta))
-
-        steer_angle = int(round(self.servo_center + (servo_delta if side == 'right' else -servo_delta)))
-
-        # Sharp-turn speed scaling: reduce drive PWM as steering angle grows,
-        # proportional to how close the desired wheel angle is to max lock.
-        # Only applied for states that don't already manage their own speed
-        # (see the exclude list) — see _dash_state_callback for how the current
-        # state is tracked. Unknown state ('') is treated as excluded.
-        exclude_states = set(self._param_cache['sharp_turn_speed_scaling_exclude_states'])
-        state_allows_scaling = (
-            self._current_challenge_state != ''
-            and self._current_challenge_state not in exclude_states
-        )
-        if (bool(self._param_cache['sharp_turn_speed_scaling_enabled'])
-                and state_allows_scaling and steering_max_deg > 0.0):
-            turn_fraction = min(1.0, desired_wheel_deg / steering_max_deg)
-            min_scale = float(self._param_cache['sharp_turn_min_speed_scale'])
-            speed_scale = 1.0 - turn_fraction * (1.0 - min_scale)
-            pwm_val = int(pwm_val * speed_scale)
-
+        
+        # Steering — asymmetric left/right ranges with Ackermann correction boost
+        # angular_z > 0 → servo increases → physical right → uses range_right + right boost
+        # angular_z < 0 → servo decreases → physical left  → uses range_left
+        if msg.angular.z >= 0:
+            right_boost = float(self._param_cache.get('auto_right_steer_boost', 1.0))
+            angle_offset = msg.angular.z * float(self.servo_range_right) * right_boost
+        else:
+            angle_offset = msg.angular.z * float(self.servo_range_left)
+        steer_angle = int(self.servo_center + angle_offset)
+        
         # Clamp to asymmetric limits
         pwm_val = max(-255, min(255, pwm_val))
         min_angle = self.servo_center - self.servo_range_left
         max_angle = self.servo_center + self.servo_range_right
         steer_angle = max(min_angle, min(max_angle, steer_angle))
-
+        
         self.apply_hardware(pwm_val, steer_angle)
-
+        
         # Also publish to /cmd_vel so dashboard can track velocity/odometry
         self.cmd_vel_pub.publish(msg)
 
@@ -1012,12 +864,17 @@ class ServoControllerV9(Node):
                 distance = 0.0
 
             # Calculate steering angle from servo command (for Ackermann kinematics)
-            # Use the measured servo->wheel calibration table (not a linear guess)
-            # so odometry reflects the actual physical wheel angle on each side.
-            servo_delta = self.servo_center - self.target_servo_val  # >0 = left, <0 = right
-            side = 'left' if servo_delta >= 0 else 'right'
-            wheel_deg = self.servo_delta_to_wheel_deg(abs(servo_delta), side)
-            steering_angle_deg = math.copysign(wheel_deg, servo_delta)
+            # Use asymmetric left/right ranges based on which side of center
+            servo_delta = self.servo_center - self.target_servo_val
+            if servo_delta >= 0:
+                effective_range = float(self.servo_range_left)
+            else:
+                effective_range = float(self.servo_range_right)
+            if effective_range < 1.0:
+                effective_range = 1.0
+            steer_norm = servo_delta / effective_range
+            steer_norm = max(-1.0, min(1.0, steer_norm))
+            steering_angle_deg = steer_norm * float(self._param_cache['steering_max_deg'])
             steering_angle_rad = math.radians(steering_angle_deg)
             
             # Ackermann kinematics: w = v / R, where R = L / tan(delta)

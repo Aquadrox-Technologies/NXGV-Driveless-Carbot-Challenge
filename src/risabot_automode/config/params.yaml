@@ -14,7 +14,7 @@
 #   min_turn_speed: 0.4 = robot never goes below 40% forward_speed in turns
 auto_driver:
   ros__parameters:
-    forward_speed: 0.18          # m/s maximum speed on a straight
+    forward_speed: 0.15          # m/s maximum speed on a straight (conservative start)
     stale_timeout: 3.0
     dist_lap_complete: 1.0
     enable_subsumption_obstacle: false
@@ -22,36 +22,18 @@ auto_driver:
     min_state_dwell_sec: 0.25
     publish_loop_stats: true
     steering_gain: 1.0           # legacy, kept for compatibility
-    # PID gains (tuned)
-    pid_kp: 1.4
-    pid_ki: 0.1
-    pid_kd: 0.5
+    # PID gains (conservative — increase kp once tracking is reliable)
+    pid_kp: 0.8
+    pid_ki: 0.01
+    pid_kd: 0.20
     pid_integral_max: 0.3
     # Adaptive speed
     speed_error_scale: 1.5
-    min_turn_speed: 0.8
+    min_turn_speed: 0.4
     lane_steer_slew: 3.0         # max angular.z change per second (Cytron acceleration limit)
-    # Challenge 1→2 sequencing (time-based gating & recovery)
+    # Challenge 1→2 sequencing (time-based gating)
     t_post_obstacle_sec: 1.5     # re-center delay after obstacle clears (before roundabout)
     t_roundabout_sec: 8.0        # time inside roundabout before exiting
-    rb_initial_reverse_sec: 0.0  # duration (s) of initial micro-reverse upon entering roundabout (0.0 = disabled, direct forward)
-    rb_reverse_speed: -0.10      # speed (m/s) during sharp arc micro-reverse recovery in roundabout
-    rb_reverse_steer: -0.50      # steering rate (rad/s) during sharp arc micro-reverse
-    rb_stuck_angular_thresh: 0.85 # |angular.z| considered "pinned near max" (~42.5° of 50° max)
-    rb_stuck_error_thresh: 0.45   # lane error threshold (must be well off-center)
-    rb_stuck_improve_margin: 0.05 # error improvement (abs delta) required to reset stuck timer
-    rb_stuck_duration_sec: 1.2    # duration (sec) non-improving condition must persist before recovery
-    rb_recovery_duration_sec: 0.6 # how long the reverse recovery maneuver runs (sec)
-    # ── Roundabout Entry Sequence & Speed Cap ────────────────────────────────
-    # Timed entry sequence when entering ROUNDABOUT state:
-    # Phase 1: Idle 1.0s -> Phase 2: Straight 2.0s -> Phase 3: Max Left 1.0s -> Phase 4: Idle 1.0s -> Phase 5: Lane Follow
-    rb_entry_idle1_sec: 1.0      # initial pause on entering roundabout (sec)
-    rb_entry_straight_sec: 2.0   # forward drive before turn (sec)
-    rb_entry_left_sec: 1.0       # max left turn duration (sec)
-    rb_entry_idle2_sec: 1.0      # pause after entry turn to let camera settle (sec)
-    rb_entry_speed: 0.16         # m/s forward speed during entry sequence (straight & max left turn)
-    rb_speed: 0.12               # m/s max speed cap during roundabout lane follow
-
     # ── Hill Climbing Mode (Challenge 5) ──────────────────────────────────
     # TUNING GUIDE:
     #   hill_pitch_threshold   : IMU pitch (deg) to enter HILL state. Start at 8-10°.
@@ -125,12 +107,11 @@ cmd_safety_controller:
 #   error_decay_rate : 0.92 → held error halves every ~9 frames
 line_follower_camera:
   ros__parameters:
-    n_scanlines: 10
+    n_scanlines: 8
     min_valid_scanlines: 2
     min_line_width_px: 5
-    crop_ratio_base: 0.4             # road crop ratio (0.4)
+    crop_ratio_base: 0.55           # raised from 0.4 — robot sees further ahead
     search_radius_px: 80             # blob-to-expected match radius
-    scanline_outlier_px: 50          # max px from _expected_center before scanline is rejected as wall/floor
     # Thresholding — lane detection
     white_threshold: 100              # inverted mode: pixels BELOW this = lane (tune 80-120)
     use_otsu: false
@@ -147,16 +128,13 @@ line_follower_camera:
     # Kalman filter (MDPI-inspired)
     kalman_enabled: true
     kalman_process_noise: 0.01
-    kalman_measurement_noise: 0.05  # lowered from 0.1 — trusts valid measurements faster
+    kalman_measurement_noise: 0.1
     # Legacy EMA (fallback when kalman_enabled=false)
     smoothing_alpha: 0.3
     dead_zone: 0.05
     hold_error_frames: 15
     error_decay_rate: 0.92
-    # Nominal Lane Width Bounds (px in 320x240 frame)
-    nominal_lane_width_min: 35
-    nominal_lane_width_max: 0
-    show_debug: true              # ON by default — dashboard camera feed annotated
+    show_debug: false             # OFF by default — dashboard auto-enables for active view
     resize_width: 320
     print_debug: false
     debug_print_rate: 0.5
@@ -209,14 +187,14 @@ boom_gate_detector:
     min_gate_points: 5
     distance_variance_max: 0.05
     lidar_angle_offset: 3.1416
-    hysteresis: 5                  # require 5 consecutive frames before triggering (was 3)
+    hysteresis: 3
     heartbeat_sec: 0.5
     enable_camera: true
-    cam_roi_y_min: 0.35
-    cam_roi_y_max: 0.75
-    cam_red_min_width: 80          # minimum red bar width in px (was 50 — too small)
-    cam_red_sat_min: 70
-    cam_red_val_min: 70
+    cam_roi_y_min: 0.20
+    cam_roi_y_max: 0.98
+    cam_red_min_width: 40
+    cam_red_sat_min: 30
+    cam_red_val_min: 30
 
 # --- Tunnel Wall Follower (RANSAC Enhanced) ---
 # TUNING GUIDE:
@@ -353,7 +331,7 @@ servo_controller:
     # increase this value. 1.0 = no boost (symmetric). 1.3 = 30% more right servo angle.
     # This multiplier ONLY applies in auto mode (process_twist). Manual is unaffected.
     # TUNING: Start at 1.3. If still understeering right, try 1.4. Max ~1.6 before servo clamps.
-    auto_right_steer_boost: 1.0    # 1.0 = symmetric (was 1.3 — caused servo clamp on right turns)
+    auto_right_steer_boost: 1.3
 
 # --- BPU Signage Detector ---
 # CLASS MAP:
@@ -381,22 +359,21 @@ signage_detector:
     iou_threshold: 0.45
     show_debug: false             # OFF by default — dashboard auto-enables when signage view active
     heartbeat_sec: 0.5
-    min_parking_sign_width: 0     # set >0 to require minimum bounding-box width for parking (px in 640x640)
-    min_parking_sign_height: 0    # set >0 to require minimum bounding-box height for parking (px in 640x640)
-    min_roundabout_sign_width: 0  # set >0 to require minimum bounding-box width for roundabout (px in 640x640)
-    min_roundabout_sign_height: 0 # set >0 to require minimum bounding-box height for roundabout (px in 640x640)
+    min_parking_sign_width: 0     # set >0 to require minimum bounding-box width for parking
 
     # ── Per-class confidence thresholds ────────────────────────────────────
     # CRUCIAL classes — tuned for reliable detection without false positives
-    thresh_bumper:     0.10       # Bumper_signboard
-    thresh_hill:       0.10       # Hill_signboard
-    thresh_obstacle:   0.30       # Obstacle_signboard
-    thresh_parallelp:  0.50       # ParallelP_signboard
-    thresh_perpendp:   0.50       # PerpendP_signboard
-    thresh_roundabout: 0.45       # Roundabout_signboard (was 0.15 — too sensitive)
-    thresh_tl_green:   0.10       # Traffic_Green
-    thresh_tl_red:     0.10       # Traffic_Red
-    thresh_tl_generic: 0.10       # Trafficlight_signboard
+    thresh_hill:       0.06       # Hill_signboard  — tested working value
+    thresh_parallelp:  0.05       # ParallelP_signboard — tested working value
+    thresh_perpendp:   0.05       # PerpendP_signboard  — tested working value
+    thresh_tl_green:   0.25       # Traffic_Green
+    thresh_tl_red:     0.25       # Traffic_Red
+    thresh_tl_generic: 0.20       # Trafficlight_signboard (CV re-classifies to green/red)
+
+    # DISABLED classes — threshold set to 0.99 so they never fire
+    thresh_bumper:     0.99       # Bumper_signboard    ← not used
+    thresh_obstacle:   0.99       # Obstacle_signboard  ← not used
+    thresh_roundabout: 0.50       # Roundabout_signboard← fires high spuriously, 0.5 suppresses false triggers
 
     # ── Per-class bounding-box colors (BGR) for debug overlay ─────────────
     color_hill:       '180,0,255'   # Pink/Purple

@@ -17,7 +17,6 @@ DASH_CTRL_TOPIC = '/dashboard_ctrl'
 # Perception inputs
 LANE_ERROR_TOPIC = '/lane_error'
 LANE_LOST_TOPIC = '/lane_lost'
-LANE_WIDTH_INVALID_TOPIC = '/lane_width_invalid'
 OBSTACLE_LIDAR_TOPIC = '/obstacle_front'
 OBSTACLE_CAMERA_TOPIC = '/obstacle_detected_camera'
 OBSTACLE_FUSED_TOPIC = '/obstacle_detected_fused'
@@ -38,7 +37,6 @@ PARKING_VEL_TOPIC = '/parking_cmd_vel'
 PARKING_COMPLETE_TOPIC = '/parking_complete'
 PARKING_SIGN_TOPIC = '/parking_signboard_detected'
 HILL_SIGN_TOPIC = '/hill_sign_detected'
-ROUNDABOUT_SIGN_TOPIC = '/roundabout_sign_detected'
 PARKING_STATUS_TOPIC = '/parking_status'
 
 
