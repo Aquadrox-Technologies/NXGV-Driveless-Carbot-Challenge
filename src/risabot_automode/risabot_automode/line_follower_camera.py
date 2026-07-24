@@ -691,53 +691,15 @@ class LineFollowerCamera(Node):
             measurement_available = False
 
             if valid_count >= conf_min and len(center_pts) > 0:
-                # Outlier rejection anchored to _expected_center (last-known
-                # lane position) rather than the frame's global median.
-                #
-                # WHY: global median is easily corrupted when the robot
-                # overshoots during a sharp turn and 5 of 10 scanlines pick up
-                # the outer wall. The median then lands between wall and lane,
-                # causing BOTH to exceed outlier_thresh — triggering the fallback
-                # unfiltered average, which then lets heavy bottom-weighted wall
-                # scanlines dominate and output the WRONG steering direction.
-                #
-                # With _expected_center as the anchor:
-                #   wall at x=80, lane expected at x=240:
-                #     |80 - 240| = 160 > thresh -> wall ZEROED
-                #     |240 - 240| = 0 <= thresh -> lane KEPT
-                # So even a 5-wall / 5-lane split is handled correctly.
-                outlier_thresh = self._param_cache['scanline_outlier_px']
-                if self._expected_left is not None and self._expected_right is not None:
-                    anchor_x = float(self._expected_left + self._expected_right) / 2.0
-                else:
-                    # Cold-start: no history yet, fall back to frame median
-                    anchor_x = float(np.median([pt[0] for pt in center_pts]))
-                filtered_weights = [
-                    wt if abs(pt[0] - anchor_x) <= outlier_thresh else 0.0
-                    for pt, wt in zip(center_pts, scan_weights)
-                ]
-                total_weight = sum(filtered_weights)
+                # Simple weighted average — all valid scanlines contribute.
+                # Bottom scanlines weighted higher (closer to robot = more reliable).
+                total_weight = sum(scan_weights)
                 if total_weight > 0:
                     avg_center_x = sum(
-                        pt[0] * wt for pt, wt in zip(center_pts, filtered_weights)
+                        pt[0] * wt for pt, wt in zip(center_pts, scan_weights)
                     ) / total_weight
                 else:
-                    # Every scanline was an outlier vs expected_center — this
-                    # can happen on a full lane loss or a very wide swing.
-                    # Fall back to the frame median approach so we don't feed
-                    # an empty measurement.
-                    fallback_median = float(np.median([pt[0] for pt in center_pts]))
-                    fallback_weights = [
-                        wt if abs(pt[0] - fallback_median) <= outlier_thresh else 0.0
-                        for pt, wt in zip(center_pts, scan_weights)
-                    ]
-                    total_weight = sum(fallback_weights)
-                    if total_weight > 0:
-                        avg_center_x = sum(
-                            pt[0] * wt for pt, wt in zip(center_pts, fallback_weights)
-                        ) / total_weight
-                    else:
-                        avg_center_x = sum(pt[0] for pt in center_pts) / len(center_pts)
+                    avg_center_x = sum(pt[0] for pt in center_pts) / len(center_pts)
                 raw_error = float(
                     np.clip((avg_center_x - image_center) / image_center, -1.0, 1.0)
                 )
