@@ -135,9 +135,10 @@ line_follower_camera:
     white_threshold: 100              # inverted mode: pixels BELOW this = lane (tune 80-120)
     use_otsu: false
     invert_binary: true               # true = detect dark lane, false = detect white borders
+    road_color_tolerance: 28          # allowed intensity offset +/- Delta (tightened from 40 to prevent border bleed)
     # Morphological cleanup
     morph_open_size: 3                # remove noise blobs (0=disable)
-    morph_close_size: 5               # fill small gaps in lane lines (0=disable)
+    morph_close_size: 3               # fill small gaps in lane lines (reduced from 5 to prevent bridging white lines)
     clahe_enabled: true
     clahe_clip_limit: 2.0
     # IPM — Bird's Eye View (DISABLED: camera is horizontal at 8.5cm, IPM distorts)
@@ -153,9 +154,9 @@ line_follower_camera:
     dead_zone: 0.05
     hold_error_frames: 15
     error_decay_rate: 0.92
-    # Nominal Lane Width Bounds (px in 320x240 frame)
-    nominal_lane_width_min: 35
-    nominal_lane_width_max: 0
+    # Nominal Lane Width Bounds (calibrated for 30cm track width)
+    nominal_lane_width_min: 20        # reject < 20cm false shadow/seam collapses
+    nominal_lane_width_max: 42        # reject > 42cm white border bleed-throughs
     show_debug: true              # ON by default — dashboard camera feed annotated
     resize_width: 320
     print_debug: false
