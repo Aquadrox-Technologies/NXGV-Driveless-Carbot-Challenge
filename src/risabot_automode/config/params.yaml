@@ -24,13 +24,13 @@ auto_driver:
     steering_gain: 1.0           # legacy, kept for compatibility
     # PID gains (tuned)
     pid_kp: 1.4
-    pid_ki: 0.1
-    pid_kd: 0.5
+    pid_ki: 0.01
+    pid_kd: 0.2
     pid_integral_max: 0.3
     # Adaptive speed
-    speed_error_scale: 1.5
+    speed_error_scale: 1.2
     min_turn_speed: 0.8
-    lane_steer_slew: 3.0         # max angular.z change per second (Cytron acceleration limit)
+    lane_steer_slew: 5.0         # max angular.z change per second — faster curve response (was 3.0)
     # Challenge 1→2 sequencing (time-based gating & recovery)
     t_post_obstacle_sec: 1.5     # re-center delay after obstacle clears (before roundabout)
     t_roundabout_sec: 8.0        # time inside roundabout before exiting
@@ -128,9 +128,9 @@ line_follower_camera:
     n_scanlines: 10
     min_valid_scanlines: 2
     min_line_width_px: 5
-    crop_ratio_base: 0.4             # road crop ratio (0.4)
-    search_radius_px: 80             # blob-to-expected match radius
-    scanline_outlier_px: 50          # max px from _expected_center before scanline is rejected as wall/floor
+    crop_ratio_base: 0.55            # road crop ratio — 55% gives more curve lookahead (was 0.4)
+    search_radius_px: 120            # wider search allows tracking road through full curve shift (was 80)
+    scanline_outlier_px: 80          # wider outlier window keeps upper scanlines on curves (was 50)
     # Thresholding — lane detection
     white_threshold: 100              # inverted mode: pixels BELOW this = lane (tune 80-120)
     use_otsu: false
@@ -146,11 +146,11 @@ line_follower_camera:
     ipm_bottom_width_ratio: 1.0
     # Kalman filter (MDPI-inspired)
     kalman_enabled: true
-    kalman_process_noise: 0.01
-    kalman_measurement_noise: 0.05  # lowered from 0.1 — trusts valid measurements faster
+    kalman_process_noise: 0.02
+    kalman_measurement_noise: 0.03  # trust measurements faster for quicker curve response (was 0.05)
     # Legacy EMA (fallback when kalman_enabled=false)
     smoothing_alpha: 0.3
-    dead_zone: 0.05
+    dead_zone: 0.03
     hold_error_frames: 15
     error_decay_rate: 0.92
     # Nominal Lane Width Bounds (px in 320x240 frame)

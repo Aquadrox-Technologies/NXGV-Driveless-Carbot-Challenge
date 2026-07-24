@@ -388,8 +388,10 @@ class LineFollowerCamera(Node):
         n_scanlines = self._param_cache['n_scanlines']
         min_width = self._param_cache['min_line_width_px']
         invert = self._param_cache.get('invert_binary', False)
-        # In invert mode the lane is wider than border lines
-        max_width = w - 10 if invert else w // 3
+        # Invert mode: cap at 60% of frame width (~40cm physical max).
+        # This prevents merged room-floor dark blobs (W=70cm) from being accepted.
+        # The real 30cm lane is ~120px wide — well within this cap.
+        max_width = int(w * 0.60) if invert else w // 3
         search_radius = self._param_cache['search_radius_px']
 
         left_points = []
@@ -537,7 +539,7 @@ class LineFollowerCamera(Node):
                 smooth = 0.50  # Responsive tracking (was 0.15, which caused lag on curves)
                 if self._expected_left is not None:
                     # Clamp jump: allow expected to shift up to 40px/frame for sharp turns
-                    max_shift = 40
+                    max_shift = 60  # allow expected to shift up to 60px/frame for sharp turns
                     new_left = int(smooth * expected_left + (1 - smooth) * self._expected_left)
                     new_right = int(smooth * expected_right + (1 - smooth) * self._expected_right)
                     new_left = max(self._expected_left - max_shift, min(self._expected_left + max_shift, new_left))
