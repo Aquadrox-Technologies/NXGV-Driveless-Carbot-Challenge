@@ -36,8 +36,10 @@ from .topics import (
     CMD_SAFETY_STATUS_TOPIC,
     DASH_STATE_TOPIC,
     HILL_SIGN_TOPIC,
+    ROUNDABOUT_SIGN_TOPIC,
     LANE_ERROR_TOPIC,
     LANE_LOST_TOPIC,
+    LANE_WIDTH_INVALID_TOPIC,
     IMU_PITCH_TOPIC,
     LOOP_STATS_TOPIC,
     OBSTACLE_CAMERA_TOPIC,
@@ -116,10 +118,18 @@ class AutoDriver(Node):
         self.cmd_safety_estop = False
         self.cmd_safety_last_time = 0.0
 
-        # Hill sign state
+        # Hill & Roundabout sign states
         self.hill_sign_detected = False
         self._hill_sign_last_time = 0.0  # monotonic time of last hill sign detection
         self._hill_primed = False         # True during the prime window after sign detection
+        self.roundabout_sign_detected = False
+        self._roundabout_sign_latched = False
+        self.lane_width_invalid = False
+        self._rb_stuck_since = None        # monotonic() timestamp when non-improving condition started, or None
+        self._rb_stuck_baseline_error = 0.0  # |lane_error| at the start of the current stuck window
+        self._rb_last_stuck_steer_dir = -1.0 # -1.0 = left turn, +1.0 = right turn
+        self._rb_recovering = False
+        self._rb_recovery_start = 0.0
 
         # PID controller state
         self._pid_prev_error = 0.0
@@ -188,9 +198,36 @@ class AutoDriver(Node):
         # How much lane-follow steering to retain on descent (0 = go straight)
         self.declare_parameter('descent_steer_scale', 0.5)
 
-        # Challenge sequencing — time-based gating
+        # Challenge sequencing — time-based gating & roundabout recovery
         self.declare_parameter('t_post_obstacle_sec', 1.5)  # delay after obstacle clears before entering roundabout
         self.declare_parameter('t_roundabout_sec', 8.0)      # time to traverse roundabout arc
+        self.declare_parameter('rb_initial_reverse_sec', 0.0) # initial reverse duration on entering roundabout (0.0 = disabled, direct forward)
+        self.declare_parameter('rb_reverse_speed', -0.10)   # speed when micro-reversing in sharp arc recovery
+        self.declare_parameter('rb_reverse_steer', -0.50)   # steering rate during sharp arc micro-reverse (rad/s)
+        # Sharp-arc detection: trigger a brief reverse when the PID is
+        # already commanding near-max steering AND the lane error still
+        # isn't shrinking — i.e. the chassis genuinely can't turn tight
+        # enough for this arc in one continuous pass.
+        #
+        # A normal hard turn ALSO has near-max steering + nonzero error for
+        # a while — that alone isn't "stuck", it's just cornering. What
+        # actually distinguishes "stuck" is the error staying flat/getting
+        # WORSE despite max steering, sustained for a real amount of
+        # time (not a handful of 50Hz ticks). So this is duration-based
+        # (robust to loop-rate changes) and only counts time where the
+        # error hasn't meaningfully improved since the stuck window began.
+        self.declare_parameter('rb_stuck_angular_thresh', 0.85)   # ~42.5° of 50° max — only near TRUE full lock
+        self.declare_parameter('rb_stuck_error_thresh', 0.45)     # error must be well off-center, not just "mid-turn"
+        self.declare_parameter('rb_stuck_improve_margin', 0.05)   # error must drop by at least this much to count as "improving"
+        self.declare_parameter('rb_stuck_duration_sec', 1.2)      # how long the non-improving condition must persist
+        self.declare_parameter('rb_recovery_duration_sec', 0.6)   # how long the reverse recovery maneuver runs
+        # Timed entry sequence parameters for ROUNDABOUT mode
+        self.declare_parameter('rb_entry_idle1_sec', 1.0)       # initial idle on entering roundabout (sec)
+        self.declare_parameter('rb_entry_straight_sec', 0.5)    # move straight duration (sec)
+        self.declare_parameter('rb_entry_left_sec', 0.3)        # max left turn duration (sec)
+        self.declare_parameter('rb_entry_idle2_sec', 0.5)       # post-turn idle duration (sec)
+        self.declare_parameter('rb_entry_speed', 0.12)          # forward speed during entry sequence (m/s)
+        self.declare_parameter('rb_speed', 0.12)                # speed cap in roundabout lane follow (m/s)
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -298,16 +335,21 @@ class AutoDriver(Node):
             String, RECORD_PLAYBACK_STATE_TOPIC, self.record_playback_state_callback, 10
         )
 
-        # Hill sign detection from signage_detector
+        # Hill & Roundabout sign detection from signage_detector
         self.create_subscription(
             Bool, HILL_SIGN_TOPIC, self.hill_sign_callback, 10
+        )
+        self.create_subscription(
+            Bool, ROUNDABOUT_SIGN_TOPIC, self.roundabout_sign_callback, 10
+        )
+        self.create_subscription(
+            Bool, LANE_WIDTH_INVALID_TOPIC, self.lane_width_invalid_callback, 10
         )
         
         # Subscribe to Odometry (from servo_controller)
         self.odom_sub = self.create_subscription(
             Odometry, ODOM_TOPIC, self.odom_callback, 10
         )
-
 
         # Manual state override (for testing)
         self.create_subscription(
@@ -319,8 +361,6 @@ class AutoDriver(Node):
 
         self.get_logger().info(f'State: {self.state.name}')
         self.create_timer(1.0, self._publish_loop_stats)
-
-
 
     def _update_param_cache(self) -> None:
         """Cache frequently used parameters to avoid per-loop lookups."""
@@ -347,6 +387,20 @@ class AutoDriver(Node):
             # Challenge sequencing
             't_post_obstacle_sec': float(self.get_parameter('t_post_obstacle_sec').value),
             't_roundabout_sec':    float(self.get_parameter('t_roundabout_sec').value),
+            'rb_initial_reverse_sec': float(self.get_parameter('rb_initial_reverse_sec').value),
+            'rb_reverse_speed':    float(self.get_parameter('rb_reverse_speed').value),
+            'rb_reverse_steer':    float(self.get_parameter('rb_reverse_steer').value),
+            'rb_stuck_angular_thresh': float(self.get_parameter('rb_stuck_angular_thresh').value),
+            'rb_stuck_error_thresh':   float(self.get_parameter('rb_stuck_error_thresh').value),
+            'rb_stuck_improve_margin': float(self.get_parameter('rb_stuck_improve_margin').value),
+            'rb_stuck_duration_sec':   float(self.get_parameter('rb_stuck_duration_sec').value),
+            'rb_recovery_duration_sec': float(self.get_parameter('rb_recovery_duration_sec').value),
+            'rb_entry_idle1_sec':       float(self.get_parameter('rb_entry_idle1_sec').value),
+            'rb_entry_straight_sec':    float(self.get_parameter('rb_entry_straight_sec').value),
+            'rb_entry_left_sec':        float(self.get_parameter('rb_entry_left_sec').value),
+            'rb_entry_idle2_sec':       float(self.get_parameter('rb_entry_idle2_sec').value),
+            'rb_entry_speed':           float(self.get_parameter('rb_entry_speed').value),
+            'rb_speed':                 float(self.get_parameter('rb_speed').value),
             # Hill Climb
             'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
             'hill_pitch_hysteresis':          float(self.get_parameter('hill_pitch_hysteresis').value),
@@ -410,6 +464,10 @@ class AutoDriver(Node):
         """Store tunnel detection flag with timestamp."""
         self.tunnel_detected = msg.data
         self.tunnel_last_time = time.monotonic()
+        if msg.data and self._roundabout_sign_latched:
+            self._roundabout_sign_latched = False
+            self._boom_gate_armed = True
+            self.get_logger().info('Tunnel detected → unlatched Roundabout mode')
 
     def tunnel_cmd_callback(self, msg: Twist) -> None:
         """Store tunnel follower command."""
@@ -441,6 +499,10 @@ class AutoDriver(Node):
     def signboard_callback(self, msg: Bool) -> None:
         """Store parking signboard detection flag."""
         self.signboard_detected = msg.data
+        if msg.data and self._roundabout_sign_latched:
+            self._roundabout_sign_latched = False
+            self._boom_gate_armed = True
+            self.get_logger().info('Parking sign detected → unlatched Roundabout mode')
 
     def parking_status_callback(self, msg: String) -> None:
         """Track parking stage completion."""
@@ -482,6 +544,18 @@ class AutoDriver(Node):
             if not self._hill_primed:
                 self._hill_primed = True
                 self.get_logger().info('⛰ Hill sign detected — hill mode PRIMED')
+
+    def roundabout_sign_callback(self, msg: Bool) -> None:
+        """Receive roundabout sign detection from signage_detector."""
+        self.roundabout_sign_detected = msg.data
+        if msg.data and not self._boom_gate_armed:
+            if not self._roundabout_sign_latched:
+                self._roundabout_sign_latched = True
+                self.get_logger().info('🔄 Roundabout sign detected — ROUNDABOUT mode LATCHED')
+
+    def lane_width_invalid_callback(self, msg: Bool) -> None:
+        """Receive lane width invalid flag from line_follower_camera."""
+        self.lane_width_invalid = msg.data
 
     def _publish_loop_stats(self) -> None:
         """Publish loop timing stats for diagnostics."""
@@ -534,6 +608,11 @@ class AutoDriver(Node):
         self._tl_red_latched = False
         self._obs_cleared_time = 0.0
         self._obs_was_active = False
+        self.roundabout_sign_detected = False
+        self._rb_stuck_since = None
+        self._rb_stuck_baseline_error = 0.0
+        self._rb_last_stuck_steer_dir = -1.0
+        self._rb_recovering = False
         self.distance = 0.0
         self.distance_past_light = 0.0
         self.state_entry_time = time.monotonic()
@@ -556,6 +635,7 @@ class AutoDriver(Node):
         self.parking_sequence_active = False
         self._parking_done = False
         self._boom_gate_armed = False
+        self._roundabout_sign_latched = False
         self._tl_armed = False
         self._tl_red_latched = False
         self._obs_cleared_time = 0.0
@@ -578,8 +658,12 @@ class AutoDriver(Node):
         msg.data = f'{self.state.name}|{self.current_lap}|{self.distance:.2f}|{self.stop_reason}'
         self.dash_state_pub.publish(msg)
 
-    def _lane_follow_cmd(self) -> Twist:
+    def _lane_follow_cmd(self, error_bias: float = 0.0) -> Twist:
         """Build a Twist using a full PID controller + adaptive speed.
+
+        error_bias: constant offset added to lane_error before PID.
+          Negative = pull left (e.g. -0.25 in roundabout to prefer left lane).
+          Zero     = normal centered lane following (default).
 
         PID terms:
           P — proportional to current error (immediate correction)
@@ -590,6 +674,14 @@ class AutoDriver(Node):
           Forward speed scales DOWN as |error| increases so the robot
           naturally slows for sharp turns and accelerates on straights.
         """
+        if getattr(self, 'lane_width_invalid', False):
+            # Invalid track width (bleed-through or shadow collapse): decay steering to 0 and reduce speed
+            self._prev_angular_z *= 0.8
+            cmd = Twist()
+            cmd.linear.x = self._param_cache['forward_speed'] * 0.6
+            cmd.angular.z = self._prev_angular_z
+            return cmd
+
         now = time.monotonic()
         dt = now - self._pid_last_time
         self._pid_last_time = now
@@ -598,7 +690,8 @@ class AutoDriver(Node):
         if dt <= 0.0 or dt > 0.5:
             dt = 0.02  # assume 50 Hz nominal
 
-        error = self.lane_error
+        # Apply bias before PID: shift the perceived center
+        error = self.lane_error + error_bias
 
         # --- Integral term with anti-windup clamp ---
         self._pid_integral += error * dt
@@ -774,19 +867,109 @@ class AutoDriver(Node):
             cmd.linear.x = -self._param_cache['forward_speed'] * 0.8
             cmd.angular.z = 0.0
 
-        # Priority 4: Roundabout — Challenge 2 (time-gated)
-        elif (self._obs_cleared_time > 0
-              and not self._boom_gate_armed
-              and (time.monotonic() - self._obs_cleared_time) >= self._param_cache['t_post_obstacle_sec']):
+        # Priority 4: Roundabout — Challenge 2 (signboard-triggered or time-gated)
+        elif not self._boom_gate_armed and (
+            self._roundabout_sign_latched or (
+                self._obs_cleared_time > 0 and (time.monotonic() - self._obs_cleared_time) >= self._param_cache['t_post_obstacle_sec']
+            )
+        ):
             target_state = ChallengeState.ROUNDABOUT
-            cmd = self._lane_follow_cmd()  # Roundabout has painted lane lines
-            # Check exit: dwell time expired
+            time_in_roundabout = time.monotonic() - self.state_entry_time if self.state == ChallengeState.ROUNDABOUT else 0.0
+            t_idle1 = float(self._param_cache.get('rb_entry_idle1_sec', 1.0))
+            t_straight = t_idle1 + float(self._param_cache.get('rb_entry_straight_sec', 0.5))
+            t_turn_left = t_straight + float(self._param_cache.get('rb_entry_left_sec', 0.3))
+            t_idle2 = t_turn_left + float(self._param_cache.get('rb_entry_idle2_sec', 0.5))
+            entry_speed = float(self._param_cache.get('rb_entry_speed', 0.12))
+
+            if time_in_roundabout < t_idle1:
+                # Phase 1: Initial Idle (1.0s)
+                cmd = Twist()
+                cmd.linear.x = 0.0
+                cmd.angular.z = 0.0
+                self.stop_reason = f'ROUNDABOUT ENTRY IDLE 1 ({time_in_roundabout:.1f}s/{t_idle1:.1f}s)'
+            elif time_in_roundabout < t_straight:
+                # Phase 2: Move Straight (0.5s)
+                cmd = Twist()
+                cmd.linear.x = entry_speed
+                cmd.angular.z = 0.0
+                elapsed = time_in_roundabout - t_idle1
+                self.stop_reason = f'ROUNDABOUT ENTRY STRAIGHT ({elapsed:.1f}s/0.5s)'
+            elif time_in_roundabout < t_turn_left:
+                # Phase 3: Max Left Turn (0.3s)
+                cmd = Twist()
+                cmd.linear.x = entry_speed
+                cmd.angular.z = -2.0  # Max physical Left
+                elapsed = time_in_roundabout - t_straight
+                self.stop_reason = f'ROUNDABOUT ENTRY MAX-LEFT ({elapsed:.1f}s/0.3s)'
+            elif time_in_roundabout < t_idle2:
+                # Phase 4: Post-turn Idle (0.5s)
+                cmd = Twist()
+                cmd.linear.x = 0.0
+                cmd.angular.z = 0.0
+                elapsed = time_in_roundabout - t_turn_left
+                self.stop_reason = f'ROUNDABOUT ENTRY IDLE 2 ({elapsed:.1f}s/0.5s)'
+            elif self._rb_recovering:
+                # Phase 5a: Stuck Recovery (Reversing out of wall if stuck)
+                rev_spd = float(self._param_cache.get('rb_reverse_speed', -0.10))
+                rev_steer_mag = abs(float(self._param_cache.get('rb_reverse_steer', 0.50)))
+                stuck_dir = getattr(self, '_rb_last_stuck_steer_dir', -1.0)
+                rev_steer = -stuck_dir * rev_steer_mag
+
+                cmd = Twist()
+                cmd.linear.x = rev_spd
+                cmd.angular.z = rev_steer
+                elapsed = time.monotonic() - self._rb_recovery_start
+                self.stop_reason = f'ROUNDABOUT RECOVERY ({elapsed:.1f}s, steer={rev_steer:+.2f})'
+                if elapsed >= self._param_cache['rb_recovery_duration_sec']:
+                    self._rb_recovering = False
+                    self._rb_stuck_since = None
+            else:
+                # Phase 5b: Roundabout Lane Following
+                # Drives the circular track with _lane_follow_cmd(error_bias=0.0)
+                # capped at rb_speed (default 0.12 m/s).
+                rb_spd = float(self._param_cache.get('rb_speed', 0.12))
+                cmd = self._lane_follow_cmd(error_bias=0.0)
+                cmd.linear.x = min(cmd.linear.x, rb_spd)
+                self.stop_reason = f'ROUNDABOUT LANE-FOLLOW ({time_in_roundabout:.1f}s spd={cmd.linear.x:.2f})'
+
+                # Sharp-arc stuck detection: monitors pinned steering (|angular.z| >= 0.85)
+                # for 1.2s without error reduction and triggers reverse recovery (_rb_recovering = True).
+                stuck_thresh = self._param_cache['rb_stuck_angular_thresh']
+                error_thresh = self._param_cache['rb_stuck_error_thresh']
+                improve_margin = self._param_cache['rb_stuck_improve_margin']
+                duration_needed = self._param_cache['rb_stuck_duration_sec']
+                now = time.monotonic()
+                cur_error = abs(self.lane_error)
+
+                at_limit = abs(cmd.angular.z) >= stuck_thresh and cur_error > error_thresh
+
+                if not at_limit:
+                    self._rb_stuck_since = None
+                elif self._rb_stuck_since is None:
+                    self._rb_stuck_since = now
+                    self._rb_stuck_baseline_error = cur_error
+                    self._rb_last_stuck_steer_dir = 1.0 if cmd.angular.z >= 0 else -1.0
+                elif cur_error <= self._rb_stuck_baseline_error - improve_margin:
+                    # Error is genuinely improving even though still above threshold.
+                    self._rb_stuck_since = now
+                    self._rb_stuck_baseline_error = cur_error
+                    self._rb_last_stuck_steer_dir = 1.0 if cmd.angular.z >= 0 else -1.0
+
+                if (self._rb_stuck_since is not None
+                        and (now - self._rb_stuck_since) >= duration_needed):
+                    self._rb_recovering = True
+                    self._rb_recovery_start = now
+                    self._rb_stuck_since = None
+
+            # Check exit: total roundabout time expired
             if self.state == ChallengeState.ROUNDABOUT:
-                time_in_roundabout = time.monotonic() - self.state_entry_time
                 if time_in_roundabout >= self._param_cache['t_roundabout_sec']:
                     target_state = ChallengeState.LANE_FOLLOW
                     cmd = self._lane_follow_cmd()
                     self._boom_gate_armed = True
+                    self._roundabout_sign_latched = False
+                    self._rb_recovering = False
+                    self._rb_stuck_since = None
                     self._obs_cleared_time = 0.0  # prevent re-entry
                     self.get_logger().info('Roundabout complete → boom gate armed')
 
