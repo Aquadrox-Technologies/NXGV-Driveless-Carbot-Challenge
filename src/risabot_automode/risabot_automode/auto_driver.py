@@ -221,6 +221,13 @@ class AutoDriver(Node):
         self.declare_parameter('rb_stuck_improve_margin', 0.05)   # error must drop by at least this much to count as "improving"
         self.declare_parameter('rb_stuck_duration_sec', 1.2)      # how long the non-improving condition must persist
         self.declare_parameter('rb_recovery_duration_sec', 0.6)   # how long the reverse recovery maneuver runs
+        # Fixed open-loop steering used while traversing the roundabout arc.
+        # This bypasses lane-follow (which always fails when the hub is in view)
+        # and simply commands a constant sharp left turn for the full t_roundabout_sec.
+        # rb_open_loop_steer: negative = left (angular.z convention), positive = right.
+        # Tune to match the radius of your specific roundabout.
+        self.declare_parameter('rb_open_loop_speed', 0.12)   # m/s forward during roundabout arc
+        self.declare_parameter('rb_open_loop_steer', -1.0)   # angular.z (rad/s), negative = LEFT turn
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -388,6 +395,8 @@ class AutoDriver(Node):
             'rb_stuck_improve_margin': float(self.get_parameter('rb_stuck_improve_margin').value),
             'rb_stuck_duration_sec':   float(self.get_parameter('rb_stuck_duration_sec').value),
             'rb_recovery_duration_sec': float(self.get_parameter('rb_recovery_duration_sec').value),
+            'rb_open_loop_speed':        float(self.get_parameter('rb_open_loop_speed').value),
+            'rb_open_loop_steer':        float(self.get_parameter('rb_open_loop_steer').value),
             # Hill Climb
             'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
             'hill_pitch_hysteresis':          float(self.get_parameter('hill_pitch_hysteresis').value),
@@ -880,52 +889,16 @@ class AutoDriver(Node):
                     self._rb_recovering = False
                     self._rb_stuck_since = None
             else:
-                # Phase 2b: Normal forward lane-follow through the arc —
-                # identical to LANE_FOLLOW, no artificial bias added.
-                cmd = self._lane_follow_cmd()
-                self.stop_reason = f'ROUNDABOUT FORWARD ({time_in_roundabout:.1f}s)'
-
-                # Sharp-arc detection: a normal hard turn ALSO has
-                # near-max steering + nonzero error for a while — that
-                # alone is just cornering, not "stuck". What actually
-                # means "the chassis can't turn tight enough here" is the
-                # error staying flat or getting WORSE despite max
-                # steering, sustained for a real amount of time (not a
-                # handful of ticks, which any ordinary turn crosses
-                # instantly). So: start a window the moment we're at
-                # near-max steering with substantial error; keep resetting
-                # the window (and its baseline) as long as error keeps
-                # improving by at least rb_stuck_improve_margin; only
-                # trigger once the window has run non-improving for
-                # rb_stuck_duration_sec straight.
-                stuck_thresh = self._param_cache['rb_stuck_angular_thresh']
-                error_thresh = self._param_cache['rb_stuck_error_thresh']
-                improve_margin = self._param_cache['rb_stuck_improve_margin']
-                duration_needed = self._param_cache['rb_stuck_duration_sec']
-                now = time.monotonic()
-                cur_error = abs(self.lane_error)
-
-                at_limit = abs(cmd.angular.z) >= stuck_thresh and cur_error > error_thresh
-
-                if not at_limit:
-                    self._rb_stuck_since = None
-                elif self._rb_stuck_since is None:
-                    self._rb_stuck_since = now
-                    self._rb_stuck_baseline_error = cur_error
-                    self._rb_last_stuck_steer_dir = 1.0 if cmd.angular.z >= 0 else -1.0
-                elif cur_error <= self._rb_stuck_baseline_error - improve_margin:
-                    # Error is genuinely improving even though still above
-                    # threshold — the turn is progressing normally.
-                    # Restart the window against the new, better baseline.
-                    self._rb_stuck_since = now
-                    self._rb_stuck_baseline_error = cur_error
-                    self._rb_last_stuck_steer_dir = 1.0 if cmd.angular.z >= 0 else -1.0
-
-                if (self._rb_stuck_since is not None
-                        and (now - self._rb_stuck_since) >= duration_needed):
-                    self._rb_recovering = True
-                    self._rb_recovery_start = now
-                    self._rb_stuck_since = None
+                # Phase 2b: Fixed open-loop sharp left turn through the roundabout arc.
+                # Lane-follow is intentionally NOT used here: the roundabout hub
+                # (large white oval) always confuses the lane detector, causing
+                # LOST or wildly wrong steer decisions. A timed constant-steer
+                # arc is more reliable — tune rb_open_loop_steer (negative = left)
+                # and rb_open_loop_speed to match your roundabout geometry.
+                cmd = Twist()
+                cmd.linear.x  = float(self._param_cache.get('rb_open_loop_speed', 0.12))
+                cmd.angular.z = float(self._param_cache.get('rb_open_loop_steer', -1.0))
+                self.stop_reason = f'ROUNDABOUT ARC ({time_in_roundabout:.1f}s)'
 
             # Check exit: total roundabout time expired
             if self.state == ChallengeState.ROUNDABOUT:

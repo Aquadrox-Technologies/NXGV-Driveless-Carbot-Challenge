@@ -42,6 +42,19 @@ auto_driver:
     rb_stuck_improve_margin: 0.05 # error improvement (abs delta) required to reset stuck timer
     rb_stuck_duration_sec: 1.2    # duration (sec) non-improving condition must persist before recovery
     rb_recovery_duration_sec: 0.6 # how long the reverse recovery maneuver runs (sec)
+    # ── Roundabout open-loop arc ────────────────────────────────────────────
+    # Instead of lane-follow (which always loses against the white hub),
+    # the robot drives a fixed constant-steer arc for t_roundabout_sec.
+    # TUNING:
+    #   rb_open_loop_steer : negative = LEFT turn, positive = RIGHT.
+    #                         Start at -0.8 (gentle left). Increase magnitude
+    #                         if robot drifts wide of the roundabout.
+    #   rb_open_loop_speed : forward speed during the arc. Keep slow (0.10-0.15)
+    #                         so the fixed steer angle has time to curl the path.
+    #   t_roundabout_sec   : total time in roundabout. Tune so robot exits
+    #                         at the correct lane after completing the arc.
+    rb_open_loop_speed: 0.12     # m/s forward during roundabout arc
+    rb_open_loop_steer: -1.0     # angular.z rad/s during arc (negative = LEFT)
     # ── Hill Climbing Mode (Challenge 5) ──────────────────────────────────
     # TUNING GUIDE:
     #   hill_pitch_threshold   : IMU pitch (deg) to enter HILL state. Start at 8-10°.
@@ -153,10 +166,12 @@ line_follower_camera:
     # ── Scanline reach cap (FIX-1) ────────────────────────────────────────────
     # Limits how far up into the crop scanlines are placed.
     # 1.0 = full crop height used (original behaviour, most false-lock risk)
-    # 0.60 = only bottom 60% used — safe default that avoids wall/floor locks
+    # 0.75 = only bottom 75% used — good balance: avoids far-field walls/floor
+    #         while still giving enough look-ahead to detect curves
+    # 0.60 = more conservative; use if upper scanlines still grab walls
     # 0.40 = very conservative; short look-ahead, good for slow tight-corner runs
     # Tune UP if the robot cuts corners; tune DOWN if upper scanlines grab walls.
-    max_scanline_frac: 0.60
+    max_scanline_frac: 0.75
     # ── Hard minimum lane-blob width (FIX-2b) ────────────────────────────────
     # Any detected blob narrower than this (pixels) is rejected as noise/seam.
     # 30px ≈ ~4 cm in the bottom of the crop at 320px width.
