@@ -132,9 +132,9 @@ line_follower_camera:
     search_radius_px: 80             # blob-to-expected match radius
     scanline_outlier_px: 50          # max px from _expected_center before scanline is rejected as wall/floor
     # Thresholding — lane detection
-    white_threshold: 100              # inverted mode: pixels BELOW this = lane (tune 80-120)
+    white_threshold: 100              # pixels ABOVE this = white border line (tune 80-120)
     use_otsu: false
-    invert_binary: true               # true = detect dark lane, false = detect white borders
+    invert_binary: false              # false = detect white border line pairs, true = detect dark lane surface
     road_color_tolerance: 28          # allowed intensity offset +/- Delta (tightened from 40 to prevent border bleed)
     # Morphological cleanup
     morph_open_size: 3                # remove noise blobs (0=disable)
