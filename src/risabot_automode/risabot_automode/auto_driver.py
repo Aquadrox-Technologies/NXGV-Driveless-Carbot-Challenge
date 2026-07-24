@@ -221,13 +221,14 @@ class AutoDriver(Node):
         self.declare_parameter('rb_stuck_improve_margin', 0.05)   # error must drop by at least this much to count as "improving"
         self.declare_parameter('rb_stuck_duration_sec', 1.2)      # how long the non-improving condition must persist
         self.declare_parameter('rb_recovery_duration_sec', 0.6)   # how long the reverse recovery maneuver runs
-        # Fixed open-loop steering used while traversing the roundabout arc.
-        # This bypasses lane-follow (which always fails when the hub is in view)
-        # and simply commands a constant sharp left turn for the full t_roundabout_sec.
-        # rb_open_loop_steer: negative = left (angular.z convention), positive = right.
-        # Tune to match the radius of your specific roundabout.
-        self.declare_parameter('rb_open_loop_speed', 0.12)   # m/s forward during roundabout arc
-        self.declare_parameter('rb_open_loop_steer', -1.0)   # angular.z (rad/s), negative = LEFT turn
+        # Left-bias applied to lane error while in the roundabout arc.
+        # When two lanes are visible (the exit lane to the left and the
+        # through-lane straight ahead), adding a negative offset shifts the
+        # PID's "ideal center" leftward so it naturally gravitates to and
+        # follows the left lane rather than the right one.
+        # Negative = steer left. Start at -0.25 and increase magnitude
+        # (e.g. -0.40) if the robot still tends to take the right lane.
+        self.declare_parameter('rb_lane_bias', -0.25)  # lane error offset in roundabout (-1..+1 range)
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -395,8 +396,7 @@ class AutoDriver(Node):
             'rb_stuck_improve_margin': float(self.get_parameter('rb_stuck_improve_margin').value),
             'rb_stuck_duration_sec':   float(self.get_parameter('rb_stuck_duration_sec').value),
             'rb_recovery_duration_sec': float(self.get_parameter('rb_recovery_duration_sec').value),
-            'rb_open_loop_speed':        float(self.get_parameter('rb_open_loop_speed').value),
-            'rb_open_loop_steer':        float(self.get_parameter('rb_open_loop_steer').value),
+            'rb_lane_bias':              float(self.get_parameter('rb_lane_bias').value),
             # Hill Climb
             'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
             'hill_pitch_hysteresis':          float(self.get_parameter('hill_pitch_hysteresis').value),
@@ -654,8 +654,12 @@ class AutoDriver(Node):
         msg.data = f'{self.state.name}|{self.current_lap}|{self.distance:.2f}|{self.stop_reason}'
         self.dash_state_pub.publish(msg)
 
-    def _lane_follow_cmd(self) -> Twist:
+    def _lane_follow_cmd(self, error_bias: float = 0.0) -> Twist:
         """Build a Twist using a full PID controller + adaptive speed.
+
+        error_bias: constant offset added to lane_error before PID.
+          Negative = pull left (e.g. -0.25 in roundabout to prefer left lane).
+          Zero     = normal centered lane following (default).
 
         PID terms:
           P — proportional to current error (immediate correction)
@@ -674,7 +678,8 @@ class AutoDriver(Node):
         if dt <= 0.0 or dt > 0.5:
             dt = 0.02  # assume 50 Hz nominal
 
-        error = self.lane_error
+        # Apply bias before PID: shift the perceived center
+        error = self.lane_error + error_bias
 
         # --- Integral term with anti-windup clamp ---
         self._pid_integral += error * dt
@@ -889,16 +894,16 @@ class AutoDriver(Node):
                     self._rb_recovering = False
                     self._rb_stuck_since = None
             else:
-                # Phase 2b: Fixed open-loop sharp left turn through the roundabout arc.
-                # Lane-follow is intentionally NOT used here: the roundabout hub
-                # (large white oval) always confuses the lane detector, causing
-                # LOST or wildly wrong steer decisions. A timed constant-steer
-                # arc is more reliable — tune rb_open_loop_steer (negative = left)
-                # and rb_open_loop_speed to match your roundabout geometry.
-                cmd = Twist()
-                cmd.linear.x  = float(self._param_cache.get('rb_open_loop_speed', 0.12))
-                cmd.angular.z = float(self._param_cache.get('rb_open_loop_steer', -1.0))
-                self.stop_reason = f'ROUNDABOUT ARC ({time_in_roundabout:.1f}s)'
+                # Phase 2b: Lane-follow with a left-bias offset.
+                # rb_lane_bias (negative value) shifts the PID's perceived
+                # lane center leftward. When two lanes are visible (roundabout
+                # exit on the left vs. through-lane on the right), the biased
+                # error makes the robot treat the left lane as "centered" and
+                # the right lane as "too far right", so it follows the left one.
+                # When only one lane is visible, it simply hugs the left side.
+                rb_bias = float(self._param_cache.get('rb_lane_bias', -0.25))
+                cmd = self._lane_follow_cmd(error_bias=rb_bias)
+                self.stop_reason = f'ROUNDABOUT LANE-LEFT ({time_in_roundabout:.1f}s bias={rb_bias:+.2f})'
 
             # Check exit: total roundabout time expired
             if self.state == ChallengeState.ROUNDABOUT:

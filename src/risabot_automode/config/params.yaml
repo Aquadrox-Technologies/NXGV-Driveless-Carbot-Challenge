@@ -42,19 +42,16 @@ auto_driver:
     rb_stuck_improve_margin: 0.05 # error improvement (abs delta) required to reset stuck timer
     rb_stuck_duration_sec: 1.2    # duration (sec) non-improving condition must persist before recovery
     rb_recovery_duration_sec: 0.6 # how long the reverse recovery maneuver runs (sec)
-    # ── Roundabout open-loop arc ────────────────────────────────────────────
-    # Instead of lane-follow (which always loses against the white hub),
-    # the robot drives a fixed constant-steer arc for t_roundabout_sec.
+    # ── Roundabout left-lane preference ─────────────────────────────────────
+    # Constant offset added to lane_error when in ROUNDABOUT state.
+    # Negative = robot perceives itself as too far RIGHT → steers LEFT.
+    # When two lanes appear (exit lane on left, through-lane on right),
+    # this bias makes the PID choose and follow the left lane.
     # TUNING:
-    #   rb_open_loop_steer : negative = LEFT turn, positive = RIGHT.
-    #                         Start at -0.8 (gentle left). Increase magnitude
-    #                         if robot drifts wide of the roundabout.
-    #   rb_open_loop_speed : forward speed during the arc. Keep slow (0.10-0.15)
-    #                         so the fixed steer angle has time to curl the path.
-    #   t_roundabout_sec   : total time in roundabout. Tune so robot exits
-    #                         at the correct lane after completing the arc.
-    rb_open_loop_speed: 0.12     # m/s forward during roundabout arc
-    rb_open_loop_steer: -1.0     # angular.z rad/s during arc (negative = LEFT)
+    #   -0.25 — gentle pull left (start here)
+    #   -0.40 — stronger pull (if robot keeps taking right lane)
+    #   -0.15 — very subtle (if robot overshoots left)
+    rb_lane_bias: -0.25
     # ── Hill Climbing Mode (Challenge 5) ──────────────────────────────────
     # TUNING GUIDE:
     #   hill_pitch_threshold   : IMU pitch (deg) to enter HILL state. Start at 8-10°.
