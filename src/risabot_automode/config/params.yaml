@@ -44,11 +44,11 @@ auto_driver:
     rb_recovery_duration_sec: 0.6 # how long the reverse recovery maneuver runs (sec)
     # ── Roundabout Entry Sequence & Speed Cap ────────────────────────────────
     # Timed entry sequence when entering ROUNDABOUT state:
-    # Phase 1: Idle 1.0s -> Phase 2: Straight 0.5s -> Phase 3: Max Left 0.3s -> Phase 4: Idle 0.5s -> Phase 5: Lane Follow
+    # Phase 1: Idle 1.0s -> Phase 2: Straight 2.0s -> Phase 3: Max Left 1.0s -> Phase 4: Idle 1.0s -> Phase 5: Lane Follow
     rb_entry_idle1_sec: 1.0      # initial pause on entering roundabout (sec)
-    rb_entry_straight_sec: 0.5   # forward drive before turn (sec)
-    rb_entry_left_sec: 0.3       # max left turn duration (sec)
-    rb_entry_idle2_sec: 0.5      # pause after entry turn to let camera settle (sec)
+    rb_entry_straight_sec: 2.0   # forward drive before turn (sec)
+    rb_entry_left_sec: 1.0       # max left turn duration (sec)
+    rb_entry_idle2_sec: 1.0      # pause after entry turn to let camera settle (sec)
     rb_entry_speed: 0.12         # m/s forward speed during entry sequence
     rb_speed: 0.12               # m/s max speed cap during roundabout lane follow
 
