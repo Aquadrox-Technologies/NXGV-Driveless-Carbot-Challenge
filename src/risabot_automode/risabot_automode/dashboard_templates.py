@@ -1368,8 +1368,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <input type="text" id="loggerLabelInput" placeholder="Session Label (e.g. pid_test_kp1.2)" style="padding:6px 10px; border-radius:6px; border:1px solid rgba(0,0,0,0.1); font-size:0.8em; flex:1; min-width:180px;" />
-      <button id="startLoggerBtn" onclick="toggleLogger()" style="padding:8px 16px; border-radius:8px; font-size:0.8em; font-weight:700; cursor:pointer; background:var(--accent); color:#fff; border:none; transition:all 0.2s;">
+      <button id="startLoggerBtn" onclick="startLogger()" style="padding:8px 16px; border-radius:8px; font-size:0.8em; font-weight:700; cursor:pointer; background:var(--accent); color:#fff; border:none; transition:all 0.2s;">
         ▶ Start Data Logger
+      </button>
+      <button id="stopLoggerBtn" onclick="stopLogger()" style="padding:8px 16px; border-radius:8px; font-size:0.8em; font-weight:700; cursor:pointer; background:rgba(210,15,57,0.15); color:var(--danger); border:1px solid rgba(210,15,57,0.3); transition:all 0.2s; opacity:0.4;" disabled>
+        ⏹ Stop &amp; Save Log
       </button>
       <button onclick="refreshLogSessions()" style="padding:8px 12px; border-radius:8px; font-size:0.78em; font-weight:600; cursor:pointer; background:rgba(0,0,0,0.05); color:var(--text); border:1px solid rgba(0,0,0,0.1);">
         📂 Refresh Saved Logs
@@ -2261,57 +2264,79 @@ buildParamUI();
 
 let isLoggingActive = false;
 
-async function toggleLogger() {
-  const btn = document.getElementById('startLoggerBtn');
+async function startLogger() {
   const labelInput = document.getElementById('loggerLabelInput');
-  
-  if (!isLoggingActive) {
-    const label = labelInput ? labelInput.value : '';
-    try {
-      const r = await fetch('/api/logger/start', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({label: label})
-      });
-      const d = await r.json();
-      if (d.ok) {
-        isLoggingActive = true;
-        updateLoggerUI(true, d.session_name, 0, 0);
-      } else {
-        alert('Failed to start logger: ' + (d.error || 'Unknown error'));
-      }
-    } catch(e) {
-      alert('Network error starting data logger');
+  const label = labelInput ? labelInput.value.trim() : '';
+  try {
+    const r = await fetch('/api/logger/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({label: label})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      isLoggingActive = true;
+      if (typeof addLogEntry === 'function') addLogEntry('Data logger started — session: ' + (d.session_name || ''));
+      updateLoggerUI(true, d.session_name, 0, 0);
+    } else {
+      alert('Failed to start logger: ' + (d.error || 'Unknown error'));
     }
+  } catch(e) {
+    alert('Network error starting data logger');
+  }
+}
+
+async function stopLogger() {
+  try {
+    const r = await fetch('/api/logger/stop', {method: 'POST'});
+    const d = await r.json();
+    if (d.ok) {
+      isLoggingActive = false;
+      if (typeof addLogEntry === 'function') addLogEntry('Data logger stopped — session: ' + (d.data && d.data.session_name || ''));
+      updateLoggerUI(false, '', 0, 0);
+      refreshLogSessions();
+      alert(`Log saved successfully!\nSession: ${d.data.session_name}\nSamples: ${d.data.samples}\nLocation: ${d.data.dir}`);
+    } else {
+      alert('Logger stop error: ' + (d.error || 'Not logging'));
+    }
+  } catch(e) {
+    alert('Network error stopping data logger');
+  }
+}
+
+function toggleLogger() {
+  if (isLoggingActive) {
+    stopLogger();
   } else {
-    try {
-      const r = await fetch('/api/logger/stop', {method: 'POST'});
-      const d = await r.json();
-      if (d.ok) {
-        isLoggingActive = false;
-        updateLoggerUI(false, '', 0, 0);
-        refreshLogSessions();
-        alert(`Log saved successfully!\nSession: ${d.data.session_name}\nSamples: ${d.data.samples}\nLocation: ${d.data.dir}`);
-      }
-    } catch(e) {
-      alert('Network error stopping data logger');
-    }
+    startLogger();
   }
 }
 
 function updateLoggerUI(logging, sessionName, dur, samples) {
-  const btn = document.getElementById('startLoggerBtn');
+  if (typeof logging === 'object' && logging !== null) {
+    sessionName = logging.session_name;
+    dur = logging.duration_sec || 0;
+    samples = logging.sample_count || 0;
+    logging = !!logging.is_logging;
+  }
+  isLoggingActive = !!logging;
+  
+  const startBtn = document.getElementById('startLoggerBtn');
+  const stopBtn = document.getElementById('stopLoggerBtn');
   const badge = document.getElementById('loggerStatusBadge');
   const info = document.getElementById('loggerActiveInfo');
   
-  if (btn) {
-    if (logging) {
-      btn.textContent = '⏹ Stop & Save Log';
-      btn.style.background = 'var(--danger)';
-    } else {
-      btn.textContent = '▶ Start Data Logger';
-      btn.style.background = 'var(--accent)';
-    }
+  if (startBtn) {
+    startBtn.disabled = !!logging;
+    startBtn.style.opacity = logging ? '0.4' : '1.0';
+    startBtn.style.cursor = logging ? 'not-allowed' : 'pointer';
+  }
+  if (stopBtn) {
+    stopBtn.disabled = !logging;
+    stopBtn.style.opacity = logging ? '1.0' : '0.4';
+    stopBtn.style.cursor = logging ? 'pointer' : 'not-allowed';
+    stopBtn.style.background = logging ? 'var(--danger)' : 'rgba(210,15,57,0.15)';
+    stopBtn.style.color = logging ? '#fff' : 'var(--danger)';
   }
   if (badge) {
     badge.className = logging ? 'logger-badge recording' : 'logger-badge idle';
@@ -2320,9 +2345,12 @@ function updateLoggerUI(logging, sessionName, dur, samples) {
   if (info) {
     info.style.display = logging ? 'flex' : 'none';
     if (logging) {
-      document.getElementById('loggerSessionName').textContent = sessionName || '—';
-      document.getElementById('loggerDuration').textContent = dur + 's';
-      document.getElementById('loggerSamples').textContent = samples;
+      const nameEl = document.getElementById('loggerSessionName');
+      const durEl = document.getElementById('loggerDuration');
+      const samEl = document.getElementById('loggerSamples');
+      if (nameEl) nameEl.textContent = sessionName || '—';
+      if (durEl) durEl.textContent = (dur || 0).toFixed(1) + 's';
+      if (samEl) samEl.textContent = samples || 0;
     }
   }
 }
@@ -3634,67 +3662,95 @@ update();
 // ===== DATA LOGGER FUNCTIONS =====
 let _loggerIsRecording = false;
 
-function toggleLogger() {
-  const btn = document.getElementById('startLoggerBtn');
-  if (_loggerIsRecording) {
-    // Stop logging
-    fetch('/api/logger/stop', {method: 'POST'})
-      .then(r => r.json())
-      .then(res => {
-        if (res.ok) {
-          addLogEntry('Data logger stopped — session: ' + (res.data && res.data.session_name || ''));
-          refreshLogSessions();
-        } else {
-          addLogEntry('Logger stop error: ' + (res.error || 'unknown'));
-        }
-      })
-      .catch(e => addLogEntry('Logger stop failed: ' + e));
-  } else {
-    // Start logging
-    const label = document.getElementById('loggerLabelInput').value.trim();
-    fetch('/api/logger/start', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({label: label})
+function startLogger() {
+  const labelInput = document.getElementById('loggerLabelInput');
+  const label = labelInput ? labelInput.value.trim() : '';
+  fetch('/api/logger/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({label: label})
+  })
+    .then(r => r.json())
+    .then(res => {
+      if (res.ok) {
+        _loggerIsRecording = true;
+        addLogEntry('Data logger started — session: ' + (res.session_name || ''));
+        updateLoggerUI({is_logging: true, session_name: res.session_name, duration_sec: 0, sample_count: 0});
+      } else {
+        alert('Failed to start logger: ' + (res.error || 'Unknown error'));
+      }
     })
-      .then(r => r.json())
-      .then(res => {
-        if (res.ok) {
-          addLogEntry('Data logger started — session: ' + (res.session_name || ''));
-        } else {
-          addLogEntry('Logger start error: ' + (res.error || 'unknown'));
-        }
-      })
-      .catch(e => addLogEntry('Logger start failed: ' + e));
+    .catch(e => addLogEntry('Logger start failed: ' + e));
+}
+
+function stopLogger() {
+  fetch('/api/logger/stop', {method: 'POST'})
+    .then(r => r.json())
+    .then(res => {
+      if (res.ok) {
+        _loggerIsRecording = false;
+        addLogEntry('Data logger stopped — session: ' + (res.data && res.data.session_name || ''));
+        updateLoggerUI({is_logging: false});
+        refreshLogSessions();
+        alert(`Log saved successfully!\nSession: ${res.data.session_name}\nSamples: ${res.data.samples}\nLocation: ${res.data.dir}`);
+      } else {
+        alert('Logger stop error: ' + (res.error || 'Not logging'));
+      }
+    })
+    .catch(e => addLogEntry('Logger stop failed: ' + e));
+}
+
+function toggleLogger() {
+  if (_loggerIsRecording) {
+    stopLogger();
+  } else {
+    startLogger();
   }
 }
 
 function updateLoggerUI(loggerStatus) {
   if (!loggerStatus) return;
+  if (typeof loggerStatus === 'boolean') {
+    loggerStatus = { is_logging: loggerStatus };
+  }
   const badge = document.getElementById('loggerStatusBadge');
-  const btn = document.getElementById('startLoggerBtn');
+  const startBtn = document.getElementById('startLoggerBtn');
+  const stopBtn = document.getElementById('stopLoggerBtn');
   const activeInfo = document.getElementById('loggerActiveInfo');
   const sessionNameEl = document.getElementById('loggerSessionName');
   const durationEl = document.getElementById('loggerDuration');
   const samplesEl = document.getElementById('loggerSamples');
 
-  _loggerIsRecording = loggerStatus.is_logging;
+  _loggerIsRecording = !!loggerStatus.is_logging;
 
-  if (loggerStatus.is_logging) {
-    badge.textContent = 'RECORDING';
-    badge.className = 'logger-badge recording';
-    btn.textContent = '⏹ Stop Data Logger';
-    btn.style.background = 'var(--danger)';
-    activeInfo.style.display = 'flex';
+  if (startBtn) {
+    startBtn.disabled = _loggerIsRecording;
+    startBtn.style.opacity = _loggerIsRecording ? '0.4' : '1.0';
+    startBtn.style.cursor = _loggerIsRecording ? 'not-allowed' : 'pointer';
+  }
+  if (stopBtn) {
+    stopBtn.disabled = !_loggerIsRecording;
+    stopBtn.style.opacity = _loggerIsRecording ? '1.0' : '0.4';
+    stopBtn.style.cursor = _loggerIsRecording ? 'pointer' : 'not-allowed';
+    stopBtn.style.background = _loggerIsRecording ? 'var(--danger)' : 'rgba(210,15,57,0.15)';
+    stopBtn.style.color = _loggerIsRecording ? '#fff' : 'var(--danger)';
+  }
+
+  if (_loggerIsRecording) {
+    if (badge) {
+      badge.textContent = 'REC 🔴';
+      badge.className = 'logger-badge recording';
+    }
+    if (activeInfo) activeInfo.style.display = 'flex';
     if (sessionNameEl) sessionNameEl.textContent = loggerStatus.session_name || '—';
     if (durationEl) durationEl.textContent = (loggerStatus.duration_sec || 0).toFixed(1) + 's';
     if (samplesEl) samplesEl.textContent = loggerStatus.sample_count || 0;
   } else {
-    badge.textContent = 'IDLE';
-    badge.className = 'logger-badge idle';
-    btn.textContent = '▶ Start Data Logger';
-    btn.style.background = 'var(--accent)';
-    activeInfo.style.display = 'none';
+    if (badge) {
+      badge.textContent = 'IDLE';
+      badge.className = 'logger-badge idle';
+    }
+    if (activeInfo) activeInfo.style.display = 'none';
   }
 }
 
