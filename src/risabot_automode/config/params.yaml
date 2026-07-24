@@ -353,7 +353,7 @@ servo_controller:
     # increase this value. 1.0 = no boost (symmetric). 1.3 = 30% more right servo angle.
     # This multiplier ONLY applies in auto mode (process_twist). Manual is unaffected.
     # TUNING: Start at 1.3. If still understeering right, try 1.4. Max ~1.6 before servo clamps.
-    auto_right_steer_boost: 1.3
+    auto_right_steer_boost: 1.0    # 1.0 = symmetric (was 1.3 — caused servo clamp on right turns)
 
 # --- BPU Signage Detector ---
 # CLASS MAP:
