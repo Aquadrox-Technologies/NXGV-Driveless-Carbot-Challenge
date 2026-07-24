@@ -905,6 +905,36 @@ class AutoDriver(Node):
                 cmd = self._lane_follow_cmd(error_bias=rb_bias)
                 self.stop_reason = f'ROUNDABOUT LANE-LEFT ({time_in_roundabout:.1f}s bias={rb_bias:+.2f})'
 
+                # Sharp-arc stuck detection: trigger a brief reverse recovery when
+                # the PID is commanding near-max steering AND the lane error isn't
+                # shrinking (robot is stuck against the inner curve / wall).
+                stuck_thresh = self._param_cache['rb_stuck_angular_thresh']
+                error_thresh = self._param_cache['rb_stuck_error_thresh']
+                improve_margin = self._param_cache['rb_stuck_improve_margin']
+                duration_needed = self._param_cache['rb_stuck_duration_sec']
+                now = time.monotonic()
+                cur_error = abs(self.lane_error)
+
+                at_limit = abs(cmd.angular.z) >= stuck_thresh and cur_error > error_thresh
+
+                if not at_limit:
+                    self._rb_stuck_since = None
+                elif self._rb_stuck_since is None:
+                    self._rb_stuck_since = now
+                    self._rb_stuck_baseline_error = cur_error
+                    self._rb_last_stuck_steer_dir = 1.0 if cmd.angular.z >= 0 else -1.0
+                elif cur_error <= self._rb_stuck_baseline_error - improve_margin:
+                    # Error is genuinely improving even though still above threshold.
+                    self._rb_stuck_since = now
+                    self._rb_stuck_baseline_error = cur_error
+                    self._rb_last_stuck_steer_dir = 1.0 if cmd.angular.z >= 0 else -1.0
+
+                if (self._rb_stuck_since is not None
+                        and (now - self._rb_stuck_since) >= duration_needed):
+                    self._rb_recovering = True
+                    self._rb_recovery_start = now
+                    self._rb_stuck_since = None
+
             # Check exit: total roundabout time expired
             if self.state == ChallengeState.ROUNDABOUT:
                 if time_in_roundabout >= self._param_cache['t_roundabout_sec']:
