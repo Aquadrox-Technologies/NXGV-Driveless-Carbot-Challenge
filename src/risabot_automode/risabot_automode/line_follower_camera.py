@@ -786,14 +786,11 @@ class LineFollowerCamera(Node):
                 # Kalman predict step (always runs)
                 self._kalman.predict(dt)
 
-                # FIX-4: Soft per-frame velocity cap.
-                # Without this, a brief wrong-direction detection builds up
-                # |v| > 0.5 which then fights valid measurements for several
-                # frames, producing prolonged oscillation. Decaying at 0.92/frame
-                # when |v| > 0.30 limits the maximum Kalman coast speed without
-                # affecting normal slow-turning behaviour (|v| < 0.30).
-                if abs(self._kalman.velocity) > 0.30:
-                    self._kalman.decay_velocity(0.92)
+                # NOTE: per-frame velocity cap removed — it fired every frame
+                # during legitimate turns (|v| > 0.30 is normal in a real curve)
+                # and suppressed the Kalman position estimate so much that the
+                # lane follower became unresponsive. The velocity direction guard
+                # below is sufficient to handle runaway coast.
 
                 if measurement_available:
                     # Velocity direction guard: if the Kalman filter has
