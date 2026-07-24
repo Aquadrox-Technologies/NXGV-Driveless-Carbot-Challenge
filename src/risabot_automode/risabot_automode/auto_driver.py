@@ -221,10 +221,13 @@ class AutoDriver(Node):
         self.declare_parameter('rb_stuck_improve_margin', 0.05)   # error must drop by at least this much to count as "improving"
         self.declare_parameter('rb_stuck_duration_sec', 1.2)      # how long the non-improving condition must persist
         self.declare_parameter('rb_recovery_duration_sec', 0.6)   # how long the reverse recovery maneuver runs
-        # Controlled forward speed limit while navigating the roundabout.
-        # Keeps speed capped (default 0.12 m/s) so the robot doesn't shoot forward
-        # into outer walls during turn transitions.
-        self.declare_parameter('rb_speed', 0.12)  # m/s max speed in roundabout
+        # Timed entry sequence parameters for ROUNDABOUT mode
+        self.declare_parameter('rb_entry_idle1_sec', 1.0)       # initial idle on entering roundabout (sec)
+        self.declare_parameter('rb_entry_straight_sec', 0.5)    # move straight duration (sec)
+        self.declare_parameter('rb_entry_left_sec', 0.3)        # max left turn duration (sec)
+        self.declare_parameter('rb_entry_idle2_sec', 0.5)       # post-turn idle duration (sec)
+        self.declare_parameter('rb_entry_speed', 0.12)          # forward speed during entry sequence (m/s)
+        self.declare_parameter('rb_speed', 0.12)                # speed cap in roundabout lane follow (m/s)
         self.distance_past_light = 0.0
         self._param_cache: Dict[str, object] = {}
         self._update_param_cache()
@@ -392,7 +395,12 @@ class AutoDriver(Node):
             'rb_stuck_improve_margin': float(self.get_parameter('rb_stuck_improve_margin').value),
             'rb_stuck_duration_sec':   float(self.get_parameter('rb_stuck_duration_sec').value),
             'rb_recovery_duration_sec': float(self.get_parameter('rb_recovery_duration_sec').value),
-            'rb_speed':                  float(self.get_parameter('rb_speed').value),
+            'rb_entry_idle1_sec':       float(self.get_parameter('rb_entry_idle1_sec').value),
+            'rb_entry_straight_sec':    float(self.get_parameter('rb_entry_straight_sec').value),
+            'rb_entry_left_sec':        float(self.get_parameter('rb_entry_left_sec').value),
+            'rb_entry_idle2_sec':       float(self.get_parameter('rb_entry_idle2_sec').value),
+            'rb_entry_speed':           float(self.get_parameter('rb_entry_speed').value),
+            'rb_speed':                 float(self.get_parameter('rb_speed').value),
             # Hill Climb
             'hill_pitch_threshold':           float(self.get_parameter('hill_pitch_threshold').value),
             'hill_pitch_hysteresis':          float(self.get_parameter('hill_pitch_hysteresis').value),
@@ -859,23 +867,41 @@ class AutoDriver(Node):
         ):
             target_state = ChallengeState.ROUNDABOUT
             time_in_roundabout = time.monotonic() - self.state_entry_time if self.state == ChallengeState.ROUNDABOUT else 0.0
-            init_rev_sec = float(self._param_cache.get('rb_initial_reverse_sec', 0.0))
+            t_idle1 = float(self._param_cache.get('rb_entry_idle1_sec', 1.0))
+            t_straight = t_idle1 + float(self._param_cache.get('rb_entry_straight_sec', 0.5))
+            t_turn_left = t_straight + float(self._param_cache.get('rb_entry_left_sec', 0.3))
+            t_idle2 = t_turn_left + float(self._param_cache.get('rb_entry_idle2_sec', 0.5))
+            entry_speed = float(self._param_cache.get('rb_entry_speed', 0.12))
 
-            if time_in_roundabout < init_rev_sec:
-                # Phase 1: Optional initial micro-reverse on entry (0.0 = disabled)
-                rev_spd = float(self._param_cache.get('rb_reverse_speed', -0.10))
-                rev_steer = float(self._param_cache.get('rb_reverse_steer', -0.50))
+            if time_in_roundabout < t_idle1:
+                # Phase 1: Initial Idle (1.0s)
                 cmd = Twist()
-                cmd.linear.x = rev_spd
-                cmd.angular.z = rev_steer
-                self.stop_reason = f'ROUNDABOUT ENTRY REVERSE ({time_in_roundabout:.1f}s/{init_rev_sec:.1f}s)'
+                cmd.linear.x = 0.0
+                cmd.angular.z = 0.0
+                self.stop_reason = f'ROUNDABOUT ENTRY IDLE 1 ({time_in_roundabout:.1f}s/{t_idle1:.1f}s)'
+            elif time_in_roundabout < t_straight:
+                # Phase 2: Move Straight (0.5s)
+                cmd = Twist()
+                cmd.linear.x = entry_speed
+                cmd.angular.z = 0.0
+                elapsed = time_in_roundabout - t_idle1
+                self.stop_reason = f'ROUNDABOUT ENTRY STRAIGHT ({elapsed:.1f}s/0.5s)'
+            elif time_in_roundabout < t_turn_left:
+                # Phase 3: Max Left Turn (0.3s)
+                cmd = Twist()
+                cmd.linear.x = entry_speed
+                cmd.angular.z = -2.0  # Max physical Left
+                elapsed = time_in_roundabout - t_straight
+                self.stop_reason = f'ROUNDABOUT ENTRY MAX-LEFT ({elapsed:.1f}s/0.3s)'
+            elif time_in_roundabout < t_idle2:
+                # Phase 4: Post-turn Idle (0.5s)
+                cmd = Twist()
+                cmd.linear.x = 0.0
+                cmd.angular.z = 0.0
+                elapsed = time_in_roundabout - t_turn_left
+                self.stop_reason = f'ROUNDABOUT ENTRY IDLE 2 ({elapsed:.1f}s/0.5s)'
             elif self._rb_recovering:
-                # Phase 2a: Actively backing off because the chassis hit its
-                # steering limit and the lane error wasn't converging.
-                # To swing the camera/nose TOWARDS the turn lane while backing
-                # up, reverse steering MUST be OPPOSITE to forward steering!
-                #   - Turning LEFT (cmd.angular.z < 0): reverse with RIGHT steer (>0) -> tail right, nose swings LEFT to see left lane!
-                #   - Turning RIGHT (cmd.angular.z > 0): reverse with LEFT steer (<0) -> tail left, nose swings RIGHT to see right lane!
+                # Phase 5a: Stuck Recovery (Reversing out of wall if stuck)
                 rev_spd = float(self._param_cache.get('rb_reverse_speed', -0.10))
                 rev_steer_mag = abs(float(self._param_cache.get('rb_reverse_steer', 0.50)))
                 stuck_dir = getattr(self, '_rb_last_stuck_steer_dir', -1.0)
@@ -890,18 +916,16 @@ class AutoDriver(Node):
                     self._rb_recovering = False
                     self._rb_stuck_since = None
             else:
-                # Phase 2b: Lane-follow around the circular roundabout track.
-                # No artificial left bias (error_bias=0.0) so right turns around
-                # the hub are followed naturally. Speed is capped at rb_speed
-                # (default 0.12 m/s) to prevent high-speed forward shoot-outs.
-                rb_speed = float(self._param_cache.get('rb_speed', 0.12))
+                # Phase 5b: Roundabout Lane Following
+                # Drives the circular track with _lane_follow_cmd(error_bias=0.0)
+                # capped at rb_speed (default 0.12 m/s).
+                rb_spd = float(self._param_cache.get('rb_speed', 0.12))
                 cmd = self._lane_follow_cmd(error_bias=0.0)
-                cmd.linear.x = min(cmd.linear.x, rb_speed)
+                cmd.linear.x = min(cmd.linear.x, rb_spd)
                 self.stop_reason = f'ROUNDABOUT LANE-FOLLOW ({time_in_roundabout:.1f}s spd={cmd.linear.x:.2f})'
 
-                # Sharp-arc stuck detection: trigger a brief reverse recovery when
-                # the PID is commanding near-max steering AND the lane error isn't
-                # shrinking (robot is stuck against the inner curve / wall).
+                # Sharp-arc stuck detection: monitors pinned steering (|angular.z| >= 0.85)
+                # for 1.2s without error reduction and triggers reverse recovery (_rb_recovering = True).
                 stuck_thresh = self._param_cache['rb_stuck_angular_thresh']
                 error_thresh = self._param_cache['rb_stuck_error_thresh']
                 improve_margin = self._param_cache['rb_stuck_improve_margin']
