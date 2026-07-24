@@ -674,6 +674,14 @@ class AutoDriver(Node):
           Forward speed scales DOWN as |error| increases so the robot
           naturally slows for sharp turns and accelerates on straights.
         """
+        if getattr(self, 'lane_width_invalid', False):
+            # Invalid track width (bleed-through or shadow collapse): decay steering to 0 and reduce speed
+            self._prev_angular_z *= 0.8
+            cmd = Twist()
+            cmd.linear.x = self._param_cache['forward_speed'] * 0.6
+            cmd.angular.z = self._prev_angular_z
+            return cmd
+
         now = time.monotonic()
         dt = now - self._pid_last_time
         self._pid_last_time = now
