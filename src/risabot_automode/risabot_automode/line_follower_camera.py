@@ -1,117 +1,104 @@
 #!/usr/bin/env python3
 """
-Line Follower Camera Node — Cytron-Inspired Multi-Scanline Algorithm
-Uses multiple horizontal scanlines across a cropped road-surface ROI to detect
-white lane boundary lines or dark lane surfaces (inverted mode).
+Line Follower Camera Node  (MDPI-enhanced scanline detection)
+Detects white lane lines using CLAHE + Otsu's adaptive thresholding and
+computes a steering error from multi-scanline pixel scanning.
 
-MDPI Architecture Enhancements:
-- IPM (Inverse Perspective Mapping): optional Bird's Eye View transformation
-  to eliminate perspective distortion before scanline processing.
-- Kalman Filter: 1D Constant Velocity Kalman Filter to smooth raw error,
-  predict during frame drops, and handle camera jitter cleanly.
+Enhanced with techniques from:
+  MDPI Applied Sciences 2018 — "A Low Cost Vision-Based Road-Following System"
+  - Inverse Perspective Mapping (Bird's Eye View warp)
+  - 1D Kalman Filter for predictive lane center tracking
+
+Algorithm:
+  1. Resize + crop bottom portion of camera image (road surface)
+  2. IPM warp: perspective → Bird's Eye View (parallel lane lines)
+  3. CLAHE histogram equalization (adaptive lighting compensation)
+  4. Gaussian blur + Otsu's auto-threshold
+  5. Multiple horizontal scanlines scan for left/right white lane edges
+  6. Kalman filter: predict + update lane center position & velocity
+  7. Publish Float32 on /lane_error (range -1.0 to +1.0)
+
+References:
+  Cytron Technologies — Differential Line Following Algorithm
+  https://my.cytron.io/tutorial/differential-line-following-algorithm
+  MDPI — A Low Cost Vision-Based Road-Following System for Mobile Robots
+  https://www.mdpi.com/2076-3417/8/9/1635
 """
 
 import time
 from typing import Dict, List, Optional, Tuple
 
 import cv2
-from cv_bridge import CvBridge
 import numpy as np
 import rclpy
+from cv_bridge import CvBridge
 from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import QoSPresetProfiles
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, Float32
 
-from .topics import (
-    CAMERA_DEBUG_LINE_TOPIC,
-    CAMERA_IMAGE_TOPIC,
-    LANE_ERROR_TOPIC,
-    LANE_LOST_TOPIC,
-    LANE_WIDTH_INVALID_TOPIC,
-)
+from .topics import CAMERA_DEBUG_LINE_TOPIC, CAMERA_IMAGE_TOPIC, LANE_ERROR_TOPIC, LANE_LOST_TOPIC
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 1D Kalman Filter for Lane Center Tracking (MDPI-inspired)
+# 1D Kalman Filter for lane center tracking (MDPI-inspired)
 # ──────────────────────────────────────────────────────────────────────────────
 
 class LaneKalmanFilter:
-    """State: x = [position, velocity]^T
-    Tracks lane error and its rate of change to smooth steering and coast
-    during brief frame drops.
+    """Simple 1D Kalman filter tracking lane center position and velocity.
+
+    State vector:  [position, velocity]
+    Measurement:   position only
+
+    The velocity component allows the filter to predict lane motion during
+    curves and hold a reasonable estimate when the lane is temporarily lost.
     """
 
     def __init__(self, process_noise: float = 0.01, measurement_noise: float = 0.1):
-        # State vector: [position (lane_error), velocity (d_error/dt)]
-        self.x = np.array([0.0, 0.0], dtype=np.float64)
-
-        # Covariance matrix P
-        self.P = np.eye(2, dtype=np.float64) * 1.0
-
-        # Process noise multiplier (Q matrix built dynamically using dt)
-        self.Q_base = process_noise
-
-        # Measurement noise covariance R (scalar since measurement is position only)
-        self.R = measurement_noise
-
-        # Measurement matrix H: we only observe position, not velocity
-        self.H = np.array([[1.0, 0.0]], dtype=np.float64)
+        self.x = np.array([0.0, 0.0])   # state: [position, velocity]
+        self.P = np.eye(2) * 1.0         # covariance matrix
+        self.Q_base = process_noise      # process noise scalar
+        self.R = measurement_noise       # measurement noise scalar
+        self.H = np.array([[1.0, 0.0]])  # measurement matrix (observe position only)
 
     def predict(self, dt: float) -> None:
-        """State transition update: x_k = F * x_{k-1}"""
-        dt = max(0.001, min(0.5, dt))  # sanity clamp
-
-        # F matrix: pos_new = pos + vel * dt
+        """Predict step: advance state by dt seconds."""
         F = np.array([[1.0, dt],
-                      [0.0, 1.0]], dtype=np.float64)
-
-        # Q matrix: piecewise white noise model
-        q = self.Q_base
-        Q = np.array([
-            [0.25 * (dt ** 4) * q, 0.5 * (dt ** 3) * q],
-            [0.5 * (dt ** 3) * q,  (dt ** 2) * q]
-        ], dtype=np.float64)
-
+                       [0.0, 1.0]])
+        Q = np.array([[self.Q_base * dt**2, self.Q_base * dt],
+                       [self.Q_base * dt,    self.Q_base]])
         self.x = F @ self.x
+        # Clamp position error to valid range so it doesn't explode when lost
+        self.x[0] = np.clip(self.x[0], -1.0, 1.0)
         self.P = F @ self.P @ F.T + Q
 
-        # Clamp position state to valid range [-1.0, 1.0]
-        self.x[0] = np.clip(self.x[0], -1.0, 1.0)
-
-    def update(self, z: float) -> None:
-        """Measurement update with raw_error observation z."""
-        z_arr = np.array([z], dtype=np.float64)
-
-        # Innovation (residual)
-        y = z_arr - self.H @ self.x
-
-        # Innovation covariance
-        S = self.H @ self.P @ self.H.T + self.R
-
-        # Kalman gain
-        K = self.P @ self.H.T / S[0, 0]
-
-        # Update state and covariance
-        self.x = self.x + K.flatten() * y[0]
-        I = np.eye(2, dtype=np.float64)
-        self.P = (I - K @ self.H) @ self.P
-
-        # Clamp position state
-        self.x[0] = np.clip(self.x[0], -1.0, 1.0)
-
     def decay_velocity(self, factor: float = 0.9) -> None:
-        """Dampen velocity during frame holds so prediction settles."""
+        """Decay velocity when lane is lost to gently stop predicting."""
         self.x[1] *= factor
+
+    def update(self, measurement: float) -> None:
+        """Update step: correct state with a new measurement."""
+        y = measurement - float(self.H @ self.x)  # innovation
+        S = float(self.H @ self.P @ self.H.T) + self.R
+        K = (self.P @ self.H.T) / S                # Kalman gain
+        self.x = self.x + K.flatten() * y
+        self.P = (np.eye(2) - K @ self.H) @ self.P
 
     @property
     def position(self) -> float:
+        """Current filtered lane center position (error)."""
         return float(self.x[0])
 
     @property
     def velocity(self) -> float:
+        """Current rate of change of lane center (useful for curve anticipation)."""
         return float(self.x[1])
+
+    def reset(self, position: float = 0.0) -> None:
+        """Reset filter state."""
+        self.x = np.array([position, 0.0])
+        self.P = np.eye(2) * 1.0
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -134,14 +121,6 @@ class LineFollowerCamera(Node):
         self.declare_parameter('min_line_width_px', 5)
         self.declare_parameter('crop_ratio_base', 0.55)
         self.declare_parameter('search_radius_px', 50)   # blob-to-expected match radius
-        # A scanline whose detected center sits further than this from the
-        # frame's own median center is very likely looking at something
-        # off-track (wall, floor past the lane edge) rather than the real
-        # lane — this happens most often on upper/far scanlines during a
-        # sharp turn, when the camera heading points off the actual track.
-        # Such a scanline is excluded from the weighted average entirely
-        # rather than being allowed to dilute it.
-        self.declare_parameter('scanline_outlier_px', 70)
         # Thresholding
         self.declare_parameter('white_threshold', 100)   # gray threshold (inverted: pixels BELOW this = lane)
         self.declare_parameter('use_otsu', False)         # True = Otsu auto-threshold
@@ -181,9 +160,6 @@ class LineFollowerCamera(Node):
         # Steering persistence on lane loss
         self.declare_parameter('hold_error_frames', 15)
         self.declare_parameter('error_decay_rate', 0.92)
-        # Nominal Lane Width bounds (for detecting invalid/shadow/floor lane width)
-        self.declare_parameter('nominal_lane_width_min', 35)
-        self.declare_parameter('nominal_lane_width_max', 0)
         # Display / debug
         self.declare_parameter('show_debug', False)
         self.declare_parameter('resize_width', 320)
@@ -198,7 +174,6 @@ class LineFollowerCamera(Node):
         # ── Internal state ──────────────────────────────────────────────────
         self.frames_lost = 0
         self.current_hold_frames = 0
-        self.invalid_width_consecutive = 0
         self.last_lane_widths: Dict[int, int] = {}
         self._expected_left: Optional[int] = None
         self._expected_right: Optional[int] = None
@@ -225,7 +200,6 @@ class LineFollowerCamera(Node):
         # ── ROS publishers / subscribers ────────────────────────────────────
         self.error_pub = self.create_publisher(Float32, LANE_ERROR_TOPIC, 10)
         self.lane_lost_pub = self.create_publisher(Bool, LANE_LOST_TOPIC, 10)
-        self.lane_width_invalid_pub = self.create_publisher(Bool, LANE_WIDTH_INVALID_TOPIC, 10)
         self.debug_pub = self.create_publisher(Image, CAMERA_DEBUG_LINE_TOPIC, 10)
         self.bridge = CvBridge()
         self.color_sub = self.create_subscription(
@@ -250,7 +224,6 @@ class LineFollowerCamera(Node):
             'min_line_width_px':       int(self.get_parameter('min_line_width_px').value),
             'crop_ratio_base':         float(self.get_parameter('crop_ratio_base').value),
             'search_radius_px':        int(self.get_parameter('search_radius_px').value),
-            'scanline_outlier_px':     int(self.get_parameter('scanline_outlier_px').value),
             'white_threshold':         int(self.get_parameter('white_threshold').value),
             'use_otsu':                bool(self.get_parameter('use_otsu').value),
             'use_adaptive_threshold':  bool(self.get_parameter('use_adaptive_threshold').value),
@@ -276,8 +249,6 @@ class LineFollowerCamera(Node):
             'dead_zone':               float(self.get_parameter('dead_zone').value),
             'hold_error_frames':       int(self.get_parameter('hold_error_frames').value),
             'error_decay_rate':        float(self.get_parameter('error_decay_rate').value),
-            'nominal_lane_width_min':  int(self.get_parameter('nominal_lane_width_min').value),
-            'nominal_lane_width_max':  int(self.get_parameter('nominal_lane_width_max').value),
             'show_debug':              bool(self.get_parameter('show_debug').value),
             'resize_width':            int(self.get_parameter('resize_width').value),
             'print_debug':             bool(self.get_parameter('print_debug').value),
@@ -388,10 +359,8 @@ class LineFollowerCamera(Node):
         n_scanlines = self._param_cache['n_scanlines']
         min_width = self._param_cache['min_line_width_px']
         invert = self._param_cache.get('invert_binary', False)
-        # Invert mode: cap at 60% of frame width (~40cm physical max).
-        # This prevents merged room-floor dark blobs (W=70cm) from being accepted.
-        # The real 30cm lane is ~120px wide — well within this cap.
-        max_width = int(w * 0.60) if invert else w // 3
+        # In invert mode the lane is wider than border lines
+        max_width = w - 10 if invert else w // 3
         search_radius = self._param_cache['search_radius_px']
 
         left_points = []
@@ -539,7 +508,7 @@ class LineFollowerCamera(Node):
                 smooth = 0.50  # Responsive tracking (was 0.15, which caused lag on curves)
                 if self._expected_left is not None:
                     # Clamp jump: allow expected to shift up to 40px/frame for sharp turns
-                    max_shift = 60  # allow expected to shift up to 60px/frame for sharp turns
+                    max_shift = 40
                     new_left = int(smooth * expected_left + (1 - smooth) * self._expected_left)
                     new_right = int(smooth * expected_right + (1 - smooth) * self._expected_right)
                     new_left = max(self._expected_left - max_shift, min(self._expected_left + max_shift, new_left))
@@ -553,13 +522,9 @@ class LineFollowerCamera(Node):
             left_points.append((int(left_x), y_in_crop))
             right_points.append((int(right_x), y_in_crop))
             center_points.append((int(center_x), y_in_crop))
-            # Weight: bottom scanlines (close to robot) are more
-            # reliable than upper/far ones. Sqrt falloff gives bottom ~2.4x
-            # advantage over top (was 6.9x squared) — enough to prefer close
-            # scanlines without letting 3 wrong bottom ones crush 4 correct
-            # middle ones during an overshoot when the camera tilts toward
-            # the outer wall.
-            scanline_weights.append((1.0 - y_frac) ** 0.5 + 0.15)
+            # Weight: bottom scanlines (close to robot) are more reliable
+            # y_frac goes from 0.5/n (bottom) to ~1.0 (top), invert for weight
+            scanline_weights.append(1.0 - y_frac + 0.5)
 
         # If completely lost, clear expectations so it resets next frame
         if valid_count == 0:
@@ -693,53 +658,14 @@ class LineFollowerCamera(Node):
             measurement_available = False
 
             if valid_count >= conf_min and len(center_pts) > 0:
-                # Outlier rejection anchored to _expected_center (last-known
-                # lane position) rather than the frame's global median.
-                #
-                # WHY: global median is easily corrupted when the robot
-                # overshoots during a sharp turn and 5 of 10 scanlines pick up
-                # the outer wall. The median then lands between wall and lane,
-                # causing BOTH to exceed outlier_thresh — triggering the fallback
-                # unfiltered average, which then lets heavy bottom-weighted wall
-                # scanlines dominate and output the WRONG steering direction.
-                #
-                # With _expected_center as the anchor:
-                #   wall at x=80, lane expected at x=240:
-                #     |80 - 240| = 160 > thresh -> wall ZEROED
-                #     |240 - 240| = 0 <= thresh -> lane KEPT
-                # So even a 5-wall / 5-lane split is handled correctly.
-                outlier_thresh = self._param_cache['scanline_outlier_px']
-                if self._expected_left is not None and self._expected_right is not None:
-                    anchor_x = float(self._expected_left + self._expected_right) / 2.0
-                else:
-                    # Cold-start: no history yet, fall back to frame median
-                    anchor_x = float(np.median([pt[0] for pt in center_pts]))
-                filtered_weights = [
-                    wt if abs(pt[0] - anchor_x) <= outlier_thresh else 0.0
-                    for pt, wt in zip(center_pts, scan_weights)
-                ]
-                total_weight = sum(filtered_weights)
+                # Weighted average: bottom scanlines (closer to robot) count more
+                total_weight = sum(scan_weights)
                 if total_weight > 0:
                     avg_center_x = sum(
-                        pt[0] * wt for pt, wt in zip(center_pts, filtered_weights)
+                        pt[0] * wt for pt, wt in zip(center_pts, scan_weights)
                     ) / total_weight
                 else:
-                    # Every scanline was an outlier vs expected_center — this
-                    # can happen on a full lane loss or a very wide swing.
-                    # Fall back to the frame median approach so we don't feed
-                    # an empty measurement.
-                    fallback_median = float(np.median([pt[0] for pt in center_pts]))
-                    fallback_weights = [
-                        wt if abs(pt[0] - fallback_median) <= outlier_thresh else 0.0
-                        for pt, wt in zip(center_pts, scan_weights)
-                    ]
-                    total_weight = sum(fallback_weights)
-                    if total_weight > 0:
-                        avg_center_x = sum(
-                            pt[0] * wt for pt, wt in zip(center_pts, fallback_weights)
-                        ) / total_weight
-                    else:
-                        avg_center_x = sum(pt[0] for pt in center_pts) / len(center_pts)
+                    avg_center_x = sum(pt[0] for pt in center_pts) / len(center_pts)
                 raw_error = float(
                     np.clip((avg_center_x - image_center) / image_center, -1.0, 1.0)
                 )
@@ -760,24 +686,7 @@ class LineFollowerCamera(Node):
                 # Kalman predict step (always runs)
                 self._kalman.predict(dt)
 
-                # NOTE: per-frame velocity cap removed — it fired every frame
-                # during legitimate turns (|v| > 0.30 is normal in a real curve)
-                # and suppressed the Kalman position estimate so much that the
-                # lane follower became unresponsive. The velocity direction guard
-                # below is sufficient to handle runaway coast.
-
                 if measurement_available:
-                    # Velocity direction guard: if the Kalman filter has
-                    # accumulated a velocity in the OPPOSITE direction to the
-                    # new valid measurement, kill that velocity before the
-                    # update. Without this, stale coast (e.g. v=-0.76 from a
-                    # left-drift phase) fights new correct right-side detections
-                    # for several frames, producing the wrong steering output
-                    # even when scanlines are clearly showing the lane.
-                    vel = self._kalman.velocity
-                    if abs(vel) > 0.05 and (vel * raw_error) < 0:
-                        self._kalman.x[1] = 0.0
-
                     # Deadband: only update if error exceeds threshold.
                     # When within dead zone, SKIP the update entirely so the
                     # Kalman filter coasts on its prediction. Feeding 0.0 is
@@ -830,25 +739,6 @@ class LineFollowerCamera(Node):
 
             # ── 8. Publish ──────────────────────────────────────────────────
             self.error_pub.publish(Float32(data=self.lane_error))
-
-            # ── Check lane width validity against nominal bounds ─────────────
-            avg_width = sum(self.last_lane_widths.values()) / len(self.last_lane_widths) if len(self.last_lane_widths) > 0 else 0
-            w_min = int(self._param_cache['nominal_lane_width_min'])
-            w_max = int(self._param_cache['nominal_lane_width_max'])
-            saw_invalid_width = False
-            if valid_count > 0 and len(self.last_lane_widths) > 0:
-                if w_min > 0 and avg_width < w_min:
-                    saw_invalid_width = True
-                elif w_max > 0 and avg_width > w_max:
-                    saw_invalid_width = True
-
-            if saw_invalid_width:
-                self.invalid_width_consecutive = min(10, self.invalid_width_consecutive + 1)
-            else:
-                self.invalid_width_consecutive = max(0, self.invalid_width_consecutive - 1)
-
-            lane_width_invalid = (self.invalid_width_consecutive >= 5)
-            self.lane_width_invalid_pub.publish(Bool(data=lane_width_invalid))
 
             # ── 9. Debug visualisation ──────────────────────────────────────
             if self._param_cache['show_debug']:
@@ -930,15 +820,15 @@ class LineFollowerCamera(Node):
                     print(
                         f'\r[LF] Err:{self.lane_error:.2f} | {status} | '
                         f'valid={valid_count}/{self._param_cache["n_scanlines"]} | {kf_str}',
-                        end=''
+                        end='', flush=True
                     )
                     self._last_debug_print = now_mono
 
         except Exception as e:
-            self.get_logger().error(f'Error processing image: {e}', throttle_duration_sec=1.0)
+            self.get_logger().error(f'Line follower error: {e}')
 
 
-def main(args=None):
+def main(args=None) -> None:
     rclpy.init(args=args)
     node = LineFollowerCamera()
     try:
