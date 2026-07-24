@@ -388,8 +388,8 @@ class LineFollowerCamera(Node):
         n_scanlines = self._param_cache['n_scanlines']
         min_width = self._param_cache['min_line_width_px']
         invert = self._param_cache.get('invert_binary', False)
-        # In invert mode the lane is wider than border lines, but capped at 60% frame width (~40cm max)
-        max_width = int(w * 0.60) if invert else w // 3
+        # In invert mode the lane is wider than border lines
+        max_width = w - 10 if invert else w // 3
         search_radius = self._param_cache['search_radius_px']
 
         left_points = []
