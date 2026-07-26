@@ -38,12 +38,12 @@ class BoomGateDetector(Node):
 
         # --- Parameters ---
         self.declare_parameter('enable_camera', True)
-        self.declare_parameter('cam_roi_y_min', 0.20)     # 20% from top
-        self.declare_parameter('cam_roi_y_max', 0.98)     # 98% (down to hood)
-        self.declare_parameter('cam_red_min_width', 40)   # min contour width (pixels)
-        self.declare_parameter('cam_red_sat_min', 30)     # low sat for indoor lighting
-        self.declare_parameter('cam_red_val_min', 30)     # low val for dim/shadowed bars
-        self.declare_parameter('hysteresis', 3)
+        self.declare_parameter('cam_roi_y_min', 0.50)     # 50% from top (lower half of image)
+        self.declare_parameter('cam_roi_y_max', 0.95)     # 95% (down to hood)
+        self.declare_parameter('cam_red_min_width', 80)   # min contour width (pixels)
+        self.declare_parameter('cam_red_sat_min', 70)     # min sat to avoid floor reflections
+        self.declare_parameter('cam_red_val_min', 70)     # min val to avoid dim shadows
+        self.declare_parameter('hysteresis', 5)
         self.declare_parameter('heartbeat_sec', 0.1)
 
         self._param_cache: Dict[str, object] = {}
@@ -119,17 +119,17 @@ class BoomGateDetector(Node):
                 cv_img = cv2.resize(cv_img, (320, 240))
                 h, w = 240, 320
 
-            # Scan full lower-to-middle region (20% to 98% of height) to catch red bar up-close
-            y_min = int(h * float(self._param_cache.get('cam_roi_y_min', 0.20)))
-            y_max = int(h * float(self._param_cache.get('cam_roi_y_max', 0.98)))
+            # Scan lower region (50% to 95% of height) where closed horizontal red bar sits
+            y_min = int(h * float(self._param_cache.get('cam_roi_y_min', 0.50)))
+            y_max = int(h * float(self._param_cache.get('cam_roi_y_max', 0.95)))
             x_min = int(w * 0.05)
             x_max = int(w * 0.95)
 
             roi = cv_img[y_min:y_max, x_min:x_max]
             hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
 
-            sat_min = int(self._param_cache.get('cam_red_sat_min', 30))
-            val_min = int(self._param_cache.get('cam_red_val_min', 30))
+            sat_min = int(self._param_cache.get('cam_red_sat_min', 70))
+            val_min = int(self._param_cache.get('cam_red_val_min', 70))
 
             # Red hue ranges in HSV (handles warm red to crimson)
             mask1 = cv2.inRange(hsv, (0, sat_min, val_min), (15, 255, 255))
@@ -142,7 +142,7 @@ class BoomGateDetector(Node):
 
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            min_w = int(self._param_cache.get('cam_red_min_width', 40))
+            min_w = int(self._param_cache.get('cam_red_min_width', 80))
             found_red_bar = False
             for cnt in contours:
                 x, y, cw, ch = cv2.boundingRect(cnt)
